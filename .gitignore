@@ -1,0 +1,9 @@
+.gradle/
+bin/
+build/
+logs/
+uploads/
+.env
+.env.*
+!.env.example
+*.log
