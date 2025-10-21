@@ -18,14 +18,14 @@ import com.tindapp.service.NotificationService;
 import com.tindapp.service.ReportService;
 import com.tindapp.service.SubscriptionService;
 import com.tindapp.service.UserService;
-import com.tindapp.util.DateTimeUtils;
-import io.vertx.core.json.JsonArray;
+import com.tindapp.util.ResponseMapper;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -90,7 +90,7 @@ public class ApiHandler {
             Optional<User> user = userService.getUserById(userId);
 
             if (user.isPresent()) {
-                sendSuccess(ctx, convertUserToResponse(user.get()));
+                sendSuccess(ctx, ResponseMapper.toUserResponse(user.get()).getMap());
             } else {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
             }
@@ -106,7 +106,7 @@ public class ApiHandler {
             Optional<User> user = userService.getUserById(userId);
 
             if (user.isPresent()) {
-                sendSuccess(ctx, convertUserToResponse(user.get()));
+                sendSuccess(ctx, ResponseMapper.toUserResponse(user.get()).getMap());
             } else {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
             }
@@ -143,7 +143,7 @@ public class ApiHandler {
             }
 
             User updatedUser = userService.updateProfile(userId, bio, city, age, birthDate, isVisible, settings);
-            sendSuccess(ctx, convertUserToResponse(updatedUser));
+            sendSuccess(ctx, ResponseMapper.toUserResponse(updatedUser).getMap());
         } catch (Exception e) {
             logger.error("Error updating profile", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, e.getMessage());
@@ -224,7 +224,11 @@ public class ApiHandler {
             int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
 
             List<Chat> chats = chatService.getUserChats(userId, page, limit);
-            sendPaginatedSuccess(ctx, chats, page, limit, chats.size());
+            List<Map<String, Object>> chatResponses = chats.stream()
+                .map(chat -> ResponseMapper.toChatResponse(chat).getMap())
+                .collect(Collectors.toList());
+
+            sendPaginatedSuccess(ctx, chatResponses, page, limit, chats.size());
         } catch (Exception e) {
             logger.error("Error getting chats", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -247,7 +251,7 @@ public class ApiHandler {
             Optional<Chat> chat = chatService.getChatById(chatId);
             if (chat.isPresent()) {
                 logger.info("Chat found and returned: chatId={}", chatId);
-                sendSuccess(ctx, chat.get());
+                sendSuccess(ctx, ResponseMapper.toChatResponse(chat.get()).getMap());
             } else {
                 logger.warn("Chat not found: chatId={}", chatId);
                 sendError(ctx, 404, ErrorCodes.CHAT_NOT_FOUND, "Chat not found");
@@ -317,7 +321,11 @@ public class ApiHandler {
             }
 
             List<Message> messages = messageService.getChatMessages(chatId, page, limit);
-            sendPaginatedSuccess(ctx, messages, page, limit, messages.size());
+            List<Map<String, Object>> messageResponses = messages.stream()
+                .map(message -> ResponseMapper.toMessageResponse(message).getMap())
+                .collect(Collectors.toList());
+
+            sendPaginatedSuccess(ctx, messageResponses, page, limit, messages.size());
         } catch (Exception e) {
             logger.error("Error getting messages", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -334,20 +342,21 @@ public class ApiHandler {
             String replyToMessageId = body.getString("replyToMessageId");
 
             Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId);
+            JsonObject messageJson = ResponseMapper.toMessageResponse(message);
 
             logger.info("Broadcasting message via WebSocket: chatId={}, messageId={}", chatId, message.getId());
-            webSocketHandler.sendMessageToUser(userId, "message", JsonObject.mapFrom(message));
+            webSocketHandler.sendMessageToUser(userId, "message", messageJson.copy());
 
             Optional<Chat> chatOpt = chatService.getChatById(chatId);
             if (chatOpt.isPresent()) {
                 Chat chat = chatOpt.get();
                 Long companionId = chat.getCompanionId(userId);
                 if (companionId != null) {
-                    webSocketHandler.sendMessageToUser(companionId, "message", JsonObject.mapFrom(message));
+                    webSocketHandler.sendMessageToUser(companionId, "message", messageJson.copy());
                 }
             }
 
-            sendSuccess(ctx, convertMessageToResponse(message));
+            sendSuccess(ctx, messageJson.getMap());
         } catch (Exception e) {
             logger.error("Error sending message", e);
             if (e.getMessage().contains("Insufficient balance")) {
@@ -368,7 +377,7 @@ public class ApiHandler {
 
             String text = body.getString("text");
             Message editedMessage = messageService.editMessage(messageId, userId, text);
-            sendSuccess(ctx, convertMessageToResponse(editedMessage));
+            sendSuccess(ctx, ResponseMapper.toMessageResponse(editedMessage).getMap());
         } catch (Exception e) {
             logger.error("Error editing message", e);
             if (e.getMessage().contains("not found")) {
@@ -703,81 +712,4 @@ public class ApiHandler {
             .end(error.encode());
     }
 
-    private JsonObject convertUserToResponse(User user) {
-        JsonObject response = new JsonObject()
-            .put("id", user.getId())
-            .put("vkId", user.getVkId())
-            .put("age", user.getAge())
-            .put("city", user.getCity())
-            .put("isVerified", user.isVerified())
-            .put("isOnline", user.isOnline())
-            .put("bio", user.getBio())
-            .put("gender", user.getGender())
-            .put("isVisible", user.isVisible())
-            .put("balance", user.getBalance());
-
-        response.put("lastSeen", DateTimeUtils.formatToIso(user.getLastSeenDateTime()));
-        response.put("createdAt", DateTimeUtils.formatToIso(user.getCreatedAtDateTime()));
-        response.put("updatedAt", DateTimeUtils.formatToIso(user.getUpdatedAtDateTime()));
-
-        JsonObject subscription = new JsonObject()
-            .put("isActive", user.getSubscription() != null ? user.getSubscription().getIsActive() : false)
-            .put("type", "basic");
-        if (user.getSubscription() != null && user.getSubscription().getExpiresAt() != null) {
-            subscription.put("expiresAt", DateTimeUtils.formatToIso(user.getSubscription().getExpiresAt()));
-        }
-        response.put("subscription", subscription);
-
-        JsonObject settings = new JsonObject();
-        if (user.getSettings() != null) {
-            settings.put("showAge", user.getSettings().getShowAge())
-                   .put("showCity", user.getSettings().getShowCity())
-                   .put("allowMessages", user.getSettings().getAllowMessages());
-        } else {
-            settings.put("showAge", true)
-                   .put("showCity", true)
-                   .put("allowMessages", true);
-        }
-        response.put("settings", settings);
-
-        return response;
-    }
-
-    private JsonObject convertMessageToResponse(Message message) {
-        JsonObject response = new JsonObject()
-            .put("id", message.getId())
-            .put("chatId", message.getChatId())
-            .put("senderId", message.getSenderId())
-            .put("text", message.getText())
-            .put("type", message.getType() != null ? message.getType().toString().toLowerCase() : "text")
-            .put("isRead", message.getIsRead())
-            .put("isEdited", message.getIsEdited());
-
-        response.put("createdAt", message.getCreatedAt());
-        response.put("updatedAt", message.getUpdatedAt());
-
-        if (message.getReplyTo() != null) {
-            JsonObject replyTo = new JsonObject()
-                .put("messageId", message.getReplyTo().getMessageId())
-                .put("text", message.getReplyTo().getText())
-                .put("senderName", message.getReplyTo().getSenderName());
-            response.put("replyTo", replyTo);
-        }
-
-        if (message.getAttachments() != null && !message.getAttachments().isEmpty()) {
-            JsonArray attachments = new JsonArray();
-            for (Message.MessageAttachment attachment : message.getAttachments()) {
-                JsonObject attachmentObj = new JsonObject()
-                    .put("type", attachment.getType().toString().toLowerCase())
-                    .put("url", attachment.getUrl());
-                if (attachment.getPreview() != null) {
-                    attachmentObj.put("preview", attachment.getPreview());
-                }
-                attachments.add(attachmentObj);
-            }
-            response.put("attachments", attachments);
-        }
-
-        return response;
-    }
 }

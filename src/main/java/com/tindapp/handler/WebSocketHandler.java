@@ -10,6 +10,7 @@ import com.tindapp.service.ChatService;
 import com.tindapp.service.MessageService;
 import com.tindapp.service.TokenService;
 import com.tindapp.service.UserService;
+import com.tindapp.util.ResponseMapper;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.ServerWebSocket;
 import io.vertx.core.json.JsonObject;
@@ -17,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -261,8 +263,9 @@ public class WebSocketHandler {
             }
 
             Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId);
+            JsonObject messageJson = ResponseMapper.toMessageResponse(message);
 
-            broadcastToChat(chatId, "message", JsonObject.mapFrom(message));
+            broadcastToChat(chatId, "message", messageJson);
 
         } catch (Exception e) {
             logger.error("Error sending message via WebSocket", e);
@@ -329,7 +332,7 @@ public class WebSocketHandler {
             }
 
             try {
-                messageService.markAsRead(messageId, userId);
+                messageService.markMessagesAsRead(chatId, userId, List.of(messageId));
             } catch (Exception e) {
                 logger.warn("Error marking message as read in database: {}", e.getMessage());
             }

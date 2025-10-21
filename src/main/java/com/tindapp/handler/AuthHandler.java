@@ -1,0 +1,272 @@
+package com.tindapp.handler;
+
+import com.tindapp.config.AppConfig;
+import com.tindapp.model.User;
+import com.tindapp.service.TokenService;
+import com.tindapp.service.UserService;
+import io.vertx.core.Handler;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.RoutingContext;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+public class AuthHandler implements Handler<RoutingContext> {
+
+    private static final Logger logger = LoggerFactory.getLogger(AuthHandler.class);
+    private static final String ENCODING = "UTF-8";
+    private static final String VK_USER_ID_PARAM = "vk_user_id";
+    private static final String SIGN_PARAM = "sign";
+
+    public enum ErrorCodes {
+        UNAUTHORIZED("UNAUTHORIZED"),
+        VALIDATION_ERROR("VALIDATION_ERROR"),
+        SERVER_ERROR("SERVER_ERROR");
+
+        private final String code;
+
+        ErrorCodes(String code) {
+            this.code = code;
+        }
+
+        public String getCode() {
+            return code;
+        }
+    }
+
+    private final String clientSecret;
+    private final UserService userService;
+    private final TokenService tokenService;
+
+    public AuthHandler(String clientSecret, UserService userService, TokenService tokenService) {
+        this.clientSecret = clientSecret;
+        this.userService = userService;
+        this.tokenService = tokenService;
+    }
+
+    @Override
+    public void handle(RoutingContext context) {
+        try {
+            String query = context.request().query();
+
+            if (query == null || query.isEmpty()) {
+                sendError(context, 400, ErrorCodes.VALIDATION_ERROR, "Missing VK parameters");
+                return;
+            }
+
+            Map<String, String> params = parseQueryString(query);
+
+            if (!params.containsKey(VK_USER_ID_PARAM) || !params.containsKey(SIGN_PARAM)) {
+                sendError(context, 400, ErrorCodes.VALIDATION_ERROR, "Missing required VK parameters");
+                return;
+            }
+
+            if (!validateSignature(params)) {
+                sendError(context, 401, ErrorCodes.UNAUTHORIZED, "Invalid VK signature");
+                return;
+            }
+
+            JsonObject vkUserData = extractUserData(params);
+            Long vkUserId = vkUserData.getLong("vk_user_id");
+
+            User user = findOrCreateUser(vkUserData);
+
+            if (user.getId() == null) {
+                throw new RuntimeException("User ID is null after creation");
+            }
+
+            String token = tokenService.createToken(user);
+
+            JsonObject response = new JsonObject()
+                    .put("success", true)
+                    .put("token", token)
+                    .put("userId", user.getId())
+                    .put("user", createUserResponse(user))
+                    .put("expiresIn", 24 * 60 * 60); // 24 часа в секундах
+
+            logger.info("User authenticated successfully: vkId={}, token created", vkUserId);
+
+            context.response()
+                    .setStatusCode(200)
+                    .putHeader("Content-Type", "application/json")
+                    .end(response.encode());
+
+        } catch (Exception e) {
+            logger.error("Authentication error", e);
+            sendError(context, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
+    }
+
+    private Map<String, String> parseQueryString(String query) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (query == null || query.isEmpty()) {
+            return result;
+        }
+
+        String[] pairs = query.split("&");
+        for (String pair : pairs) {
+            int idx = pair.indexOf("=");
+            String key = idx > 0 ? decode(pair.substring(0, idx)) : pair;
+            String value = idx > 0 && pair.length() > idx + 1 ? decode(pair.substring(idx + 1)) : null;
+            result.put(key, value);
+        }
+
+        return result;
+    }
+
+    private boolean validateSignature(Map<String, String> params) {
+        try {
+            String checkString = params.entrySet().stream()
+                    .filter(entry -> entry.getKey().startsWith("vk_"))
+                    .sorted(Map.Entry.comparingByKey())
+                    .map(entry -> encode(entry.getKey()) + "=" + (entry.getValue() == null ? "" : encode(entry.getValue())))
+                    .collect(Collectors.joining("&"));
+
+            String expectedSign = getHashCode(checkString, clientSecret);
+            String actualSign = params.get(SIGN_PARAM);
+
+            return expectedSign.equals(actualSign);
+        } catch (Exception e) {
+            logger.error("Error validating VK signature", e);
+            return false;
+        }
+    }
+
+    private String getHashCode(String data, String key) throws Exception {
+        SecretKeySpec secretKey = new SecretKeySpec(key.getBytes(ENCODING), "HmacSHA256");
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(secretKey);
+        byte[] hmacData = mac.doFinal(data.getBytes(ENCODING));
+        return new String(Base64.getUrlEncoder().withoutPadding().encode(hmacData));
+    }
+
+    private JsonObject extractUserData(Map<String, String> params) {
+        JsonObject userData = new JsonObject();
+
+        putIfPresent(userData, "vk_user_id", params.get("vk_user_id"), Long::parseLong);
+        putIfPresent(userData, "vk_app_id", params.get("vk_app_id"), Long::parseLong);
+        putIfPresent(userData, "vk_is_app_user", params.get("vk_is_app_user"), s -> "1".equals(s));
+        putIfPresent(userData, "vk_are_notifications_enabled", params.get("vk_are_notifications_enabled"), s -> "1".equals(s));
+        putIfPresent(userData, "vk_language", params.get("vk_language"), String::valueOf);
+        putIfPresent(userData, "vk_platform", params.get("vk_platform"), String::valueOf);
+        putIfPresent(userData, "vk_access_token_settings", params.get("vk_access_token_settings"), String::valueOf);
+
+        putIfPresent(userData, "vk_group_id", params.get("vk_group_id"), Long::parseLong);
+        putIfPresent(userData, "vk_viewer_group_role", params.get("vk_viewer_group_role"), String::valueOf);
+        putIfPresent(userData, "vk_ts", params.get("vk_ts"), Long::parseLong);
+
+        return userData;
+    }
+
+    private User findOrCreateUser(JsonObject vkUserData) {
+        Long vkUserId = vkUserData.getLong("vk_user_id");
+
+        Optional<User> existingUser = userService.getUserByVkId(vkUserId);
+
+        if (existingUser.isPresent()) {
+            User user = existingUser.get();
+            user.setLastSeenDateTime(java.time.LocalDateTime.now());
+            user.setOnline(true);
+            userService.updateUser(user);
+            return user;
+        } else {
+            User newUser = new User();
+            newUser.setVkId(vkUserId);
+            newUser.setAge(18); // По умолчанию, нужно будет обновить из профиля VK
+            newUser.setCity(""); // Будет заполнено из VK данных
+            newUser.setVerified(false);
+            newUser.setOnline(true);
+            newUser.setLastSeenDateTime(java.time.LocalDateTime.now());
+            newUser.setBio("");
+            newUser.setGender("other"); // По умолчанию
+            newUser.setVisible(true);
+            newUser.setBalance(AppConfig.INITIAL_USER_BALANCE); // Стартовый баланс
+            newUser.setCreatedAtDateTime(java.time.LocalDateTime.now());
+            newUser.setUpdatedAtDateTime(java.time.LocalDateTime.now());
+
+            User createdUser = userService.createUser(newUser);
+            logger.info("New user created: vkId={}", vkUserId);
+            return createdUser;
+        }
+    }
+
+    private JsonObject createUserResponse(User user) {
+        JsonObject response = new JsonObject()
+                .put("id", user.getId())
+                .put("vkId", user.getVkId())
+                .put("age", user.getAge())
+                .put("city", user.getCity())
+                .put("isVerified", user.isVerified())
+                .put("isOnline", user.isOnline())
+                .put("lastSeen", user.getLastSeen())
+                .put("bio", user.getBio())
+                .put("gender", user.getGender())
+                .put("isVisible", user.isVisible())
+                .put("balance", user.getBalance())
+                .put("createdAt", user.getCreatedAt())
+                .put("updatedAt", user.getUpdatedAt());
+
+        JsonObject subscription = new JsonObject()
+                .put("isActive", false): получить из subscription service
+                .put("type", "basic");
+        response.put("subscription", subscription);
+
+        JsonObject settings = new JsonObject()
+                .put("showAge", true)
+                .put("showCity", true)
+                .put("allowMessages", true);
+        response.put("settings", settings);
+
+        return response;
+    }
+
+    private <T> void putIfPresent(JsonObject json, String key, String value, java.util.function.Function<String, T> converter) {
+        if (value != null && !value.isEmpty()) {
+            try {
+                json.put(key, converter.apply(value));
+            } catch (Exception e) {
+                logger.warn("Failed to convert parameter {}: {}", key, value, e);
+            }
+        }
+    }
+
+    private String decode(String value) {
+        try {
+            return URLDecoder.decode(value, ENCODING);
+        } catch (UnsupportedEncodingException e) {
+            logger.error("Failed to decode value: " + value, e);
+            return value;
+        }
+    }
+
+    private String encode(String value) {
+        try {
+            return URLEncoder.encode(value, ENCODING);
+        } catch (UnsupportedEncodingException e) {
+            logger.error("Failed to encode value: " + value, e);
+            return value;
+        }
+    }
+
+    private void sendError(RoutingContext context, int statusCode, ErrorCodes errorCode, String message) {
+        JsonObject error = new JsonObject()
+                .put("success", false)
+                .put("error", message)
+                .put("code", errorCode.getCode());
+
+        context.response()
+                .setStatusCode(statusCode)
+                .putHeader("Content-Type", "application/json")
+                .end(error.encode());
+    }
+}
