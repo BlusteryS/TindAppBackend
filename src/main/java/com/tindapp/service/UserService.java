@@ -166,9 +166,9 @@ public class UserService {
     private int calculateCoinsForPayment(Integer amount, String paymentMethod) {
         switch (paymentMethod) {
             case "vk_pay":
-                return amount * AppConfig.VK_PAY_COIN_RATE; // 1 рубль = 100 фишек
+                return amount * AppConfig.VK_PAY_COIN_RATE; // 1 рубль = 100 фиан
             case "votes":
-                return amount * AppConfig.VOTES_COIN_RATE;  // 1 голос = 10 фишек
+                return amount * AppConfig.VOTES_COIN_RATE;  // 1 голос = 10 фиан
             default:
                 return amount;
         }

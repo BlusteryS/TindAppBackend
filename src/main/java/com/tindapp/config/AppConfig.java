@@ -22,8 +22,8 @@ public class AppConfig {
 
     public static final int INITIAL_USER_BALANCE = 0;
 
-    public static final int VK_PAY_COIN_RATE = 100; // 1 рубль = 100 фишек
-    public static final int VOTES_COIN_RATE = 10;   // 1 голос = 10 фишек
+    public static final int VK_PAY_COIN_RATE = 100; // 1 рубль = 100 фиан
+    public static final int VOTES_COIN_RATE = 10;   // 1 голос = 10 фиан
 
     public static final int TYPING_CLEANUP_INTERVAL = 10000; // 10 seconds
 

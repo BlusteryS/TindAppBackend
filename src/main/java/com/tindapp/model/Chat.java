@@ -43,7 +43,7 @@ public class Chat {
     }
 
     public static class ChatSettings {
-        private Integer cost; // стоимость создания чата в фишках
+        private Integer cost; // стоимость создания чата в фианах
         private Integer anonymousId; // Порядковый номер для анонимного чата
 
         public ChatSettings() {
