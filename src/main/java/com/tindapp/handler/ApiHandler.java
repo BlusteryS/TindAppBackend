@@ -19,14 +19,22 @@ import com.tindapp.service.ReportService;
 import com.tindapp.service.SubscriptionService;
 import com.tindapp.service.UserService;
 import com.tindapp.util.ResponseMapper;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.FileUpload;
 import io.vertx.ext.web.RoutingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class ApiHandler {
@@ -332,16 +340,77 @@ public class ApiHandler {
         }
     }
 
+    public void uploadImage(RoutingContext ctx) {
+        FileUpload upload = null;
+        try {
+            Long userId = getUserIdFromContext(ctx);
+            if (userId == null) {
+                sendError(ctx, 401, ErrorCodes.UNAUTHORIZED, "Not authenticated");
+                return;
+            }
+
+            List<FileUpload> uploads = ctx.fileUploads();
+            if (uploads == null || uploads.isEmpty()) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "No files uploaded");
+                return;
+            }
+
+            upload = uploads.iterator().next();
+
+            if (upload.size() > AppConfig.MAX_UPLOAD_SIZE_BYTES) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "File too large");
+                deleteTempFile(upload);
+                return;
+            }
+
+            String contentType = upload.contentType();
+            if (contentType == null || !contentType.startsWith("image/")) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Only image uploads are allowed");
+                deleteTempFile(upload);
+                return;
+            }
+
+            String originalFileName = upload.fileName();
+            String extension = getFileExtension(originalFileName);
+            if (extension.isEmpty()) {
+                extension = getExtensionFromContentType(contentType);
+            }
+
+            if (extension.isEmpty()) {
+                extension = ".jpg";
+            }
+
+            String fileName = UUID.randomUUID() + extension;
+            Path targetPath = Paths.get(AppConfig.UPLOAD_DIR, fileName);
+
+            Files.move(Paths.get(upload.uploadedFileName()), targetPath, StandardCopyOption.REPLACE_EXISTING);
+
+            JsonObject data = new JsonObject()
+                .put("url", "/uploads/" + fileName)
+                .put("preview", "/uploads/" + fileName);
+
+            sendSuccess(ctx, data);
+        } catch (Exception e) {
+            logger.error("Error uploading image", e);
+            if (upload != null) {
+                deleteTempFile(upload);
+            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Failed to upload image");
+        }
+    }
+
     public void sendMessage(RoutingContext ctx) {
         try {
             Long userId = getUserIdFromContext(ctx);
             JsonObject body = ctx.getBodyAsJson();
 
             String chatId = body.getString("chatId");
-            String text = body.getString("text");
+            String text = body.getString("text", "");
             String replyToMessageId = body.getString("replyToMessageId");
+            JsonArray attachmentsJson = body.getJsonArray("attachments");
+            List<Message.MessageAttachment> attachments = parseAttachments(attachmentsJson);
 
-            Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId);
+            Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId, attachments);
             JsonObject messageJson = ResponseMapper.toMessageResponse(message);
 
             logger.info("Broadcasting message via WebSocket: chatId={}, messageId={}", chatId, message.getId());
@@ -641,6 +710,80 @@ public class ApiHandler {
             throw new RuntimeException("User ID not found in context");
         }
         return userId;
+    }
+
+    private void deleteTempFile(FileUpload upload) {
+        try {
+            Files.deleteIfExists(Paths.get(upload.uploadedFileName()));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String getFileExtension(String fileName) {
+        if (fileName == null) {
+            return "";
+        }
+        int dotIndex = fileName.lastIndexOf('.');
+        if (dotIndex == -1 || dotIndex == fileName.length() - 1) {
+            return "";
+        }
+        return fileName.substring(dotIndex).toLowerCase();
+    }
+
+    private String getExtensionFromContentType(String contentType) {
+        if (contentType == null) {
+            return "";
+        }
+        switch (contentType) {
+            case "image/jpeg":
+                return ".jpg";
+            case "image/png":
+                return ".png";
+            case "image/gif":
+                return ".gif";
+            case "image/webp":
+                return ".webp";
+            default:
+                return "";
+        }
+    }
+
+    private List<Message.MessageAttachment> parseAttachments(JsonArray attachmentsJson) {
+        List<Message.MessageAttachment> attachments = new ArrayList<>();
+        if (attachmentsJson == null || attachmentsJson.isEmpty()) {
+            return attachments;
+        }
+
+        for (int i = 0; i < attachmentsJson.size(); i++) {
+            Object raw = attachmentsJson.getValue(i);
+            if (!(raw instanceof JsonObject)) {
+                continue;
+            }
+            JsonObject attachmentJson = (JsonObject) raw;
+            String typeString = attachmentJson.getString("type", "image");
+            Message.MessageAttachment.AttachmentType type = parseAttachmentType(typeString);
+            String url = attachmentJson.getString("url");
+            if (url == null || url.isEmpty()) {
+                continue;
+            }
+            String preview = attachmentJson.getString("preview", url);
+            Message.MessageAttachment attachment = new Message.MessageAttachment(type, url, preview);
+            attachments.add(attachment);
+        }
+        return attachments;
+    }
+
+    private Message.MessageAttachment.AttachmentType parseAttachmentType(String typeString) {
+        if (typeString == null) {
+            return Message.MessageAttachment.AttachmentType.IMAGE;
+        }
+        switch (typeString.toLowerCase()) {
+            case "sticker":
+                return Message.MessageAttachment.AttachmentType.STICKER;
+            case "image":
+            default:
+                return Message.MessageAttachment.AttachmentType.IMAGE;
+        }
     }
 
     private void sendSuccess(RoutingContext ctx, Object data) {

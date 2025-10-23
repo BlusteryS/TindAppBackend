@@ -37,8 +37,11 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
+import io.vertx.ext.web.handler.StaticHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.File;
 
 public class MainVerticle extends AbstractVerticle {
 
@@ -137,7 +140,22 @@ public class MainVerticle extends AbstractVerticle {
             .allowedHeader("Access-Control-Request-Headers");
         router.route().handler(corsHandler);
 
-        router.route().handler(BodyHandler.create());
+        File uploadDir = new File(AppConfig.UPLOAD_DIR);
+        if (!uploadDir.exists() && !uploadDir.mkdirs()) {
+            logger.warn("Failed to create upload directory at {}", uploadDir.getAbsolutePath());
+        }
+
+        BodyHandler bodyHandler = BodyHandler.create()
+            .setUploadsDirectory(AppConfig.UPLOAD_DIR)
+            .setDeleteUploadedFilesOnEnd(false)
+            .setMergeFormAttributes(true)
+            .setBodyLimit(AppConfig.MAX_UPLOAD_SIZE_BYTES);
+
+        router.route().handler(bodyHandler);
+
+        router.get("/uploads/*").handler(StaticHandler.create(AppConfig.UPLOAD_DIR)
+            .setCachingEnabled(true)
+            .setIncludeHidden(false));
 
         setupApiRoutes(router);
 
@@ -182,6 +200,8 @@ public class MainVerticle extends AbstractVerticle {
         apiRouter.get("/chats").handler(apiHandler::getChats);
         apiRouter.get("/chats/:chatId").handler(apiHandler::getChat);
         apiRouter.post("/chats/:chatId/end").handler(apiHandler::endChat);
+
+        apiRouter.post("/uploads/images").handler(apiHandler::uploadImage);
 
         apiRouter.get("/chats/:chatId/messages").handler(apiHandler::getMessages);
         apiRouter.post("/messages").handler(apiHandler::sendMessage);

@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -254,15 +255,22 @@ public class WebSocketHandler {
             }
 
             String chatId = data.getString("chatId");
-            String text = data.getString("text");
+            String text = data.getString("text", "");
             String replyToMessageId = data.getString("replyToMessageId");
+            io.vertx.core.json.JsonArray attachmentsJson = data.getJsonArray("attachments");
+            List<Message.MessageAttachment> attachments = parseAttachments(attachmentsJson);
 
-            if (chatId == null || text == null || text.trim().isEmpty()) {
-                sendError(webSocket, "Missing chatId or text");
+            if (chatId == null) {
+                sendError(webSocket, "Missing chatId");
                 return;
             }
 
-            Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId);
+            if (text.trim().isEmpty() && attachments.isEmpty()) {
+                sendError(webSocket, "Missing message content");
+                return;
+            }
+
+            Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId, attachments);
             JsonObject messageJson = ResponseMapper.toMessageResponse(message);
 
             broadcastToChat(chatId, "message", messageJson);
@@ -469,6 +477,35 @@ public class WebSocketHandler {
 
     private Long getUserId(ServerWebSocket webSocket) {
         return socketToUser.get(webSocket.hashCode());
+    }
+
+    private List<Message.MessageAttachment> parseAttachments(io.vertx.core.json.JsonArray attachmentsJson) {
+        List<Message.MessageAttachment> attachments = new ArrayList<>();
+        if (attachmentsJson == null || attachmentsJson.isEmpty()) {
+            return attachments;
+        }
+
+        for (int i = 0; i < attachmentsJson.size(); i++) {
+            Object raw = attachmentsJson.getValue(i);
+            if (!(raw instanceof io.vertx.core.json.JsonObject)) {
+                continue;
+            }
+            io.vertx.core.json.JsonObject attachmentJson = (io.vertx.core.json.JsonObject) raw;
+            String typeString = attachmentJson.getString("type", "image");
+            Message.MessageAttachment.AttachmentType type;
+            try {
+                type = Message.MessageAttachment.AttachmentType.valueOf(typeString.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                type = Message.MessageAttachment.AttachmentType.IMAGE;
+            }
+            String url = attachmentJson.getString("url");
+            if (url == null || url.isEmpty()) {
+                continue;
+            }
+            String preview = attachmentJson.getString("preview", url);
+            attachments.add(new Message.MessageAttachment(type, url, preview));
+        }
+        return attachments;
     }
 
     private void broadcastToChat(String chatId, String type, JsonObject data) {

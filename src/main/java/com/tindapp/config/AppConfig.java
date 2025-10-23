@@ -31,6 +31,9 @@ public class AppConfig {
     public static final String[] ALLOWED_METHODS = {"GET", "POST", "PUT", "DELETE", "OPTIONS"};
     public static final String[] ALLOWED_HEADERS = {"Content-Type", "Authorization"};
 
+    public static final String UPLOAD_DIR = "uploads";
+    public static final long MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
     public static final String APP_VERSION = "1.0.0";
     public static final String APP_NAME = "TindApp";
 

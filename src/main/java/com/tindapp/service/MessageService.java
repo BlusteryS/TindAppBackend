@@ -27,7 +27,7 @@ public class MessageService {
         return messageRepository.findByChatId(chatId, page, limit);
     }
 
-    public Message sendMessage(Long senderId, String chatId, String text, String replyToMessageId) {
+    public Message sendMessage(Long senderId, String chatId, String text, String replyToMessageId, List<Message.MessageAttachment> attachments) {
         Chat chat = chatRepository.findById(chatId)
             .orElseThrow(() -> new RuntimeException("Chat not found"));
 
@@ -40,7 +40,11 @@ public class MessageService {
         }
 
         String messageId = UUID.randomUUID().toString();
-        Message message = new Message(messageId, chatId, senderId, text);
+        Message message = new Message(messageId, chatId, senderId, text != null ? text : "");
+
+        if (attachments != null && !attachments.isEmpty()) {
+            message.setAttachments(attachments);
+        }
 
         if (replyToMessageId != null) {
             Optional<Message> replyMessage = messageRepository.findById(replyToMessageId);
