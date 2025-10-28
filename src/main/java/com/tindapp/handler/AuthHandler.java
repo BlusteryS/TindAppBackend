@@ -160,6 +160,11 @@ public class AuthHandler implements Handler<RoutingContext> {
         putIfPresent(userData, "vk_language", params.get("vk_language"), String::valueOf);
         putIfPresent(userData, "vk_platform", params.get("vk_platform"), String::valueOf);
         putIfPresent(userData, "vk_access_token_settings", params.get("vk_access_token_settings"), String::valueOf);
+        putIfPresent(userData, "first_name", params.get("first_name"), String::valueOf);
+        putIfPresent(userData, "last_name", params.get("last_name"), String::valueOf);
+        putIfPresent(userData, "photo_200", params.get("photo_200"), String::valueOf);
+        putIfPresent(userData, "photo_100", params.get("photo_100"), String::valueOf);
+        putIfPresent(userData, "sex", params.get("sex"), Integer::parseInt);
 
         putIfPresent(userData, "vk_group_id", params.get("vk_group_id"), Long::parseLong);
         putIfPresent(userData, "vk_viewer_group_role", params.get("vk_viewer_group_role"), String::valueOf);
@@ -177,12 +182,16 @@ public class AuthHandler implements Handler<RoutingContext> {
             User user = existingUser.get();
             user.setLastSeenDateTime(java.time.LocalDateTime.now());
             user.setOnline(true);
+            applyVkProfileData(user, vkUserData);
             userService.updateUser(user);
             return user;
         } else {
             User newUser = new User();
             newUser.setVkId(vkUserId);
             newUser.setAge(18); // По умолчанию, нужно будет обновить из профиля VK
+            newUser.setFirstName("");
+            newUser.setLastName("");
+            newUser.setAvatarUrl("");
             newUser.setCountry("");
             newUser.setCity(""); // Будет заполнено из VK данных
             newUser.setVerified(false);
@@ -194,6 +203,7 @@ public class AuthHandler implements Handler<RoutingContext> {
             newUser.setBalance(AppConfig.INITIAL_USER_BALANCE); // Стартовый баланс
             newUser.setCreatedAtDateTime(java.time.LocalDateTime.now());
             newUser.setUpdatedAtDateTime(java.time.LocalDateTime.now());
+            applyVkProfileData(newUser, vkUserData);
 
             User createdUser = userService.createUser(newUser);
             logger.info("New user created: vkId={}", vkUserId);
@@ -206,6 +216,9 @@ public class AuthHandler implements Handler<RoutingContext> {
                 .put("id", user.getId())
                 .put("vkId", user.getVkId())
                 .put("age", user.getAge())
+                .put("firstName", user.getFirstName())
+                .put("lastName", user.getLastName())
+                .put("avatarUrl", user.getAvatarUrl())
                 .put("country", user.getCountry())
                 .put("city", user.getCity())
                 .put("isVerified", user.isVerified())
@@ -240,6 +253,70 @@ public class AuthHandler implements Handler<RoutingContext> {
                 logger.warn("Failed to convert parameter {}: {}", key, value, e);
             }
         }
+    }
+
+    private void applyVkProfileData(User user, JsonObject vkUserData) {
+        if (vkUserData == null) {
+            return;
+        }
+
+        String firstName = firstNonEmpty(
+            vkUserData.getString("first_name"),
+            vkUserData.getString("vk_first_name")
+        );
+        if (firstName != null) {
+            user.setFirstName(firstName.trim());
+        }
+
+        String lastName = firstNonEmpty(
+            vkUserData.getString("last_name"),
+            vkUserData.getString("vk_last_name")
+        );
+        if (lastName != null) {
+            user.setLastName(lastName.trim());
+        }
+
+        String avatarUrl = firstNonEmpty(
+            vkUserData.getString("photo_200"),
+            vkUserData.getString("photo_100"),
+            vkUserData.getString("vk_profile_photo")
+        );
+        if (avatarUrl != null) {
+            user.setAvatarUrl(avatarUrl.trim());
+        }
+
+        Integer sex = vkUserData.getInteger("sex");
+        if (sex == null) {
+            sex = vkUserData.getInteger("vk_sex");
+        }
+        if (sex != null) {
+            switch (sex) {
+                case 1:
+                    user.setGender("female");
+                    break;
+                case 2:
+                    user.setGender("male");
+                    break;
+                default:
+                    user.setGender("other");
+                    break;
+            }
+        }
+    }
+
+    private String firstNonEmpty(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null) {
+                String trimmed = value.trim();
+                if (!trimmed.isEmpty()) {
+                    return trimmed;
+                }
+            }
+        }
+        return null;
     }
 
     private String decode(String value) {

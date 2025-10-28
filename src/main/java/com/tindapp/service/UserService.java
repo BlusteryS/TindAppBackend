@@ -66,10 +66,35 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public User updateProfile(Long userId, String bio, String country, String city, Integer age, String birthDate, Boolean isVisible, User.UserSettings settings) {
+    public User updateProfile(
+        Long userId,
+        String firstName,
+        String lastName,
+        String avatarUrl,
+        String gender,
+        String bio,
+        String country,
+        String city,
+        Integer age,
+        String birthDate,
+        Boolean isVisible,
+        User.UserSettings settings
+    ) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
+        if (firstName != null) {
+            user.setFirstName(firstName);
+        }
+        if (lastName != null) {
+            user.setLastName(lastName);
+        }
+        if (avatarUrl != null) {
+            user.setAvatarUrl(avatarUrl);
+        }
+        if (gender != null) {
+            user.setGender(gender);
+        }
         if (bio != null) {
             user.setBio(bio);
         }

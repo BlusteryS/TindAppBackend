@@ -15,6 +15,9 @@ public class User {
     private Long id;
     private Long vkId;
     private Integer age;
+    private String firstName;
+    private String lastName;
+    private String avatarUrl;
     private String country;
     private String city;
     private Boolean isVerified;
@@ -38,6 +41,9 @@ public class User {
         this.settings = new UserSettings();
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
+        this.firstName = "";
+        this.lastName = "";
+        this.avatarUrl = "";
     }
 
     public User(Long vkId) {
@@ -101,6 +107,15 @@ public class User {
 
     public Integer getAge() { return age; }
     public void setAge(Integer age) { this.age = age; }
+
+    public String getFirstName() { return firstName; }
+    public void setFirstName(String firstName) { this.firstName = firstName; }
+
+    public String getLastName() { return lastName; }
+    public void setLastName(String lastName) { this.lastName = lastName; }
+
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
 
     public String getCountry() { return country; }
     public void setCountry(String country) { this.country = country; }

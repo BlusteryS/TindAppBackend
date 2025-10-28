@@ -22,6 +22,7 @@ import com.tindapp.repository.SubscriptionRepository;
 import com.tindapp.repository.UserRepository;
 import com.tindapp.service.BlackListService;
 import com.tindapp.service.ChatService;
+import com.tindapp.service.LocationService;
 import com.tindapp.service.MessageService;
 import com.tindapp.service.NotificationService;
 import com.tindapp.service.ReportService;
@@ -55,6 +56,7 @@ public class MainVerticle extends AbstractVerticle {
     private ReportService reportService;
     private BlackListService blackListService;
     private TokenService tokenService;
+    private LocationService locationService;
     private WebSocketHandler webSocketHandler;
     private ApiHandler apiHandler;
     private VKAuthHandler vkAuthHandler;
@@ -106,6 +108,7 @@ public class MainVerticle extends AbstractVerticle {
         vkAuthHandler = new VKAuthHandler(config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET));
         tokenAuthHandler = new TokenAuthHandler(tokenService);
         authHandler = new AuthHandler(config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET), userService, tokenService);
+        locationService = new LocationService();
         webSocketHandler = new WebSocketHandler(vertx, chatService, messageService, userService, tokenService);
         apiHandler = new ApiHandler(
             userService,
@@ -115,7 +118,8 @@ public class MainVerticle extends AbstractVerticle {
             subscriptionService,
             reportService,
             blackListService,
-            webSocketHandler
+            webSocketHandler,
+            locationService
         );
     }
 
@@ -185,6 +189,9 @@ public class MainVerticle extends AbstractVerticle {
         });
 
         apiRouter.route("/*").handler(tokenAuthHandler);
+
+        apiRouter.get("/geo/countries").handler(apiHandler::getCountries);
+        apiRouter.get("/geo/countries/:countryId/cities").handler(apiHandler::getCitiesByCountry);
 
         apiRouter.get("/users/me").handler(apiHandler::getCurrentUser);
         apiRouter.put("/users/me").handler(apiHandler::updateProfile);

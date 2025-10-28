@@ -13,6 +13,7 @@ import com.tindapp.model.Subscription;
 import com.tindapp.model.User;
 import com.tindapp.service.BlackListService;
 import com.tindapp.service.ChatService;
+import com.tindapp.service.LocationService;
 import com.tindapp.service.MessageService;
 import com.tindapp.service.NotificationService;
 import com.tindapp.service.ReportService;
@@ -73,11 +74,12 @@ public class ApiHandler {
     private final ReportService reportService;
     private final BlackListService blackListService;
     private final WebSocketHandler webSocketHandler;
+    private final LocationService locationService;
 
     public ApiHandler(UserService userService, ChatService chatService, MessageService messageService,
                      NotificationService notificationService, SubscriptionService subscriptionService,
                      ReportService reportService, BlackListService blackListService,
-                     WebSocketHandler webSocketHandler) {
+                     WebSocketHandler webSocketHandler, LocationService locationService) {
         this.userService = userService;
         this.chatService = chatService;
         this.messageService = messageService;
@@ -86,10 +88,69 @@ public class ApiHandler {
         this.reportService = reportService;
         this.blackListService = blackListService;
         this.webSocketHandler = webSocketHandler;
+        this.locationService = locationService;
 
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
         this.objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    }
+
+    public void getCountries(RoutingContext ctx) {
+        try {
+            List<LocationService.Country> countries = locationService.getCountries();
+            JsonArray countriesArray = new JsonArray(
+                countries.stream()
+                    .map(country -> new JsonObject()
+                        .put("id", country.getId())
+                        .put("name", country.getName()))
+                    .collect(Collectors.toList())
+            );
+            JsonObject payload = new JsonObject().put("countries", countriesArray);
+            sendSuccess(ctx, payload);
+        } catch (Exception e) {
+            logger.error("Error fetching countries", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
+    }
+
+    public void getCitiesByCountry(RoutingContext ctx) {
+        try {
+            String countryId = ctx.pathParam("countryId");
+
+            if (countryId == null || countryId.isEmpty()) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "countryId is required");
+                return;
+            }
+
+            String query = ctx.request().getParam("query");
+            if (query == null) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "query parameter is required");
+                return;
+            }
+
+            String trimmedQuery = query.trim();
+            if (trimmedQuery.length() < 3) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "query parameter must be at least 3 characters");
+                return;
+            }
+
+            List<LocationService.City> cities = locationService.searchCitiesByCountry(countryId, trimmedQuery);
+            JsonArray citiesArray = new JsonArray(
+                cities.stream()
+                    .map(city -> new JsonObject()
+                        .put("id", city.getId())
+                        .put("name", city.getName()))
+                    .collect(Collectors.toList())
+            );
+            JsonObject payload = new JsonObject()
+                .put("countryId", countryId)
+                .put("query", trimmedQuery)
+                .put("cities", citiesArray);
+            sendSuccess(ctx, payload);
+        } catch (Exception e) {
+            logger.error("Error fetching cities for country", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
     }
 
     public void getCurrentUser(RoutingContext ctx) {
@@ -129,11 +190,15 @@ public class ApiHandler {
             Long userId = getUserIdFromContext(ctx);
             JsonObject body = ctx.getBodyAsJson();
 
-            String bio = body.getString("bio");
-            String country = body.getString("country");
-            String city = body.getString("city");
+            String firstName = trimToNull(body.getString("firstName"));
+            String lastName = trimToNull(body.getString("lastName"));
+            String avatarUrl = trimToNull(body.getString("avatarUrl"));
+            String gender = normalizeGender(body.getString("gender"));
+            String bio = trimToNull(body.getString("bio"));
+            String country = trimToNull(body.getString("country"));
+            String city = trimToNull(body.getString("city"));
             Integer age = body.getInteger("age");
-            String birthDate = body.getString("birthDate");
+            String birthDate = trimToNull(body.getString("birthDate"));
             Boolean isVisible = body.getBoolean("isVisible");
 
             User.UserSettings settings = null;
@@ -151,7 +216,20 @@ public class ApiHandler {
                 }
             }
 
-            User updatedUser = userService.updateProfile(userId, bio, country, city, age, birthDate, isVisible, settings);
+            User updatedUser = userService.updateProfile(
+                userId,
+                firstName,
+                lastName,
+                avatarUrl,
+                gender,
+                bio,
+                country,
+                city,
+                age,
+                birthDate,
+                isVisible,
+                settings
+            );
             sendSuccess(ctx, ResponseMapper.toUserResponse(updatedUser).getMap());
         } catch (Exception e) {
             logger.error("Error updating profile", e);
@@ -170,6 +248,29 @@ public class ApiHandler {
         } catch (Exception e) {
             logger.error("Error verifying user", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeGender(String gender) {
+        if (gender == null) {
+            return null;
+        }
+        String normalized = gender.trim().toLowerCase();
+        switch (normalized) {
+            case "male":
+            case "female":
+            case "other":
+                return normalized;
+            default:
+                return null;
         }
     }
 
