@@ -130,6 +130,7 @@ public class ApiHandler {
             JsonObject body = ctx.getBodyAsJson();
 
             String bio = body.getString("bio");
+            String country = body.getString("country");
             String city = body.getString("city");
             Integer age = body.getInteger("age");
             String birthDate = body.getString("birthDate");
@@ -150,7 +151,7 @@ public class ApiHandler {
                 }
             }
 
-            User updatedUser = userService.updateProfile(userId, bio, city, age, birthDate, isVisible, settings);
+            User updatedUser = userService.updateProfile(userId, bio, country, city, age, birthDate, isVisible, settings);
             sendSuccess(ctx, ResponseMapper.toUserResponse(updatedUser).getMap());
         } catch (Exception e) {
             logger.error("Error updating profile", e);

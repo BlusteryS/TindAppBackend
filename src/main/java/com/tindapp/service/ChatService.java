@@ -10,9 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 public class ChatService {
 
@@ -48,7 +46,8 @@ public class ChatService {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
-        int chatCost = calculateChatCost();
+        int queueSize = companionQueue.getQueueSize();
+        int chatCost = calculateChatCost(queueSize);
 
         if (chatCost > 0 && user.getBalance() < chatCost) {
             throw new RuntimeException("Insufficient balance");
@@ -99,27 +98,27 @@ public class ChatService {
                 chatCost
             );
 
-            return new FindCompanionResult(matchResult, false, 0, null);
+            return new FindCompanionResult(matchResult, false, queueSize, null);
         } else {
             return new FindCompanionResult(
                 null,
                 true,
-                companionQueue.getQueueSize(),
+                queueSize,
                 "Поиск собеседника начат. Ожидайте уведомления о найденном собеседнике."
             );
         }
     }
 
-    private int calculateChatCost() {
-        long totalUsers = userRepository.count();
-
-        if (totalUsers < FREE_CHAT_USER_THRESHOLD) {
-            logger.info("Chat is FREE: {} users (threshold: {})", totalUsers, FREE_CHAT_USER_THRESHOLD);
-            return 0; // Бесплатно
-        } else {
-            logger.info("Chat costs {} coins: {} users (threshold: {})", ANONYMOUS_CHAT_COST, totalUsers, FREE_CHAT_USER_THRESHOLD);
-            return ANONYMOUS_CHAT_COST; // Платно
+    private static int calculateChatCost(int queueSize) {
+        if (queueSize >= AppConfig.SEARCH_QUEUE_PAID_THRESHOLD) {
+            return AppConfig.ANONYMOUS_CHAT_CREATION_COST;
         }
+
+        return 0;
+    }
+
+    private int calculateChatCost() {
+        return calculateChatCost(companionQueue.getQueueSize());
     }
 
     public int getChatCost() {
@@ -148,69 +147,6 @@ public class ChatService {
 
         chat.setIsActive(false);
         return chatRepository.save(chat);
-    }
-
-    public void markMessagesAsRead(String chatId, Long userId, List<String> messageIds) {
-        Chat chat = chatRepository.findById(chatId)
-            .orElseThrow(() -> new RuntimeException("Chat not found"));
-
-        if (!chat.hasParticipant(userId)) {
-            throw new RuntimeException("User is not a participant of this chat");
-        }
-
-        chat.resetUnreadCount();
-        chatRepository.save(chat);
-    }
-
-    public void updateTypingStatus(String chatId, Long userId, boolean isTyping) {
-        Chat chat = chatRepository.findById(chatId)
-            .orElseThrow(() -> new RuntimeException("Chat not found"));
-
-        if (!chat.hasParticipant(userId)) {
-            throw new RuntimeException("User is not a participant of this chat");
-        }
-
-        chat.updateActivity();
-        chatRepository.save(chat);
-    }
-
-    private List<User> findMatchingUsers(Long userId, SearchFilters filters) {
-        User.Gender targetGender = null;
-        if (!"any".equals(filters.getGender())) {
-            targetGender = User.Gender.valueOf(filters.getGender().toUpperCase());
-        }
-
-        List<User> candidates = userRepository.findForMatching(
-            targetGender,
-            filters.getAgeRange()[0],
-            filters.getAgeRange()[1],
-            filters.getCity()
-        );
-
-        candidates = candidates.stream()
-            .filter(u -> !u.getId().equals(userId))
-            .filter(u -> Boolean.TRUE.equals(u.getIsOnline())) // только онлайн пользователи
-            .collect(Collectors.toList());
-
-        return candidates.stream()
-            .filter(u -> chatRepository.findActiveAnonymousChat(u.getId()).isEmpty())
-            .collect(Collectors.toList());
-    }
-
-    private Chat createAnonymousChat(Long userId1, Long userId2) {
-        String chatId = UUID.randomUUID().toString();
-        logger.info("Creating anonymous chat: chatId={}, user1={}, user2={}", chatId, userId1, userId2);
-
-        Chat chat = new Chat(chatId, Chat.ChatType.ANONYMOUS, userId1, userId2);
-
-        chat.getSettings().setCost(ANONYMOUS_CHAT_COST);
-        chat.getSettings().setAnonymousId(anonymousChatCounter.getAndIncrement());
-
-        Chat savedChat = chatRepository.save(chat);
-        logger.info("Anonymous chat created successfully: chatId={}, anonymousId={}",
-                   savedChat.getId(), savedChat.getSettings().getAnonymousId());
-
-        return savedChat;
     }
 
     public int getActiveAnonymousChatsCount() {

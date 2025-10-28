@@ -183,6 +183,7 @@ public class AuthHandler implements Handler<RoutingContext> {
             User newUser = new User();
             newUser.setVkId(vkUserId);
             newUser.setAge(18); // По умолчанию, нужно будет обновить из профиля VK
+            newUser.setCountry("");
             newUser.setCity(""); // Будет заполнено из VK данных
             newUser.setVerified(false);
             newUser.setOnline(true);
@@ -205,6 +206,7 @@ public class AuthHandler implements Handler<RoutingContext> {
                 .put("id", user.getId())
                 .put("vkId", user.getVkId())
                 .put("age", user.getAge())
+                .put("country", user.getCountry())
                 .put("city", user.getCity())
                 .put("isVerified", user.isVerified())
                 .put("isOnline", user.isOnline())
