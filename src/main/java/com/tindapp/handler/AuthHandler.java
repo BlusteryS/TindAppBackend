@@ -198,7 +198,6 @@ public class AuthHandler implements Handler<RoutingContext> {
             newUser.setOnline(true);
             newUser.setLastSeenDateTime(java.time.LocalDateTime.now());
             newUser.setBio("");
-            newUser.setGender("other"); // По умолчанию
             newUser.setVisible(true);
             newUser.setBalance(AppConfig.INITIAL_USER_BALANCE); // Стартовый баланс
             newUser.setCreatedAtDateTime(java.time.LocalDateTime.now());
@@ -264,7 +263,7 @@ public class AuthHandler implements Handler<RoutingContext> {
             vkUserData.getString("first_name"),
             vkUserData.getString("vk_first_name")
         );
-        if (firstName != null) {
+        if (firstName != null && isBlank(user.getFirstName())) {
             user.setFirstName(firstName.trim());
         }
 
@@ -272,7 +271,7 @@ public class AuthHandler implements Handler<RoutingContext> {
             vkUserData.getString("last_name"),
             vkUserData.getString("vk_last_name")
         );
-        if (lastName != null) {
+        if (lastName != null && isBlank(user.getLastName())) {
             user.setLastName(lastName.trim());
         }
 
@@ -281,7 +280,7 @@ public class AuthHandler implements Handler<RoutingContext> {
             vkUserData.getString("photo_100"),
             vkUserData.getString("vk_profile_photo")
         );
-        if (avatarUrl != null) {
+        if (avatarUrl != null && isBlank(user.getAvatarUrl())) {
             user.setAvatarUrl(avatarUrl.trim());
         }
 
@@ -289,7 +288,7 @@ public class AuthHandler implements Handler<RoutingContext> {
         if (sex == null) {
             sex = vkUserData.getInteger("vk_sex");
         }
-        if (sex != null) {
+        if (sex != null && user.getGenderEnum() == null) {
             switch (sex) {
                 case 1:
                     user.setGender("female");
@@ -317,6 +316,10 @@ public class AuthHandler implements Handler<RoutingContext> {
             }
         }
         return null;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     private String decode(String value) {
