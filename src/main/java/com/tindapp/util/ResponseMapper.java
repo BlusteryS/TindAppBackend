@@ -52,7 +52,7 @@ public final class ResponseMapper {
                 .put("isActive", false)
                 .put("type", null);
         }
-        response.put("subscription", subscription);
+        response.put("subscription", subscription.getMap());
 
         JsonObject settings = new JsonObject();
         if (user.getSettings() != null) {
@@ -66,7 +66,7 @@ public final class ResponseMapper {
                 .put("showCity", true)
                 .put("allowMessages", true);
         }
-        response.put("settings", settings);
+        response.put("settings", settings.getMap());
 
         return response;
     }

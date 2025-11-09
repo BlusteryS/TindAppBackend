@@ -21,11 +21,19 @@ public class Subscription {
     private Double price;
     private PaymentMethod paymentMethod;
     private Boolean autoRenew;
+    private String planId;
+    private String vkSubscriptionId;
+    private Integer priceInVotes;
+    private LocalDateTime nextBillDate;
+    private Boolean pendingCancel;
+    private String cancelReason;
+    private Integer appOrderId;
 
     public Subscription() {
         this.status = SubscriptionStatus.ACTIVE;
         this.autoRenew = false;
         this.startDate = LocalDateTime.now();
+        this.pendingCancel = false;
     }
 
     public Subscription(String id, Long userId, SubscriptionType type, Double price, PaymentMethod paymentMethod) {
@@ -73,22 +81,47 @@ public class Subscription {
     public PaymentMethod getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
 
+    public String getPlanId() { return planId; }
+    public void setPlanId(String planId) { this.planId = planId; }
+
+    public String getVkSubscriptionId() { return vkSubscriptionId; }
+    public void setVkSubscriptionId(String vkSubscriptionId) { this.vkSubscriptionId = vkSubscriptionId; }
+
+    public Integer getPriceInVotes() { return priceInVotes; }
+    public void setPriceInVotes(Integer priceInVotes) { this.priceInVotes = priceInVotes; }
+
+    public LocalDateTime getNextBillDate() { return nextBillDate; }
+    public void setNextBillDate(LocalDateTime nextBillDate) { this.nextBillDate = nextBillDate; }
+
+    public Boolean getPendingCancel() { return pendingCancel; }
+    public void setPendingCancel(Boolean pendingCancel) { this.pendingCancel = pendingCancel; }
+
+    public String getCancelReason() { return cancelReason; }
+    public void setCancelReason(String cancelReason) { this.cancelReason = cancelReason; }
+
+    public Integer getAppOrderId() { return appOrderId; }
+    public void setAppOrderId(Integer appOrderId) { this.appOrderId = appOrderId; }
+
     public Boolean getAutoRenew() { return autoRenew; }
     public void setAutoRenew(Boolean autoRenew) { this.autoRenew = autoRenew; }
 
     public boolean isActive() {
-        return status == SubscriptionStatus.ACTIVE &&
-               endDate != null &&
-               endDate.isAfter(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        boolean notExpired = endDate == null || endDate.isAfter(now);
+        return status == SubscriptionStatus.ACTIVE && notExpired;
     }
 
     public void cancel() {
         this.status = SubscriptionStatus.CANCELLED;
         this.autoRenew = false;
+        this.pendingCancel = false;
+        this.endDate = LocalDateTime.now();
+        this.nextBillDate = null;
     }
 
     public void expire() {
         this.status = SubscriptionStatus.EXPIRED;
         this.autoRenew = false;
+        this.pendingCancel = false;
     }
 }

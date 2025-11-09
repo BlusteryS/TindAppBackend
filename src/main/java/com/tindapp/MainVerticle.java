@@ -5,6 +5,7 @@ import com.tindapp.auth.VKAuthHandler;
 import com.tindapp.config.AppConfig;
 import com.tindapp.handler.ApiHandler;
 import com.tindapp.handler.AuthHandler;
+import com.tindapp.handler.VkPaymentHandler;
 import com.tindapp.handler.WebSocketHandler;
 import com.tindapp.repository.BlackListRepository;
 import com.tindapp.repository.ChatRepository;
@@ -59,6 +60,7 @@ public class MainVerticle extends AbstractVerticle {
     private LocationService locationService;
     private WebSocketHandler webSocketHandler;
     private ApiHandler apiHandler;
+    private VkPaymentHandler vkPaymentHandler;
     private VKAuthHandler vkAuthHandler;
     private TokenAuthHandler tokenAuthHandler;
     private AuthHandler authHandler;
@@ -100,7 +102,7 @@ public class MainVerticle extends AbstractVerticle {
         chatService = new ChatService(chatRepository, userRepository, userService);
         messageService = new MessageService(messageRepository, chatRepository);
         notificationService = new NotificationService(notificationRepository);
-        subscriptionService = new SubscriptionService(subscriptionRepository);
+        subscriptionService = new SubscriptionService(subscriptionRepository, userRepository);
         reportService = new ReportService(reportRepository, userRepository);
         blackListService = new BlackListService(blackListRepository, userRepository);
         tokenService = new TokenService(userService);
@@ -121,14 +123,35 @@ public class MainVerticle extends AbstractVerticle {
             webSocketHandler,
             locationService
         );
+        vkPaymentHandler = new VkPaymentHandler(
+            config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET),
+            subscriptionService,
+            userService
+        );
     }
 
     private Router createRouter() {
         Router router = Router.router(vertx);
 
-        CorsHandler corsHandler = CorsHandler.create()
-            .addOrigin("*")
-            .allowCredentials(true)
+        CorsHandler corsHandler = CorsHandler.create();
+        boolean wildcardOrigin = false;
+        boolean credentialsAllowed = false;
+        for (String origin : AppConfig.ALLOWED_ORIGINS) {
+            if (origin == null || origin.isBlank()) {
+                continue;
+            }
+            if ("*".equals(origin)) {
+                corsHandler.addOrigin("*");
+                wildcardOrigin = true;
+            } else {
+                corsHandler.addOrigin(origin);
+                credentialsAllowed = true;
+            }
+        }
+        if (!wildcardOrigin && credentialsAllowed) {
+            corsHandler.allowCredentials(true);
+        }
+        corsHandler
             .allowedMethod(io.vertx.core.http.HttpMethod.GET)
             .allowedMethod(io.vertx.core.http.HttpMethod.POST)
             .allowedMethod(io.vertx.core.http.HttpMethod.PUT)
@@ -160,6 +183,8 @@ public class MainVerticle extends AbstractVerticle {
         router.get("/uploads/*").handler(StaticHandler.create(AppConfig.UPLOAD_DIR)
             .setCachingEnabled(true)
             .setIncludeHidden(false));
+
+        router.post("/buy").handler(vkPaymentHandler);
 
         setupApiRoutes(router);
 
@@ -221,6 +246,7 @@ public class MainVerticle extends AbstractVerticle {
         apiRouter.delete("/blacklist/:userId").handler(apiHandler::unblockUser);
         apiRouter.get("/blacklist").handler(apiHandler::getBlacklist);
 
+        apiRouter.get("/subscriptions/plans").handler(apiHandler::getSubscriptionPlans);
         apiRouter.get("/subscriptions/active").handler(apiHandler::getActiveSubscription);
         apiRouter.post("/subscriptions/purchase").handler(apiHandler::purchaseSubscription);
         apiRouter.post("/subscriptions/cancel").handler(apiHandler::cancelSubscription);

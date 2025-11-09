@@ -675,6 +675,16 @@ public class ApiHandler {
         }
     }
 
+    public void getSubscriptionPlans(RoutingContext ctx) {
+        try {
+            List<SubscriptionService.SubscriptionPlan> plans = subscriptionService.getAvailablePlans();
+            sendSuccess(ctx, plans);
+        } catch (Exception e) {
+            logger.error("Error getting subscription plans", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
+    }
+
     public void getActiveSubscription(RoutingContext ctx) {
         try {
             Long userId = getUserIdFromContext(ctx);
@@ -892,13 +902,33 @@ public class ApiHandler {
         try {
             JsonObject response;
             if (data != null) {
-                JsonObject parsedData;
+                Object parsedData;
 
-                if (data instanceof JsonObject) {
-                    parsedData = (JsonObject) data;
+                if (data instanceof JsonObject || data instanceof JsonArray) {
+                    parsedData = data;
+                } else if (data instanceof Iterable) {
+                    JsonArray array = new JsonArray();
+                    for (Object item : (Iterable<?>) data) {
+                        array.add(item);
+                    }
+                    parsedData = array;
+                } else if (data.getClass().isArray()) {
+                    JsonArray array = new JsonArray();
+                    int length = java.lang.reflect.Array.getLength(data);
+                    for (int i = 0; i < length; i++) {
+                        array.add(java.lang.reflect.Array.get(data, i));
+                    }
+                    parsedData = array;
                 } else {
                     String dataJson = objectMapper.writeValueAsString(data);
-                    parsedData = new JsonObject(dataJson);
+                    String trimmed = dataJson.trim();
+                    if (trimmed.startsWith("[")) {
+                        parsedData = new JsonArray(trimmed);
+                    } else if (trimmed.startsWith("{")) {
+                        parsedData = new JsonObject(trimmed);
+                    } else {
+                        parsedData = data;
+                    }
                 }
 
                 response = new JsonObject()

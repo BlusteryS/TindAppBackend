@@ -112,6 +112,18 @@ public class InMemorySubscriptionRepository implements SubscriptionRepository {
     }
 
     @Override
+    public Optional<Subscription> findByVkSubscriptionId(String vkSubscriptionId) {
+        return subscriptions.values().stream()
+                .filter(sub -> vkSubscriptionId != null && vkSubscriptionId.equals(sub.getVkSubscriptionId()))
+                .findFirst();
+    }
+
+    @Override
+    public void cancelByVkSubscriptionId(String vkSubscriptionId) {
+        findByVkSubscriptionId(vkSubscriptionId).ifPresent(Subscription::cancel);
+    }
+
+    @Override
     public long countActiveSubscriptions() {
         return subscriptions.values().stream()
                 .filter(Subscription::isActive)

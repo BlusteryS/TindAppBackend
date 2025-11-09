@@ -23,5 +23,9 @@ public interface SubscriptionRepository extends Repository<Subscription, String>
 
     boolean hasActiveSubscription(Long userId);
 
+    Optional<Subscription> findByVkSubscriptionId(String vkSubscriptionId);
+
+    void cancelByVkSubscriptionId(String vkSubscriptionId);
+
     long countActiveSubscriptions();
 }
