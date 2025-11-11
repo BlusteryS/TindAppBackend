@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ChatService {
@@ -23,10 +24,12 @@ public class ChatService {
     private final ChatRepository chatRepository;
     private final UserRepository userRepository;
     private final CompanionQueue companionQueue;
+    private final UserService userService;
 
     public ChatService(ChatRepository chatRepository, UserRepository userRepository, UserService userService) {
         this.chatRepository = chatRepository;
         this.userRepository = userRepository;
+        this.userService = userService;
         this.companionQueue = new CompanionQueue(userService, chatRepository);
     }
 
@@ -147,6 +150,39 @@ public class ChatService {
 
         chat.setIsActive(false);
         return chatRepository.save(chat);
+    }
+
+    public Chat startProfileChat(Long initiatorId, Long targetId) {
+        if (initiatorId.equals(targetId)) {
+            throw new RuntimeException("Нельзя начать чат с самим собой");
+        }
+
+        User initiator = userRepository.findById(initiatorId)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+        User target = userRepository.findById(targetId)
+            .orElseThrow(() -> new RuntimeException("Target user not found"));
+
+        if (!Boolean.TRUE.equals(target.getIsVisible())) {
+            throw new RuntimeException("Target user is not available");
+        }
+        if (target.getSettings() != null && Boolean.FALSE.equals(target.getSettings().getAllowMessages())) {
+            throw new RuntimeException("Target user disabled messages");
+        }
+
+        Optional<Chat> existing = chatRepository.findByParticipants(initiatorId, targetId, Chat.ChatType.REGULAR);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        int cost = target.getProfileCost() != null ? target.getProfileCost() : AppConfig.ANONYMOUS_CHAT_CREATION_COST;
+        if (cost > 0) {
+            userService.deductCoins(initiatorId, cost);
+        }
+
+        Chat chat = new Chat(UUID.randomUUID().toString(), Chat.ChatType.REGULAR, initiatorId, targetId);
+        chat.getSettings().setCost(cost);
+        chatRepository.save(chat);
+        return chat;
     }
 
     public int getActiveAnonymousChatsCount() {

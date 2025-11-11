@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import com.tindapp.config.AppConfig;
 
 import java.time.LocalDateTime;
 
@@ -31,6 +32,8 @@ public class User {
     private UserSettings settings;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private Integer profileCost;
+    private Boolean isAdmin;
 
     public User() {
         this.isVerified = false;
@@ -44,6 +47,8 @@ public class User {
         this.firstName = "";
         this.lastName = "";
         this.avatarUrl = "";
+        this.profileCost = AppConfig.ANONYMOUS_CHAT_CREATION_COST;
+        this.isAdmin = false;
     }
 
     public User(Long vkId) {
@@ -158,6 +163,13 @@ public class User {
 
     public UserSettings getSettings() { return settings; }
     public void setSettings(UserSettings settings) { this.settings = settings; }
+
+    public Integer getProfileCost() { return profileCost; }
+    public void setProfileCost(Integer profileCost) { this.profileCost = profileCost; }
+
+    public Boolean getIsAdmin() { return isAdmin; }
+    public void setIsAdmin(Boolean isAdmin) { this.isAdmin = isAdmin; }
+    public boolean isAdmin() { return isAdmin != null ? isAdmin : false; }
 
     public LocalDateTime getCreatedAtDateTime() { return createdAt; }
     public void setCreatedAtDateTime(LocalDateTime createdAt) { this.createdAt = createdAt; }

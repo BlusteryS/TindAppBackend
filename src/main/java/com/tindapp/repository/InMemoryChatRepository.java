@@ -109,6 +109,16 @@ public class InMemoryChatRepository implements ChatRepository {
     }
 
     @Override
+    public Optional<Chat> findByParticipants(Long user1Id, Long user2Id, Chat.ChatType type) {
+        return chats.values().stream()
+                .filter(chat -> chat.getType() == type)
+                .filter(chat -> Boolean.TRUE.equals(chat.getIsActive()))
+                .filter(chat -> (chat.getUser1Id().equals(user1Id) && chat.getUser2Id().equals(user2Id)) ||
+                        (chat.getUser1Id().equals(user2Id) && chat.getUser2Id().equals(user1Id)))
+                .findFirst();
+    }
+
+    @Override
     public void updateLastMessage(String chatId, String messageId) {
         Chat chat = chats.get(chatId);
         if (chat != null) {

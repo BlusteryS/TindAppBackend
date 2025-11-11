@@ -26,6 +26,7 @@ import com.tindapp.service.ChatService;
 import com.tindapp.service.LocationService;
 import com.tindapp.service.MessageService;
 import com.tindapp.service.NotificationService;
+import com.tindapp.service.ProfileService;
 import com.tindapp.service.ReportService;
 import com.tindapp.service.SubscriptionService;
 import com.tindapp.service.TokenService;
@@ -58,6 +59,7 @@ public class MainVerticle extends AbstractVerticle {
     private BlackListService blackListService;
     private TokenService tokenService;
     private LocationService locationService;
+    private ProfileService profileService;
     private WebSocketHandler webSocketHandler;
     private ApiHandler apiHandler;
     private VkPaymentHandler vkPaymentHandler;
@@ -99,6 +101,7 @@ public class MainVerticle extends AbstractVerticle {
         BlackListRepository blackListRepository = new InMemoryBlackListRepository();
 
         userService = new UserService(userRepository);
+        profileService = new ProfileService(userRepository);
         chatService = new ChatService(chatRepository, userRepository, userService);
         messageService = new MessageService(messageRepository, chatRepository);
         notificationService = new NotificationService(notificationRepository);
@@ -111,7 +114,7 @@ public class MainVerticle extends AbstractVerticle {
         tokenAuthHandler = new TokenAuthHandler(tokenService);
         authHandler = new AuthHandler(config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET), userService, tokenService);
         locationService = new LocationService();
-        webSocketHandler = new WebSocketHandler(vertx, chatService, messageService, userService, tokenService);
+        webSocketHandler = new WebSocketHandler(vertx, chatService, messageService, userService, tokenService, profileService);
         apiHandler = new ApiHandler(
             userService,
             chatService,
@@ -121,7 +124,8 @@ public class MainVerticle extends AbstractVerticle {
             reportService,
             blackListService,
             webSocketHandler,
-            locationService
+            locationService,
+            profileService
         );
         vkPaymentHandler = new VkPaymentHandler(
             config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET),
@@ -225,6 +229,8 @@ public class MainVerticle extends AbstractVerticle {
         apiRouter.get("/users/me/balance").handler(apiHandler::getBalance);
         apiRouter.post("/users/me/purchase-coins").handler(apiHandler::purchaseCoins);
         apiRouter.get("/users/me/stats").handler(apiHandler::getUserStats);
+        apiRouter.get("/profiles").handler(apiHandler::getProfiles);
+        apiRouter.post("/profiles/:profileId/chat").handler(apiHandler::startProfileChat);
 
         // Chats - specific routes before parameterized ones
         apiRouter.get("/chats/cost").handler(apiHandler::getChatCost);

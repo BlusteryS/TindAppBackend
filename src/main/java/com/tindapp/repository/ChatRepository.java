@@ -24,4 +24,6 @@ public interface ChatRepository extends Repository<Chat, String> {
     boolean isParticipant(String chatId, Long userId);
 
     List<Chat> findByType(Chat.ChatType type);
+
+    Optional<Chat> findByParticipants(Long user1Id, Long user2Id, Chat.ChatType type);
 }

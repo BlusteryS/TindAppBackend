@@ -30,10 +30,12 @@ public final class ResponseMapper {
             .put("city", user.getCity())
             .put("isVerified", user.isVerified())
             .put("isOnline", user.isOnline())
+            .put("isAdmin", user.isAdmin())
             .put("bio", user.getBio())
             .put("gender", user.getGender())
             .put("isVisible", user.isVisible())
-            .put("balance", user.getBalance());
+            .put("balance", user.getBalance())
+            .put("profileCost", user.getProfileCost());
 
         response.put("lastSeen", DateTimeUtils.formatToIso(user.getLastSeenDateTime()));
         response.put("createdAt", DateTimeUtils.formatToIso(user.getCreatedAtDateTime()));

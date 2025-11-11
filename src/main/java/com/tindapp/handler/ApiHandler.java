@@ -16,6 +16,7 @@ import com.tindapp.service.ChatService;
 import com.tindapp.service.LocationService;
 import com.tindapp.service.MessageService;
 import com.tindapp.service.NotificationService;
+import com.tindapp.service.ProfileService;
 import com.tindapp.service.ReportService;
 import com.tindapp.service.SubscriptionService;
 import com.tindapp.service.UserService;
@@ -75,11 +76,13 @@ public class ApiHandler {
     private final BlackListService blackListService;
     private final WebSocketHandler webSocketHandler;
     private final LocationService locationService;
+    private final ProfileService profileService;
 
     public ApiHandler(UserService userService, ChatService chatService, MessageService messageService,
                      NotificationService notificationService, SubscriptionService subscriptionService,
                      ReportService reportService, BlackListService blackListService,
-                     WebSocketHandler webSocketHandler, LocationService locationService) {
+                     WebSocketHandler webSocketHandler, LocationService locationService,
+                     ProfileService profileService) {
         this.userService = userService;
         this.chatService = chatService;
         this.messageService = messageService;
@@ -89,6 +92,7 @@ public class ApiHandler {
         this.blackListService = blackListService;
         this.webSocketHandler = webSocketHandler;
         this.locationService = locationService;
+        this.profileService = profileService;
 
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -153,6 +157,33 @@ public class ApiHandler {
         }
     }
 
+    public void getProfiles(RoutingContext ctx) {
+        try {
+            Long userId = getUserIdFromContext(ctx);
+            int page = parseIntParam(ctx.request().getParam("page"), 1);
+            int limit = parseIntParam(ctx.request().getParam("limit"), 12);
+
+            User viewer = userService.getUserById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+            ProfileService.ProfileFilters filters = profileService.parseFilters(ctx.request().params(), viewer);
+            ProfileService.ProfileSearchResult result = profileService.searchProfiles(viewer, filters, page, limit);
+
+            sendPaginatedSuccess(ctx, result.getProfiles(), page, limit, result.getTotal());
+        } catch (NumberFormatException e) {
+            sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Invalid pagination parameters");
+        } catch (RuntimeException e) {
+            if (e.getMessage().contains("User not found")) {
+                sendError(ctx, 404, ErrorCodes.NOT_FOUND, e.getMessage());
+            } else {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, e.getMessage());
+            }
+        } catch (Exception e) {
+            logger.error("Error getting profiles", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
+    }
+
     public void getCurrentUser(RoutingContext ctx) {
         try {
             Long userId = getUserIdFromContext(ctx);
@@ -200,6 +231,7 @@ public class ApiHandler {
             Integer age = body.getInteger("age");
             String birthDate = trimToNull(body.getString("birthDate"));
             Boolean isVisible = body.getBoolean("isVisible");
+            Integer profileCost = body.getInteger("profileCost");
 
             User.UserSettings settings = null;
             JsonObject settingsJson = body.getJsonObject("settings");
@@ -228,9 +260,11 @@ public class ApiHandler {
                 age,
                 birthDate,
                 isVisible,
-                settings
+                settings,
+                profileCost
             );
             sendSuccess(ctx, ResponseMapper.toUserResponse(updatedUser).getMap());
+            webSocketHandler.notifyProfileUpdated(updatedUser);
         } catch (Exception e) {
             logger.error("Error updating profile", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, e.getMessage());
@@ -323,6 +357,37 @@ public class ApiHandler {
             sendSuccess(ctx, response);
         } catch (Exception e) {
             logger.error("Error getting chat cost", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
+    }
+
+    public void startProfileChat(RoutingContext ctx) {
+        try {
+            Long userId = getUserIdFromContext(ctx);
+            Long profileId = Long.valueOf(ctx.pathParam("profileId"));
+
+            Chat chat = chatService.startProfileChat(userId, profileId);
+            JsonObject response = new JsonObject()
+                .put("chat", ResponseMapper.toChatResponse(chat).getMap())
+                .put("cost", chat.getSettings() != null ? chat.getSettings().getCost() : 0);
+
+            userService.getUserById(userId).ifPresent(user -> response.put("balance", user.getBalance()));
+
+            sendSuccess(ctx, response);
+        } catch (NumberFormatException e) {
+            sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Invalid profileId");
+        } catch (RuntimeException e) {
+            String message = e.getMessage() != null ? e.getMessage() : "Unable to start chat";
+            String lower = message.toLowerCase();
+            if (lower.contains("insufficient")) {
+                sendError(ctx, 402, ErrorCodes.INSUFFICIENT_BALANCE, message);
+            } else if (lower.contains("not found")) {
+                sendError(ctx, 404, ErrorCodes.NOT_FOUND, message);
+            } else {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, message);
+            }
+        } catch (Exception e) {
+            logger.error("Error starting profile chat", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
@@ -822,6 +887,17 @@ public class ApiHandler {
             throw new RuntimeException("User ID not found in context");
         }
         return userId;
+    }
+
+    private int parseIntParam(String value, int defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw e;
+        }
     }
 
     private void deleteTempFile(FileUpload upload) {

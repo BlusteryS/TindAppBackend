@@ -9,12 +9,16 @@ import org.slf4j.LoggerFactory;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public class UserService {
 
     private static final Logger logger = LoggerFactory.getLogger(UserService.class);
 
     private final UserRepository userRepository;
+    private static final Set<Long> ADMIN_VK_IDS = java.util.Arrays.stream(System.getenv("ADMIN_VK_IDS").split(","))
+        .map(Long::parseLong)
+        .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     public UserService(UserRepository userRepository) {
         this.userRepository = userRepository;
@@ -26,10 +30,14 @@ public class UserService {
         if (existingUser.isPresent()) {
             User user = existingUser.get();
             user.updateLastSeen();
+            ensureProfileCost(user);
+            applySpecialPrivileges(user);
             return userRepository.save(user);
         } else {
             User newUser = new User(vkId);
             newUser.setBalance(AppConfig.INITIAL_USER_BALANCE); // начальный баланс
+            ensureProfileCost(newUser);
+            applySpecialPrivileges(newUser);
             return userRepository.save(newUser);
         }
     }
@@ -40,9 +48,13 @@ public class UserService {
         if (existingUser.isPresent()) {
             User user = existingUser.get();
             user.updateLastSeen();
+            ensureProfileCost(user);
+            applySpecialPrivileges(user);
             return userRepository.save(user);
         } else {
             User newUser = new User(vkId);
+            ensureProfileCost(newUser);
+            applySpecialPrivileges(newUser);
             return userRepository.save(newUser);
         }
     }
@@ -58,11 +70,14 @@ public class UserService {
     public User createUser(User user) {
         user.setCreatedAtDateTime(LocalDateTime.now());
         user.setUpdatedAtDateTime(LocalDateTime.now());
+        ensureProfileCost(user);
+        applySpecialPrivileges(user);
         return userRepository.save(user);
     }
 
     public User updateUser(User user) {
         user.setUpdatedAtDateTime(LocalDateTime.now());
+        applySpecialPrivileges(user);
         return userRepository.save(user);
     }
 
@@ -78,7 +93,8 @@ public class UserService {
         Integer age,
         String birthDate,
         Boolean isVisible,
-        User.UserSettings settings
+        User.UserSettings settings,
+        Integer profileCost
     ) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
@@ -113,7 +129,14 @@ public class UserService {
         if (settings != null) {
             user.setSettings(settings);
         }
+        if (profileCost != null) {
+            int normalized = Math.max(0, profileCost);
+            user.setProfileCost(normalized);
+        } else {
+            ensureProfileCost(user);
+        }
 
+        applySpecialPrivileges(user);
         return userRepository.save(user);
     }
 
@@ -159,6 +182,28 @@ public class UserService {
 
     public void updateOnlineStatus(Long userId, Boolean isOnline) {
         userRepository.updateOnlineStatus(userId, isOnline);
+    }
+
+    private void ensureProfileCost(User user) {
+        if (user.getProfileCost() == null || user.getProfileCost() < 0) {
+            user.setProfileCost(AppConfig.ANONYMOUS_CHAT_CREATION_COST);
+        }
+    }
+
+    private void applySpecialPrivileges(User user) {
+        if (user == null || user.getVkId() == null) {
+            return;
+        }
+
+        if (ADMIN_VK_IDS.contains(user.getVkId())) {
+            user.setIsVerified(true);
+            user.setIsAdmin(true);
+            if (user.getBalance() == null || user.getBalance() < 1000) {
+                user.setBalance(1000);
+            }
+        } else if (user.getIsAdmin() == null) {
+            user.setIsAdmin(false);
+        }
     }
 
     public List<User> getOnlineUsers() {

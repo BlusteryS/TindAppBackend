@@ -8,6 +8,7 @@ import com.tindapp.model.Message;
 import com.tindapp.model.User;
 import com.tindapp.service.ChatService;
 import com.tindapp.service.MessageService;
+import com.tindapp.service.ProfileService;
 import com.tindapp.service.TokenService;
 import com.tindapp.service.UserService;
 import com.tindapp.util.ResponseMapper;
@@ -34,18 +35,22 @@ public class WebSocketHandler {
     private final MessageService messageService;
     private final UserService userService;
     private final TokenService tokenService;
+    private final ProfileService profileService;
 
     private final Map<Long, ServerWebSocket> userConnections = new ConcurrentHashMap<>();
     private final Map<Integer, Long> socketToUser = new ConcurrentHashMap<>();
     private final Map<Long, String> userChats = new ConcurrentHashMap<>(); // userId -> active chatId
     private final Map<Long, Boolean> typingStatus = new ConcurrentHashMap<>();
+    private final Map<Long, ProfileSubscription> profileSubscriptions = new ConcurrentHashMap<>();
 
-    public WebSocketHandler(Vertx vertx, ChatService chatService, MessageService messageService, UserService userService, TokenService tokenService) {
+    public WebSocketHandler(Vertx vertx, ChatService chatService, MessageService messageService, UserService userService,
+                            TokenService tokenService, ProfileService profileService) {
         this.vertx = vertx;
         this.chatService = chatService;
         this.messageService = messageService;
         this.userService = userService;
         this.tokenService = tokenService;
+        this.profileService = profileService;
 
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -90,6 +95,7 @@ public class WebSocketHandler {
         socketToUser.put(socketKey, user.getId());
 
         userService.updateOnlineStatus(user.getId(), true);
+        notifyProfileUpdated(user);
 
         logger.info("WebSocket connection established for user: id={}, vkId={}", user.getId(), user.getVkId());
 
@@ -152,6 +158,12 @@ public class WebSocketHandler {
                 break;
             case "online_status":
                 updateOnlineStatus(data);
+                break;
+            case "profiles_subscribe":
+                handleProfilesSubscribe(webSocket, data);
+                break;
+            case "profiles_unsubscribe":
+                handleProfilesUnsubscribe(webSocket);
                 break;
             default:
                 logger.warn("Unknown WebSocket message type: {}", type);
@@ -463,8 +475,10 @@ public class WebSocketHandler {
         if (userId != null) {
             userChats.remove(userId);
             typingStatus.remove(userId);
+            profileSubscriptions.remove(userId);
 
             userService.updateOnlineStatus(userId, false);
+            notifyProfileUpdated(userId);
 
             logger.info("User {} disconnected from WebSocket", userId);
         } else {
@@ -477,6 +491,88 @@ public class WebSocketHandler {
 
     private Long getUserId(ServerWebSocket webSocket) {
         return socketToUser.get(webSocket.hashCode());
+    }
+
+    private void handleProfilesSubscribe(ServerWebSocket webSocket, JsonObject data) {
+        try {
+            Long userId = getUserId(webSocket);
+            if (userId == null) {
+                sendError(webSocket, "Not authenticated");
+                return;
+            }
+
+            User viewer = userService.getUserById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+            JsonObject filtersJson = data.getJsonObject("filters", new JsonObject());
+            ProfileService.ProfileFilters filters = profileService.parseFilters(filtersJson, viewer);
+            profileSubscriptions.put(userId, new ProfileSubscription(userId, filters, webSocket));
+
+            JsonObject payload = new JsonObject()
+                .put("filters", JsonObject.mapFrom(filters));
+            sendMessage(webSocket, "profiles_subscribed", payload);
+        } catch (Exception e) {
+            logger.error("Error subscribing to profiles", e);
+            sendError(webSocket, "Failed to subscribe to profiles");
+        }
+    }
+
+    private void handleProfilesUnsubscribe(ServerWebSocket webSocket) {
+        Long userId = getUserId(webSocket);
+        if (userId == null) {
+            sendError(webSocket, "Not authenticated");
+            return;
+        }
+        profileSubscriptions.remove(userId);
+        sendMessage(webSocket, "profiles_unsubscribed", new JsonObject().put("success", true));
+    }
+
+    public void notifyProfileUpdated(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        userService.getUserById(userId).ifPresent(this::notifyProfileUpdated);
+    }
+
+    public void notifyProfileUpdated(User updatedUser) {
+        if (updatedUser == null) {
+            return;
+        }
+
+        profileSubscriptions.forEach((subscriberId, subscription) -> {
+            try {
+                User viewer = userService.getUserById(subscriberId).orElse(null);
+                if (viewer == null) {
+                    return;
+                }
+
+                boolean matches = profileService.matchesFilters(viewer, updatedUser, subscription.filters);
+                JsonObject payload = new JsonObject()
+                    .put("profileId", updatedUser.getId())
+                    .put("isMatch", matches);
+
+                if (matches) {
+                    ProfileService.ProfileCard card = profileService.toProfileCard(viewer, updatedUser);
+                    payload.put("profile", JsonObject.mapFrom(card));
+                }
+
+                sendMessage(subscription.webSocket, "profiles_changed", payload);
+            } catch (Exception e) {
+                logger.error("Error notifying profile update", e);
+            }
+        });
+    }
+
+    private static class ProfileSubscription {
+        private final Long userId;
+        private final ProfileService.ProfileFilters filters;
+        private final ServerWebSocket webSocket;
+
+        private ProfileSubscription(Long userId, ProfileService.ProfileFilters filters, ServerWebSocket webSocket) {
+            this.userId = userId;
+            this.filters = filters;
+            this.webSocket = webSocket;
+        }
     }
 
     private List<Message.MessageAttachment> parseAttachments(io.vertx.core.json.JsonArray attachmentsJson) {
