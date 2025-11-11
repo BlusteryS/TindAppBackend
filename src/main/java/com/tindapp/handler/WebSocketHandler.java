@@ -14,6 +14,7 @@ import com.tindapp.service.UserService;
 import com.tindapp.util.ResponseMapper;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.ServerWebSocket;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -202,6 +203,16 @@ public class WebSocketHandler {
                 return;
             }
 
+            Optional<com.tindapp.model.Chat> chatOpt = chatService.getChatById(chatId);
+            if (chatOpt.isEmpty()) {
+                sendError(webSocket, "Chat not found");
+                return;
+            }
+
+            com.tindapp.model.Chat chat = chatOpt.get();
+            Long companionId = chat.getCompanionId(userId);
+            boolean companionInChat = isUserActiveInChat(companionId, chatId);
+
             String previousChatId = userChats.get(userId);
             if (previousChatId != null && !previousChatId.equals(chatId)) {
                 handleLeaveChat(webSocket, new JsonObject().put("chatId", previousChatId));
@@ -210,9 +221,18 @@ public class WebSocketHandler {
             userChats.put(userId, chatId);
             logger.info("User {} joined chat {}", userId, chatId);
 
+            JsonArray activeParticipants = new JsonArray().add(userId);
+            if (companionInChat && companionId != null) {
+                activeParticipants.add(companionId);
+            }
+
             JsonObject joinData = new JsonObject()
                 .put("chatId", chatId)
-                .put("joined", true);
+                .put("joined", true)
+                .put("userId", userId)
+                .put("companionId", companionId)
+                .put("companionInChat", companionInChat)
+                .put("activeParticipantIds", activeParticipants);
             sendMessage(webSocket, "chat_joined", joinData);
 
             notifyOtherParticipants(chatId, userId, "user_joined", new JsonObject()
@@ -473,7 +493,12 @@ public class WebSocketHandler {
         socketToUser.remove(socketKey);
 
         if (userId != null) {
-            userChats.remove(userId);
+            String activeChatId = userChats.remove(userId);
+            if (activeChatId != null) {
+                notifyOtherParticipants(activeChatId, userId, "user_left", new JsonObject()
+                    .put("userId", userId)
+                    .put("chatId", activeChatId));
+            }
             typingStatus.remove(userId);
             profileSubscriptions.remove(userId);
 
@@ -646,6 +671,14 @@ public class WebSocketHandler {
         } catch (Exception e) {
             logger.error("Error notifying other participants", e);
         }
+    }
+
+    private boolean isUserActiveInChat(Long userId, String chatId) {
+        if (userId == null || chatId == null) {
+            return false;
+        }
+        String activeChatId = userChats.get(userId);
+        return chatId.equals(activeChatId);
     }
 
     private void sendMessage(ServerWebSocket webSocket, String type, JsonObject data) {
