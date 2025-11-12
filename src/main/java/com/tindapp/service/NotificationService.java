@@ -155,12 +155,12 @@ public class NotificationService {
             return;
         }
 
-        String title = "Подписка истекает";
-        String message = "Ваша подписка истекает через 24 часа";
+        String title = "Продлите подписку";
+        String message = "Подписка закончилась, автопродление отключено. Продлите её, чтобы сохранить преимущества.";
 
         createNotification(userId, Notification.NotificationType.SUBSCRIPTION_EXPIRY, title, message);
         sendCommunityNotification(user, title,
-            "Подписка TindApp заканчивается через 24 часа. Продлите ее, чтобы не потерять преимущества.");
+            "Подписка TindApp закончилась, потому что автопродление отключено. Возобновите её, чтобы не потерять преимущества.");
     }
 
     public void sendSystemNotification(Long userId, String title, String message) {

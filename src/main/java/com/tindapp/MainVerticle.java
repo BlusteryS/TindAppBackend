@@ -111,7 +111,7 @@ public class MainVerticle extends AbstractVerticle {
         notificationService = new NotificationService(notificationRepository, userService, vkGroupNotificationService);
         chatService = new ChatService(chatRepository, userRepository, userService, notificationService);
         messageService = new MessageService(messageRepository, chatRepository);
-        subscriptionService = new SubscriptionService(subscriptionRepository, userRepository);
+        subscriptionService = new SubscriptionService(subscriptionRepository, userRepository, notificationService);
         reportService = new ReportService(reportRepository, userRepository);
         blackListService = new BlackListService(blackListRepository, userRepository);
         tokenService = new TokenService(userService);

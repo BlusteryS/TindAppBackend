@@ -22,11 +22,14 @@ public class SubscriptionService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
     private final List<SubscriptionPlan> availablePlans;
 
-    public SubscriptionService(SubscriptionRepository subscriptionRepository, UserRepository userRepository) {
+    public SubscriptionService(SubscriptionRepository subscriptionRepository, UserRepository userRepository,
+                               NotificationService notificationService) {
         this.subscriptionRepository = subscriptionRepository;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
         this.availablePlans = Collections.unmodifiableList(buildDefaultPlans());
     }
 
@@ -231,6 +234,7 @@ public class SubscriptionService {
             } else {
                 subscriptionRepository.expireById(subscription.getId());
                 updateUserSubscriptionState(subscription.getUserId(), subscription);
+                notificationService.sendSubscriptionExpiryNotification(subscription.getUserId());
             }
         }
     }
