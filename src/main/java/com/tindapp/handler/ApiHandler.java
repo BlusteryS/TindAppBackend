@@ -190,7 +190,9 @@ public class ApiHandler {
             Optional<User> user = userService.getUserById(userId);
 
             if (user.isPresent()) {
-                sendSuccess(ctx, ResponseMapper.toUserResponse(user.get()).getMap());
+                JsonObject payload = ResponseMapper.toUserResponse(user.get());
+                payload.put("isAnonymousForViewer", false);
+                sendSuccess(ctx, payload.getMap());
             } else {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
             }
@@ -203,10 +205,23 @@ public class ApiHandler {
     public void getUser(RoutingContext ctx) {
         try {
             Long userId = Long.valueOf(ctx.pathParam("userId"));
+            Long viewerId = getUserIdFromContext(ctx);
             Optional<User> user = userService.getUserById(userId);
 
             if (user.isPresent()) {
-                sendSuccess(ctx, ResponseMapper.toUserResponse(user.get()).getMap());
+                User target = user.get();
+                JsonObject payload = ResponseMapper.toUserResponse(target);
+                boolean isAnonymous = shouldMaskUser(viewerId, target);
+                if (isAnonymous) {
+                    payload
+                        .put("firstName", "")
+                        .put("lastName", "")
+                        .put("avatarUrl", "")
+                        .put("isAnonymousForViewer", true);
+                } else {
+                    payload.put("isAnonymousForViewer", false);
+                }
+                sendSuccess(ctx, payload.getMap());
             } else {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
             }
@@ -236,7 +251,7 @@ public class ApiHandler {
             User.UserSettings settings = null;
             JsonObject settingsJson = body.getJsonObject("settings");
             if (settingsJson != null) {
-                settings = new User.UserSettings();
+                settings = new User.UserSettings(false);
                 if (settingsJson.containsKey("showAge")) {
                     settings.setShowAge(settingsJson.getBoolean("showAge"));
                 }
@@ -245,6 +260,27 @@ public class ApiHandler {
                 }
                 if (settingsJson.containsKey("allowMessages")) {
                     settings.setAllowMessages(settingsJson.getBoolean("allowMessages"));
+                }
+                if (settingsJson.containsKey("allowCommunityMessages")) {
+                    settings.setAllowCommunityMessages(settingsJson.getBoolean("allowCommunityMessages"));
+                }
+                if (settingsJson.containsKey("notifyAnonMessages")) {
+                    settings.setNotifyAnonMessages(settingsJson.getBoolean("notifyAnonMessages"));
+                }
+                if (settingsJson.containsKey("notifyAnonDialogClosed")) {
+                    settings.setNotifyAnonDialogClosed(settingsJson.getBoolean("notifyAnonDialogClosed"));
+                }
+                if (settingsJson.containsKey("notifyProfileNewChat")) {
+                    settings.setNotifyProfileNewChat(settingsJson.getBoolean("notifyProfileNewChat"));
+                }
+                if (settingsJson.containsKey("notifyProfileMessages")) {
+                    settings.setNotifyProfileMessages(settingsJson.getBoolean("notifyProfileMessages"));
+                }
+                if (settingsJson.containsKey("notifyProfileDialogClosed")) {
+                    settings.setNotifyProfileDialogClosed(settingsJson.getBoolean("notifyProfileDialogClosed"));
+                }
+                if (settingsJson.containsKey("notifySubscriptionProblems")) {
+                    settings.setNotifySubscriptionProblems(settingsJson.getBoolean("notifySubscriptionProblems"));
                 }
             }
 
@@ -579,6 +615,7 @@ public class ApiHandler {
 
             Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId, attachments);
             JsonObject messageJson = ResponseMapper.toMessageResponse(message);
+            String senderName = resolveUserDisplayName(userId);
 
             logger.info("Broadcasting message via WebSocket: chatId={}, messageId={}", chatId, message.getId());
             webSocketHandler.sendMessageToUser(userId, "message", messageJson.copy());
@@ -589,6 +626,11 @@ public class ApiHandler {
                 Long companionId = chat.getCompanionId(userId);
                 if (companionId != null) {
                     webSocketHandler.sendMessageToUser(companionId, "message", messageJson.copy());
+                    String senderDisplayName =
+                        chat.getType() == Chat.ChatType.ANONYMOUS
+                            ? "Собеседник"
+                            : senderName;
+                    notificationService.sendNewMessageNotification(companionId, chat.getType(), senderDisplayName);
                 }
             }
 
@@ -857,6 +899,28 @@ public class ApiHandler {
         }
     }
 
+    public void updateCommunityNotifications(RoutingContext ctx) {
+        try {
+            Long userId = getUserIdFromContext(ctx);
+            JsonObject body = ctx.getBodyAsJson();
+            boolean enabled = body == null || body.getBoolean("enabled", true);
+
+            userService.updateCommunityNotifications(userId, enabled);
+            boolean testSent = false;
+            if (enabled) {
+                testSent = notificationService.sendCommunityTestNotification(userId);
+            }
+
+            JsonObject response = new JsonObject()
+                .put("enabled", enabled)
+                .put("testSent", testSent);
+            sendSuccess(ctx, response);
+        } catch (Exception e) {
+            logger.error("Error updating community notifications", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Failed to update community notifications");
+        }
+    }
+
     public void getOnlineStats(RoutingContext ctx) {
         try {
             UserService.OnlineStats stats = userService.getOnlineStats();
@@ -972,6 +1036,51 @@ public class ApiHandler {
             default:
                 return Message.MessageAttachment.AttachmentType.IMAGE;
         }
+    }
+
+    private String resolveUserDisplayName(Long userId) {
+        if (userId == null) {
+            return "Пользователь";
+        }
+        return userService.getUserById(userId)
+            .map(user -> {
+                String first = user.getFirstName() != null ? user.getFirstName().trim() : "";
+                String last = user.getLastName() != null ? user.getLastName().trim() : "";
+                String full = (first + " " + last).trim();
+                if (!full.isEmpty()) {
+                    return full;
+                }
+                if (!first.isEmpty()) {
+                    return first;
+                }
+                if (!last.isEmpty()) {
+                    return last;
+                }
+                return "Пользователь #" + userId;
+            })
+            .orElse("Пользователь #" + userId);
+    }
+
+    private boolean shouldMaskUser(Long viewerId, User target) {
+        if (target == null || target.getId() == null) {
+            return true;
+        }
+
+        if (viewerId != null && target.getId().equals(viewerId)) {
+            return false;
+        }
+
+        if (viewerId != null) {
+            Optional<User> viewer = userService.getUserById(viewerId);
+            if (viewer.isPresent() && Boolean.TRUE.equals(viewer.get().isAdmin())) {
+                return false;
+            }
+            if (chatService.hasRegularChatBetween(viewerId, target.getId())) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private void sendSuccess(RoutingContext ctx, Object data) {

@@ -127,7 +127,43 @@ public class UserService {
             user.setIsVisible(isVisible);
         }
         if (settings != null) {
-            user.setSettings(settings);
+            User.UserSettings currentSettings = user.getSettings();
+            if (currentSettings == null) {
+                currentSettings = new User.UserSettings();
+            }
+
+            if (settings.getShowAge() != null) {
+                currentSettings.setShowAge(settings.getShowAge());
+            }
+            if (settings.getShowCity() != null) {
+                currentSettings.setShowCity(settings.getShowCity());
+            }
+            if (settings.getAllowMessages() != null) {
+                currentSettings.setAllowMessages(settings.getAllowMessages());
+            }
+            if (settings.getAllowCommunityMessages() != null) {
+                currentSettings.setAllowCommunityMessages(settings.getAllowCommunityMessages());
+            }
+            if (settings.getNotifyAnonMessages() != null) {
+                currentSettings.setNotifyAnonMessages(settings.getNotifyAnonMessages());
+            }
+            if (settings.getNotifyAnonDialogClosed() != null) {
+                currentSettings.setNotifyAnonDialogClosed(settings.getNotifyAnonDialogClosed());
+            }
+            if (settings.getNotifyProfileNewChat() != null) {
+                currentSettings.setNotifyProfileNewChat(settings.getNotifyProfileNewChat());
+            }
+            if (settings.getNotifyProfileMessages() != null) {
+                currentSettings.setNotifyProfileMessages(settings.getNotifyProfileMessages());
+            }
+            if (settings.getNotifyProfileDialogClosed() != null) {
+                currentSettings.setNotifyProfileDialogClosed(settings.getNotifyProfileDialogClosed());
+            }
+            if (settings.getNotifySubscriptionProblems() != null) {
+                currentSettings.setNotifySubscriptionProblems(settings.getNotifySubscriptionProblems());
+            }
+
+            user.setSettings(currentSettings);
         }
         if (profileCost != null) {
             int normalized = Math.max(0, profileCost);
@@ -166,6 +202,17 @@ public class UserService {
 
     public void updateUserBalance(Long userId, Integer newBalance) {
         userRepository.updateBalance(userId, newBalance);
+    }
+
+    public User updateCommunityNotifications(Long userId, boolean enabled) {
+        User user = userRepository.findById(userId)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (user.getSettings() == null) {
+            user.setSettings(new User.UserSettings());
+        }
+        user.getSettings().setAllowCommunityMessages(enabled);
+        return userRepository.save(user);
     }
 
     public void deductCoins(Long userId, Integer amount) {

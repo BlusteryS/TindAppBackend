@@ -238,7 +238,14 @@ public class AuthHandler implements Handler<RoutingContext> {
         JsonObject settings = new JsonObject()
                 .put("showAge", true)
                 .put("showCity", true)
-                .put("allowMessages", true);
+                .put("allowMessages", true)
+                .put("allowCommunityMessages", false)
+                .put("notifyAnonMessages", true)
+                .put("notifyAnonDialogClosed", true)
+                .put("notifyProfileNewChat", true)
+                .put("notifyProfileMessages", true)
+                .put("notifyProfileDialogClosed", true)
+                .put("notifySubscriptionProblems", true);
         response.put("settings", settings);
 
         return response;

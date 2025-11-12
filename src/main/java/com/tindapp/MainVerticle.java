@@ -31,6 +31,7 @@ import com.tindapp.service.ReportService;
 import com.tindapp.service.SubscriptionService;
 import com.tindapp.service.TokenService;
 import com.tindapp.service.UserService;
+import com.tindapp.service.VkGroupNotificationService;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -61,6 +62,7 @@ public class MainVerticle extends AbstractVerticle {
     private LocationService locationService;
     private ProfileService profileService;
     private WebSocketHandler webSocketHandler;
+    private VkGroupNotificationService vkGroupNotificationService;
     private ApiHandler apiHandler;
     private VkPaymentHandler vkPaymentHandler;
     private VKAuthHandler vkAuthHandler;
@@ -102,9 +104,13 @@ public class MainVerticle extends AbstractVerticle {
 
         userService = new UserService(userRepository);
         profileService = new ProfileService(userRepository);
-        chatService = new ChatService(chatRepository, userRepository, userService);
+        vkGroupNotificationService = new VkGroupNotificationService(
+            AppConfig.VK_COMMUNITY_ACCESS_TOKEN,
+            AppConfig.VK_COMMUNITY_GROUP_ID
+        );
+        notificationService = new NotificationService(notificationRepository, userService, vkGroupNotificationService);
+        chatService = new ChatService(chatRepository, userRepository, userService, notificationService);
         messageService = new MessageService(messageRepository, chatRepository);
-        notificationService = new NotificationService(notificationRepository);
         subscriptionService = new SubscriptionService(subscriptionRepository, userRepository);
         reportService = new ReportService(reportRepository, userRepository);
         blackListService = new BlackListService(blackListRepository, userRepository);
@@ -114,7 +120,15 @@ public class MainVerticle extends AbstractVerticle {
         tokenAuthHandler = new TokenAuthHandler(tokenService);
         authHandler = new AuthHandler(config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET), userService, tokenService);
         locationService = new LocationService();
-        webSocketHandler = new WebSocketHandler(vertx, chatService, messageService, userService, tokenService, profileService);
+        webSocketHandler = new WebSocketHandler(
+            vertx,
+            chatService,
+            messageService,
+            userService,
+            tokenService,
+            profileService,
+            notificationService
+        );
         apiHandler = new ApiHandler(
             userService,
             chatService,
@@ -260,6 +274,7 @@ public class MainVerticle extends AbstractVerticle {
         apiRouter.get("/notifications").handler(apiHandler::getNotifications);
         apiRouter.put("/notifications/read").handler(apiHandler::markNotificationsAsRead);
         apiRouter.delete("/notifications/:notificationId").handler(apiHandler::deleteNotification);
+        apiRouter.post("/notifications/community").handler(apiHandler::updateCommunityNotifications);
 
         apiRouter.get("/stats/online").handler(apiHandler::getOnlineStats);
 

@@ -38,6 +38,11 @@ public class AppConfig {
     public static final String APP_VERSION = "1.0.0";
     public static final String APP_NAME = "TindApp";
 
+    public static final long VK_COMMUNITY_GROUP_ID = Long.parseLong(System.getenv("VK_COMMUNITY_GROUP_ID"));
+    public static final String VK_COMMUNITY_ACCESS_TOKEN = System.getenv("VK_COMMUNITY_ACCESS_TOKEN");
+    public static final String VK_API_VERSION = "5.199";
+    public static final int VK_APP_ID = Integer.parseInt(System.getenv("VK_APP_ID"));
+
     public static io.vertx.core.json.JsonObject getHttpConfig() {
         return new io.vertx.core.json.JsonObject()
             .put("port", HTTP_PORT)

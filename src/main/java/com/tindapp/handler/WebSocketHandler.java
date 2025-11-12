@@ -8,6 +8,7 @@ import com.tindapp.model.Message;
 import com.tindapp.model.User;
 import com.tindapp.service.ChatService;
 import com.tindapp.service.MessageService;
+import com.tindapp.service.NotificationService;
 import com.tindapp.service.ProfileService;
 import com.tindapp.service.TokenService;
 import com.tindapp.service.UserService;
@@ -37,6 +38,7 @@ public class WebSocketHandler {
     private final UserService userService;
     private final TokenService tokenService;
     private final ProfileService profileService;
+    private final NotificationService notificationService;
 
     private final Map<Long, ServerWebSocket> userConnections = new ConcurrentHashMap<>();
     private final Map<Integer, Long> socketToUser = new ConcurrentHashMap<>();
@@ -45,13 +47,14 @@ public class WebSocketHandler {
     private final Map<Long, ProfileSubscription> profileSubscriptions = new ConcurrentHashMap<>();
 
     public WebSocketHandler(Vertx vertx, ChatService chatService, MessageService messageService, UserService userService,
-                            TokenService tokenService, ProfileService profileService) {
+                            TokenService tokenService, ProfileService profileService, NotificationService notificationService) {
         this.vertx = vertx;
         this.chatService = chatService;
         this.messageService = messageService;
         this.userService = userService;
         this.tokenService = tokenService;
         this.profileService = profileService;
+        this.notificationService = notificationService;
 
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -445,6 +448,8 @@ public class WebSocketHandler {
                         );
                     sendMessage(companionSocket, "match_found", companionMatchData);
                 }
+
+                sendMatchNotifications(userId, result);
             }
 
         } catch (Exception e) {
@@ -586,6 +591,23 @@ public class WebSocketHandler {
                 logger.error("Error notifying profile update", e);
             }
         });
+    }
+
+    private void sendMatchNotifications(Long currentUserId, ChatService.MatchResult result) {
+        if (notificationService == null || result == null) {
+            return;
+        }
+
+        try {
+            Long companionUserId = result.getCompanion() != null ? result.getCompanion().getId() : null;
+            notificationService.sendMatchFoundNotification(currentUserId, "Собеседник");
+
+            if (companionUserId != null) {
+                notificationService.sendMatchFoundNotification(companionUserId, "Собеседник");
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to send match notifications", e);
+        }
     }
 
     private static class ProfileSubscription {

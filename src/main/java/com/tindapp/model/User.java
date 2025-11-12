@@ -83,11 +83,31 @@ public class User {
         private Boolean showAge;
         private Boolean showCity;
         private Boolean allowMessages;
+        private Boolean allowCommunityMessages;
+        private Boolean notifyAnonMessages;
+        private Boolean notifyAnonDialogClosed;
+        private Boolean notifyProfileNewChat;
+        private Boolean notifyProfileMessages;
+        private Boolean notifyProfileDialogClosed;
+        private Boolean notifySubscriptionProblems;
 
         public UserSettings() {
-            this.showAge = true;
-            this.showCity = true;
-            this.allowMessages = true;
+            this(true);
+        }
+
+        public UserSettings(boolean applyDefaults) {
+            if (applyDefaults) {
+                this.showAge = true;
+                this.showCity = true;
+                this.allowMessages = true;
+                this.allowCommunityMessages = false;
+                this.notifyAnonMessages = true;
+                this.notifyAnonDialogClosed = true;
+                this.notifyProfileNewChat = true;
+                this.notifyProfileMessages = true;
+                this.notifyProfileDialogClosed = true;
+                this.notifySubscriptionProblems = true;
+            }
         }
 
         public Boolean getShowAge() { return showAge; }
@@ -98,6 +118,33 @@ public class User {
 
         public Boolean getAllowMessages() { return allowMessages; }
         public void setAllowMessages(Boolean allowMessages) { this.allowMessages = allowMessages; }
+
+        public Boolean getAllowCommunityMessages() { return allowCommunityMessages; }
+        public void setAllowCommunityMessages(Boolean allowCommunityMessages) {
+            this.allowCommunityMessages = allowCommunityMessages;
+        }
+
+        public Boolean getNotifyAnonMessages() { return notifyAnonMessages; }
+        public void setNotifyAnonMessages(Boolean notifyAnonMessages) { this.notifyAnonMessages = notifyAnonMessages; }
+
+        public Boolean getNotifyAnonDialogClosed() { return notifyAnonDialogClosed; }
+        public void setNotifyAnonDialogClosed(Boolean notifyAnonDialogClosed) { this.notifyAnonDialogClosed = notifyAnonDialogClosed; }
+
+        public Boolean getNotifyProfileNewChat() { return notifyProfileNewChat; }
+        public void setNotifyProfileNewChat(Boolean notifyProfileNewChat) { this.notifyProfileNewChat = notifyProfileNewChat; }
+
+        public Boolean getNotifyProfileMessages() { return notifyProfileMessages; }
+        public void setNotifyProfileMessages(Boolean notifyProfileMessages) { this.notifyProfileMessages = notifyProfileMessages; }
+
+        public Boolean getNotifyProfileDialogClosed() { return notifyProfileDialogClosed; }
+        public void setNotifyProfileDialogClosed(Boolean notifyProfileDialogClosed) {
+            this.notifyProfileDialogClosed = notifyProfileDialogClosed;
+        }
+
+        public Boolean getNotifySubscriptionProblems() { return notifySubscriptionProblems; }
+        public void setNotifySubscriptionProblems(Boolean notifySubscriptionProblems) {
+            this.notifySubscriptionProblems = notifySubscriptionProblems;
+        }
     }
 
     public enum SubscriptionType {

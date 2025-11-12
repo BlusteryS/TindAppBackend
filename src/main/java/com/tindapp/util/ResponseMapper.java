@@ -61,12 +61,26 @@ public final class ResponseMapper {
             settings
                 .put("showAge", user.getSettings().getShowAge())
                 .put("showCity", user.getSettings().getShowCity())
-                .put("allowMessages", user.getSettings().getAllowMessages());
+                .put("allowMessages", user.getSettings().getAllowMessages())
+                .put("allowCommunityMessages", user.getSettings().getAllowCommunityMessages())
+                .put("notifyAnonMessages", user.getSettings().getNotifyAnonMessages())
+                .put("notifyAnonDialogClosed", user.getSettings().getNotifyAnonDialogClosed())
+                .put("notifyProfileNewChat", user.getSettings().getNotifyProfileNewChat())
+                .put("notifyProfileMessages", user.getSettings().getNotifyProfileMessages())
+                .put("notifyProfileDialogClosed", user.getSettings().getNotifyProfileDialogClosed())
+                .put("notifySubscriptionProblems", user.getSettings().getNotifySubscriptionProblems());
         } else {
             settings
                 .put("showAge", true)
                 .put("showCity", true)
-                .put("allowMessages", true);
+                .put("allowMessages", true)
+                .put("allowCommunityMessages", false)
+                .put("notifyAnonMessages", true)
+                .put("notifyAnonDialogClosed", true)
+                .put("notifyProfileNewChat", true)
+                .put("notifyProfileMessages", true)
+                .put("notifyProfileDialogClosed", true)
+                .put("notifySubscriptionProblems", true);
         }
         response.put("settings", settings.getMap());
 

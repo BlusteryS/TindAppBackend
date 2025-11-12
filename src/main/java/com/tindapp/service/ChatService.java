@@ -25,11 +25,14 @@ public class ChatService {
     private final UserRepository userRepository;
     private final CompanionQueue companionQueue;
     private final UserService userService;
+    private final NotificationService notificationService;
 
-    public ChatService(ChatRepository chatRepository, UserRepository userRepository, UserService userService) {
+    public ChatService(ChatRepository chatRepository, UserRepository userRepository, UserService userService,
+                       NotificationService notificationService) {
         this.chatRepository = chatRepository;
         this.userRepository = userRepository;
         this.userService = userService;
+        this.notificationService = notificationService;
         this.companionQueue = new CompanionQueue(userService, chatRepository);
     }
 
@@ -54,12 +57,6 @@ public class ChatService {
 
         if (chatCost > 0 && user.getBalance() < chatCost) {
             throw new RuntimeException("Insufficient balance");
-        }
-
-        Optional<Chat> existingChat = chatRepository.findActiveAnonymousChat(userId);
-        if (existingChat.isPresent()) {
-            logger.info("User {} has active chat {}, ending it to start new search", userId, existingChat.get().getId());
-            endChat(existingChat.get().getId(), userId);
         }
 
         if (companionQueue.isInQueue(userId)) {
@@ -149,7 +146,18 @@ public class ChatService {
         }
 
         chat.setIsActive(false);
-        return chatRepository.save(chat);
+        Chat savedChat = chatRepository.save(chat);
+
+        Long companionId = chat.getCompanionId(userId);
+        if (companionId != null) {
+            String closedByName =
+                chat.getType() == Chat.ChatType.ANONYMOUS
+                    ? "Собеседник"
+                    : buildDisplayName(userService.getUserById(userId).orElse(null));
+            notificationService.sendDialogClosedNotification(companionId, chat.getType(), closedByName);
+        }
+
+        return savedChat;
     }
 
     public Chat startProfileChat(Long initiatorId, Long targetId) {
@@ -182,11 +190,43 @@ public class ChatService {
         Chat chat = new Chat(UUID.randomUUID().toString(), Chat.ChatType.REGULAR, initiatorId, targetId);
         chat.getSettings().setCost(cost);
         chatRepository.save(chat);
+
+        notificationService.sendProfileChatCreatedNotification(
+            targetId,
+            buildDisplayName(initiator)
+        );
+
         return chat;
+    }
+
+    public boolean hasRegularChatBetween(Long userId, Long targetUserId) {
+        if (userId == null || targetUserId == null) {
+            return false;
+        }
+        return chatRepository.findByParticipants(userId, targetUserId, Chat.ChatType.REGULAR).isPresent();
     }
 
     public int getActiveAnonymousChatsCount() {
         return chatRepository.findByType(Chat.ChatType.ANONYMOUS).size();
+    }
+
+    private String buildDisplayName(User user) {
+        if (user == null) {
+            return "Собеседник";
+        }
+        String first = user.getFirstName() != null ? user.getFirstName().trim() : "";
+        String last = user.getLastName() != null ? user.getLastName().trim() : "";
+        String full = (first + " " + last).trim();
+        if (!full.isEmpty()) {
+            return full;
+        }
+        if (!first.isEmpty()) {
+            return first;
+        }
+        if (!last.isEmpty()) {
+            return last;
+        }
+        return "Собеседник #" + user.getId();
     }
 
     public static class SearchFilters {
