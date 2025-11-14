@@ -17,10 +17,12 @@ public class MessageService {
 
     private final MessageRepository messageRepository;
     private final ChatRepository chatRepository;
+    private final BlackListService blackListService;
 
-    public MessageService(MessageRepository messageRepository, ChatRepository chatRepository) {
+    public MessageService(MessageRepository messageRepository, ChatRepository chatRepository, BlackListService blackListService) {
         this.messageRepository = messageRepository;
         this.chatRepository = chatRepository;
+        this.blackListService = blackListService;
     }
 
     public List<Message> getChatMessages(String chatId, int page, int limit) {
@@ -33,6 +35,11 @@ public class MessageService {
 
         if (!chat.hasParticipant(senderId)) {
             throw new RuntimeException("User is not a participant of this chat");
+        }
+
+        Long companionId = chat.getCompanionId(senderId);
+        if (companionId != null && !blackListService.canUsersInteract(senderId, companionId)) {
+            throw new RuntimeException("User is blocked");
         }
 
         if (!Boolean.TRUE.equals(chat.getIsActive())) {

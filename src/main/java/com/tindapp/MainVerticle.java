@@ -110,10 +110,10 @@ public class MainVerticle extends AbstractVerticle {
         );
         notificationService = new NotificationService(notificationRepository, userService, vkGroupNotificationService);
         chatService = new ChatService(chatRepository, userRepository, userService, notificationService);
-        messageService = new MessageService(messageRepository, chatRepository);
+        blackListService = new BlackListService(blackListRepository, userRepository);
+        messageService = new MessageService(messageRepository, chatRepository, blackListService);
         subscriptionService = new SubscriptionService(subscriptionRepository, userRepository, notificationService);
         reportService = new ReportService(reportRepository, userRepository);
-        blackListService = new BlackListService(blackListRepository, userRepository);
         tokenService = new TokenService(userService);
 
         vkAuthHandler = new VKAuthHandler(config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET));

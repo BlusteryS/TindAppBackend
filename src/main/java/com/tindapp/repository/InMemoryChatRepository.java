@@ -59,7 +59,6 @@ public class InMemoryChatRepository implements ChatRepository {
     public List<Chat> findByParticipantId(Long userId) {
         return chats.values().stream()
                 .filter(chat -> chat.hasParticipant(userId))
-                .filter(chat -> Boolean.TRUE.equals(chat.getIsActive()))
                 .sorted((c1, c2) -> {
                     LocalDateTime date1 = DateTimeUtils.parseFromIso(c1.getUpdatedAt());
                     LocalDateTime date2 = DateTimeUtils.parseFromIso(c2.getUpdatedAt());

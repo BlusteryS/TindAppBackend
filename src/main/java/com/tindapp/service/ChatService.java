@@ -174,17 +174,19 @@ public class ChatService {
             return reopenedChats;
         }
 
-        for (Chat.ChatType type : Chat.ChatType.values()) {
-            chatRepository.findByParticipants(userId, companionId, type).ifPresent(chat -> {
-                if (!Boolean.TRUE.equals(chat.getIsActive()) && chat.getClosureReason() == Chat.ChatClosureReason.BLOCKED) {
-                    chat.setIsActive(true);
-                    chat.setClosureReason(null);
-                    chat.setClosedAt(null);
-                    chat.setClosedByUserId(null);
-                    Chat reopened = chatRepository.save(chat);
-                    reopenedChats.add(reopened);
-                }
-            });
+        List<Chat> userChats = chatRepository.findByParticipantId(userId);
+        for (Chat chat : userChats) {
+            if (!chat.hasParticipant(companionId)) {
+                continue;
+            }
+            if (!Boolean.TRUE.equals(chat.getIsActive()) && chat.getClosureReason() == Chat.ChatClosureReason.BLOCKED) {
+                chat.setIsActive(true);
+                chat.setClosureReason(null);
+                chat.setClosedAt(null);
+                chat.setClosedByUserId(null);
+                Chat reopened = chatRepository.save(chat);
+                reopenedChats.add(reopened);
+            }
         }
         return reopenedChats;
     }
