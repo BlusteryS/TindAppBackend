@@ -21,4 +21,6 @@ public interface MessageRepository extends Repository<Message, String> {
     long countUnreadMessagesByChatId(String chatId);
 
     long countMessagesByChatId(String chatId);
+
+    List<Message> findRecentByChatId(String chatId, int limit);
 }

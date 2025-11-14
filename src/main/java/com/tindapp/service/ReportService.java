@@ -46,6 +46,14 @@ public class ReportService {
         return reportRepository.findByReporterId(userId);
     }
 
+    public List<Report> getAllReports(int page, int limit) {
+        return reportRepository.findAll(page, limit);
+    }
+
+    public long countReports() {
+        return reportRepository.count();
+    }
+
     public List<Report> getReportsAgainstUser(Long userId) {
         return reportRepository.findByTargetId(userId);
     }

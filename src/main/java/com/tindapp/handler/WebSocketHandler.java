@@ -610,6 +610,31 @@ public class WebSocketHandler {
         }
     }
 
+    public void notifyChatClosed(String chatId, Long closedByUserId, Chat.ChatClosureReason reason, String closedAt) {
+        if (chatId == null) {
+            return;
+        }
+
+        JsonObject payload = new JsonObject()
+            .put("chatId", chatId)
+            .put("closedByUserId", closedByUserId)
+            .put("reason", reason != null ? reason.name() : null)
+            .put("closedAt", closedAt);
+
+        broadcastToChat(chatId, "chat_closed", payload);
+    }
+
+    public void notifyChatReopened(String chatId) {
+        if (chatId == null) {
+            return;
+        }
+
+        JsonObject payload = new JsonObject()
+            .put("chatId", chatId);
+
+        broadcastToChat(chatId, "chat_reopened", payload);
+    }
+
     private static class ProfileSubscription {
         private final Long userId;
         private final ProfileService.ProfileFilters filters;

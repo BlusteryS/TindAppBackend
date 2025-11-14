@@ -158,6 +158,25 @@ public class InMemoryMessageRepository implements MessageRepository {
     }
 
     @Override
+    public List<Message> findRecentByChatId(String chatId, int limit) {
+        if (limit <= 0) {
+            return new ArrayList<>();
+        }
+
+        return findByChatId(chatId).stream()
+                .sorted((m1, m2) -> {
+                    LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
+                    LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
+                    if (date1 == null && date2 == null) return 0;
+                    if (date1 == null) return 1;
+                    if (date2 == null) return -1;
+                    return date2.compareTo(date1);
+                })
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public void deleteById(String id) {
         messages.remove(id);
     }

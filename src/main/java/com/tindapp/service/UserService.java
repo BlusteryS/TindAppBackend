@@ -231,6 +231,24 @@ public class UserService {
         userRepository.updateOnlineStatus(userId, isOnline);
     }
 
+    public User banUser(Long targetUserId, String reason) {
+        User user = userRepository.findById(targetUserId)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+        user.setIsBanned(true);
+        user.setBanReason(reason != null ? reason : "Блокировка администрацией");
+        user.setBannedAt(LocalDateTime.now());
+        return userRepository.save(user);
+    }
+
+    public User unbanUser(Long targetUserId) {
+        User user = userRepository.findById(targetUserId)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+        user.setIsBanned(false);
+        user.setBanReason(null);
+        user.setBannedAt(null);
+        return userRepository.save(user);
+    }
+
     private void ensureProfileCost(User user) {
         if (user.getProfileCost() == null || user.getProfileCost() < 0) {
             user.setProfileCost(AppConfig.ANONYMOUS_CHAT_CREATION_COST);

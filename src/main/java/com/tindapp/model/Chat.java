@@ -20,12 +20,18 @@ public class Chat {
     private String createdAt;
     private String updatedAt;
     private Boolean isActive;
+    private Long closedByUserId;
+    private ChatClosureReason closureReason;
+    private String closedAt;
     private ChatSettings settings;
 
     public Chat() {
         this.unreadCount = 0;
         this.isActive = true;
         this.settings = new ChatSettings();
+        this.closedByUserId = null;
+        this.closureReason = null;
+        this.closedAt = null;
         this.createdAt = DateTimeUtils.nowAsIso();
         this.updatedAt = DateTimeUtils.nowAsIso();
     }
@@ -40,6 +46,12 @@ public class Chat {
 
     public enum ChatType {
         ANONYMOUS, REGULAR
+    }
+
+    public enum ChatClosureReason {
+        MANUAL,
+        BLOCKED,
+        SYSTEM
     }
 
     public static class ChatSettings {
@@ -83,6 +95,15 @@ public class Chat {
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+
+    public Long getClosedByUserId() { return closedByUserId; }
+    public void setClosedByUserId(Long closedByUserId) { this.closedByUserId = closedByUserId; }
+
+    public ChatClosureReason getClosureReason() { return closureReason; }
+    public void setClosureReason(ChatClosureReason closureReason) { this.closureReason = closureReason; }
+
+    public String getClosedAt() { return closedAt; }
+    public void setClosedAt(String closedAt) { this.closedAt = closedAt; }
 
     public ChatSettings getSettings() { return settings; }
     public void setSettings(ChatSettings settings) { this.settings = settings; }

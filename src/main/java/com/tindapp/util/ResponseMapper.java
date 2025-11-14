@@ -1,7 +1,9 @@
 package com.tindapp.util;
 
+import com.tindapp.model.BlackListItem;
 import com.tindapp.model.Chat;
 import com.tindapp.model.Message;
+import com.tindapp.model.Report;
 import com.tindapp.model.User;
 import io.vertx.core.json.JsonObject;
 
@@ -35,11 +37,14 @@ public final class ResponseMapper {
             .put("gender", user.getGender())
             .put("isVisible", user.isVisible())
             .put("balance", user.getBalance())
-            .put("profileCost", user.getProfileCost());
+            .put("profileCost", user.getProfileCost())
+            .put("isBanned", user.isBanned())
+            .put("banReason", user.getBanReason());
 
         response.put("lastSeen", DateTimeUtils.formatToIso(user.getLastSeenDateTime()));
         response.put("createdAt", DateTimeUtils.formatToIso(user.getCreatedAtDateTime()));
         response.put("updatedAt", DateTimeUtils.formatToIso(user.getUpdatedAtDateTime()));
+        response.put("bannedAt", DateTimeUtils.formatToIso(user.getBannedAt()));
 
         JsonObject subscription = new JsonObject();
         if (user.getSubscription() != null) {
@@ -141,7 +146,10 @@ public final class ResponseMapper {
             .put("unreadCount", chat.getUnreadCount())
             .put("createdAt", chat.getCreatedAt())
             .put("updatedAt", chat.getUpdatedAt())
-            .put("isActive", chat.getIsActive());
+            .put("isActive", chat.getIsActive())
+            .put("closedByUserId", chat.getClosedByUserId())
+            .put("closureReason", chat.getClosureReason() != null ? chat.getClosureReason().name() : null)
+            .put("closedAt", chat.getClosedAt());
 
         if (chat.getLastMessage() != null) {
             response.put("lastMessage", toMessageResponse(chat.getLastMessage()).getMap());
@@ -158,5 +166,35 @@ public final class ResponseMapper {
         }
 
         return response;
+    }
+
+    public static JsonObject toReportResponse(Report report) {
+        if (report == null) {
+            return new JsonObject();
+        }
+
+        return new JsonObject()
+            .put("id", report.getId())
+            .put("reporterId", report.getReporterId())
+            .put("targetId", report.getTargetId())
+            .put("chatId", report.getChatId())
+            .put("messageId", report.getMessageId())
+            .put("reason", report.getReason() != null ? report.getReason().name().toLowerCase() : null)
+            .put("description", report.getDescription())
+            .put("status", report.getStatus() != null ? report.getStatus().name().toLowerCase() : null)
+            .put("createdAt", DateTimeUtils.formatToIso(report.getCreatedAt()));
+    }
+
+    public static JsonObject toBlackListItemResponse(BlackListItem item) {
+        if (item == null) {
+            return new JsonObject();
+        }
+
+        return new JsonObject()
+            .put("id", item.getId())
+            .put("userId", item.getUserId())
+            .put("blockedUserId", item.getBlockedUserId())
+            .put("reason", item.getReason())
+            .put("createdAt", DateTimeUtils.formatToIso(item.getCreatedAt()));
     }
 }

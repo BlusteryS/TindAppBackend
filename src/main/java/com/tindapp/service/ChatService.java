@@ -5,9 +5,11 @@ import com.tindapp.model.Chat;
 import com.tindapp.model.User;
 import com.tindapp.repository.ChatRepository;
 import com.tindapp.repository.UserRepository;
+import com.tindapp.util.DateTimeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -145,19 +147,62 @@ public class ChatService {
             throw new RuntimeException("User is not a participant of this chat");
         }
 
-        chat.setIsActive(false);
-        Chat savedChat = chatRepository.save(chat);
+        return closeChatInternal(chat, userId, Chat.ChatClosureReason.MANUAL);
+    }
 
-        Long companionId = chat.getCompanionId(userId);
-        if (companionId != null) {
-            String closedByName =
-                chat.getType() == Chat.ChatType.ANONYMOUS
-                    ? "Собеседник"
-                    : buildDisplayName(userService.getUserById(userId).orElse(null));
-            notificationService.sendDialogClosedNotification(companionId, chat.getType(), closedByName);
+    public List<Chat> closeChatsBetween(Long userId, Long companionId, Chat.ChatClosureReason reason) {
+        List<Chat> closedChats = new ArrayList<>();
+        if (userId == null || companionId == null) {
+            return closedChats;
         }
 
-        return savedChat;
+        for (Chat.ChatType type : Chat.ChatType.values()) {
+            chatRepository.findByParticipants(userId, companionId, type).ifPresent(chat -> {
+                if (Boolean.TRUE.equals(chat.getIsActive())) {
+                    Chat closed = closeChatInternal(chat, userId, reason);
+                    closedChats.add(closed);
+                }
+            });
+        }
+
+        return closedChats;
+    }
+
+    public List<Chat> reopenChatsBetween(Long userId, Long companionId) {
+        List<Chat> reopenedChats = new ArrayList<>();
+        if (userId == null || companionId == null) {
+            return reopenedChats;
+        }
+
+        for (Chat.ChatType type : Chat.ChatType.values()) {
+            chatRepository.findByParticipants(userId, companionId, type).ifPresent(chat -> {
+                if (!Boolean.TRUE.equals(chat.getIsActive()) && chat.getClosureReason() == Chat.ChatClosureReason.BLOCKED) {
+                    chat.setIsActive(true);
+                    chat.setClosureReason(null);
+                    chat.setClosedAt(null);
+                    chat.setClosedByUserId(null);
+                    Chat reopened = chatRepository.save(chat);
+                    reopenedChats.add(reopened);
+                }
+            });
+        }
+        return reopenedChats;
+    }
+
+    public List<Chat> closeAllChatsForUser(Long userId, Chat.ChatClosureReason reason) {
+        List<Chat> closedChats = new ArrayList<>();
+        if (userId == null) {
+            return closedChats;
+        }
+
+        List<Chat> userChats = chatRepository.findByParticipantId(userId);
+        for (Chat chat : userChats) {
+            if (Boolean.TRUE.equals(chat.getIsActive())) {
+                Chat closed = closeChatInternal(chat, userId, reason);
+                closedChats.add(closed);
+            }
+        }
+        return closedChats;
     }
 
     public Chat startProfileChat(Long initiatorId, Long targetId) {
@@ -208,6 +253,31 @@ public class ChatService {
 
     public int getActiveAnonymousChatsCount() {
         return chatRepository.findByType(Chat.ChatType.ANONYMOUS).size();
+    }
+
+    private Chat closeChatInternal(Chat chat, Long closedByUserId, Chat.ChatClosureReason reason) {
+        if (!Boolean.TRUE.equals(chat.getIsActive())) {
+            return chat;
+        }
+
+        chat.setIsActive(false);
+        chat.setClosedByUserId(closedByUserId);
+        chat.setClosureReason(reason);
+        chat.setClosedAt(DateTimeUtils.nowAsIso());
+        Chat savedChat = chatRepository.save(chat);
+
+        if (closedByUserId != null) {
+            Long companionId = chat.getCompanionId(closedByUserId);
+            if (companionId != null) {
+                String closedByName =
+                    chat.getType() == Chat.ChatType.ANONYMOUS
+                        ? "Собеседник"
+                        : buildDisplayName(userService.getUserById(closedByUserId).orElse(null));
+                notificationService.sendDialogClosedNotification(companionId, chat.getType(), closedByName);
+            }
+        }
+
+        return savedChat;
     }
 
     private String buildDisplayName(User user) {

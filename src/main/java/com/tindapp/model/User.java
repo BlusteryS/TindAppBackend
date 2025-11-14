@@ -34,6 +34,9 @@ public class User {
     private LocalDateTime updatedAt;
     private Integer profileCost;
     private Boolean isAdmin;
+    private Boolean isBanned;
+    private String banReason;
+    private LocalDateTime bannedAt;
 
     public User() {
         this.isVerified = false;
@@ -49,6 +52,7 @@ public class User {
         this.avatarUrl = "";
         this.profileCost = AppConfig.ANONYMOUS_CHAT_CREATION_COST;
         this.isAdmin = false;
+        this.isBanned = false;
     }
 
     public User(Long vkId) {
@@ -217,6 +221,13 @@ public class User {
     public Boolean getIsAdmin() { return isAdmin; }
     public void setIsAdmin(Boolean isAdmin) { this.isAdmin = isAdmin; }
     public boolean isAdmin() { return isAdmin != null ? isAdmin : false; }
+    public Boolean getIsBanned() { return isBanned; }
+    public void setIsBanned(Boolean isBanned) { this.isBanned = isBanned; }
+    public boolean isBanned() { return isBanned != null ? isBanned : false; }
+    public String getBanReason() { return banReason; }
+    public void setBanReason(String banReason) { this.banReason = banReason; }
+    public LocalDateTime getBannedAt() { return bannedAt; }
+    public void setBannedAt(LocalDateTime bannedAt) { this.bannedAt = bannedAt; }
 
     public LocalDateTime getCreatedAtDateTime() { return createdAt; }
     public void setCreatedAtDateTime(LocalDateTime createdAt) { this.createdAt = createdAt; }

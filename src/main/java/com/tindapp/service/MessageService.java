@@ -107,6 +107,13 @@ public class MessageService {
         return messageRepository.countUnreadMessagesByChatId(chatId);
     }
 
+    public List<Message> getRecentMessages(String chatId, int limit) {
+        if (chatId == null || limit <= 0) {
+            return List.of();
+        }
+        return messageRepository.findRecentByChatId(chatId, limit);
+    }
+
     public Optional<Message> getMessageById(String messageId) {
         return messageRepository.findById(messageId);
     }

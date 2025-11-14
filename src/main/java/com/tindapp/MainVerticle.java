@@ -262,9 +262,12 @@ public class MainVerticle extends AbstractVerticle {
 
         apiRouter.post("/reports").handler(apiHandler::createReport);
         apiRouter.get("/reports").handler(apiHandler::getReports);
+        apiRouter.patch("/reports/:reportId/status").handler(apiHandler::updateReportStatus);
         apiRouter.post("/blacklist").handler(apiHandler::blockUser);
         apiRouter.delete("/blacklist/:userId").handler(apiHandler::unblockUser);
         apiRouter.get("/blacklist").handler(apiHandler::getBlacklist);
+        apiRouter.post("/admin/users/:userId/ban").handler(apiHandler::banUser);
+        apiRouter.delete("/admin/users/:userId/ban").handler(apiHandler::unbanUser);
 
         apiRouter.get("/subscriptions/plans").handler(apiHandler::getSubscriptionPlans);
         apiRouter.get("/subscriptions/active").handler(apiHandler::getActiveSubscription);

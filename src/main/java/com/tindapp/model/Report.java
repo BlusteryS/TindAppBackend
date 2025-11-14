@@ -36,7 +36,16 @@ public class Report {
     }
 
     public enum ReportReason {
-        SPAM, INAPPROPRIATE, FAKE, HARASSMENT, OTHER
+        SPAM,
+        INAPPROPRIATE,
+        FAKE,
+        HARASSMENT,
+        OTHER,
+        UNDER18,
+        VIOLENCE,
+        ABUSE,
+        INSULTS,
+        RULES
     }
 
     public enum ReportStatus {
