@@ -30,6 +30,7 @@ import com.tindapp.service.ProfileService;
 import com.tindapp.service.ReportService;
 import com.tindapp.service.SubscriptionService;
 import com.tindapp.service.TokenService;
+import com.tindapp.service.TranslationService;
 import com.tindapp.service.UserService;
 import com.tindapp.service.VkGroupNotificationService;
 import io.vertx.core.AbstractVerticle;
@@ -65,6 +66,7 @@ public class MainVerticle extends AbstractVerticle {
     private VkGroupNotificationService vkGroupNotificationService;
     private ApiHandler apiHandler;
     private VkPaymentHandler vkPaymentHandler;
+    private TranslationService translationService;
     private VKAuthHandler vkAuthHandler;
     private TokenAuthHandler tokenAuthHandler;
     private AuthHandler authHandler;
@@ -111,7 +113,8 @@ public class MainVerticle extends AbstractVerticle {
         notificationService = new NotificationService(notificationRepository, userService, vkGroupNotificationService);
         chatService = new ChatService(chatRepository, userRepository, userService, notificationService);
         blackListService = new BlackListService(blackListRepository, userRepository);
-        messageService = new MessageService(messageRepository, chatRepository, blackListService);
+        translationService = new TranslationService();
+        messageService = new MessageService(messageRepository, chatRepository, blackListService, userService, translationService);
         subscriptionService = new SubscriptionService(subscriptionRepository, userRepository, notificationService);
         reportService = new ReportService(reportRepository, userRepository);
         tokenService = new TokenService(userService);

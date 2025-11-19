@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import com.tindapp.config.AppConfig;
+import com.tindapp.util.LanguageUtils;
 
 import java.time.LocalDateTime;
 
@@ -37,6 +38,7 @@ public class User {
     private Boolean isBanned;
     private String banReason;
     private LocalDateTime bannedAt;
+    private String nativeLanguage;
 
     public User() {
         this.isVerified = false;
@@ -53,6 +55,7 @@ public class User {
         this.profileCost = AppConfig.ANONYMOUS_CHAT_CREATION_COST;
         this.isAdmin = false;
         this.isBanned = false;
+        this.nativeLanguage = LanguageUtils.getDefaultLanguage();
     }
 
     public User(Long vkId) {
@@ -228,6 +231,10 @@ public class User {
     public void setBanReason(String banReason) { this.banReason = banReason; }
     public LocalDateTime getBannedAt() { return bannedAt; }
     public void setBannedAt(LocalDateTime bannedAt) { this.bannedAt = bannedAt; }
+    public String getNativeLanguage() { return nativeLanguage; }
+    public void setNativeLanguage(String nativeLanguage) {
+        this.nativeLanguage = LanguageUtils.normalizeLanguage(nativeLanguage);
+    }
 
     public LocalDateTime getCreatedAtDateTime() { return createdAt; }
     public void setCreatedAtDateTime(LocalDateTime createdAt) { this.createdAt = createdAt; }

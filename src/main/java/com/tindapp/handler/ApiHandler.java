@@ -247,6 +247,7 @@ public class ApiHandler {
             String birthDate = trimToNull(body.getString("birthDate"));
             Boolean isVisible = body.getBoolean("isVisible");
             Integer profileCost = body.getInteger("profileCost");
+            String nativeLanguage = trimToNull(body.getString("nativeLanguage"));
 
             User.UserSettings settings = null;
             JsonObject settingsJson = body.getJsonObject("settings");
@@ -297,7 +298,8 @@ public class ApiHandler {
                 birthDate,
                 isVisible,
                 settings,
-                profileCost
+                profileCost,
+                nativeLanguage
             );
             sendSuccess(ctx, ResponseMapper.toUserResponse(updatedUser).getMap());
             webSocketHandler.notifyProfileUpdated(updatedUser);

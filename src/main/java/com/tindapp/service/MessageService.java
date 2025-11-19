@@ -2,27 +2,38 @@ package com.tindapp.service;
 
 import com.tindapp.model.Chat;
 import com.tindapp.model.Message;
+import com.tindapp.model.User;
 import com.tindapp.repository.ChatRepository;
 import com.tindapp.repository.MessageRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.tindapp.util.LanguageUtils;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 public class MessageService {
 
-    private static final Logger logger = LoggerFactory.getLogger(MessageService.class);
-
     private final MessageRepository messageRepository;
     private final ChatRepository chatRepository;
     private final BlackListService blackListService;
+    private final UserService userService;
+    private final TranslationService translationService;
 
-    public MessageService(MessageRepository messageRepository, ChatRepository chatRepository, BlackListService blackListService) {
+    public MessageService(
+        MessageRepository messageRepository,
+        ChatRepository chatRepository,
+        BlackListService blackListService,
+        UserService userService,
+        TranslationService translationService
+    ) {
         this.messageRepository = messageRepository;
         this.chatRepository = chatRepository;
         this.blackListService = blackListService;
+        this.userService = userService;
+        this.translationService = translationService;
     }
 
     public List<Message> getChatMessages(String chatId, int page, int limit) {
@@ -65,6 +76,14 @@ public class MessageService {
             }
         }
 
+        User sender = userService.getUserById(senderId)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+        List<User> recipients = new ArrayList<>();
+        if (companionId != null) {
+            userService.getUserById(companionId).ifPresent(recipients::add);
+        }
+        applyTranslations(message, sender, recipients);
+
         Message savedMessage = messageRepository.save(message);
 
         chat.setLastMessage(savedMessage);
@@ -83,6 +102,19 @@ public class MessageService {
         }
 
         message.updateText(newText);
+
+        Chat chat = chatRepository.findById(message.getChatId())
+            .orElseThrow(() -> new RuntimeException("Chat not found"));
+        User sender = userService.getUserById(userId)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+
+        List<User> recipients = new ArrayList<>();
+        Long companionId = chat.getCompanionId(userId);
+        if (companionId != null) {
+            userService.getUserById(companionId).ifPresent(recipients::add);
+        }
+        applyTranslations(message, sender, recipients);
+
         return messageRepository.save(message);
     }
 
@@ -123,5 +155,45 @@ public class MessageService {
 
     public Optional<Message> getMessageById(String messageId) {
         return messageRepository.findById(messageId);
+    }
+
+    private void applyTranslations(Message message, User sender, List<User> recipients) {
+        if (translationService == null || message == null) {
+            return;
+        }
+
+        String text = message.getText() != null ? message.getText().trim() : "";
+        if (text.isEmpty() || recipients == null || recipients.isEmpty()) {
+            message.setTranslations(null);
+            return;
+        }
+
+        String sourceLanguage = sender != null ? sender.getNativeLanguage() : LanguageUtils.getDefaultLanguage();
+        Map<String, Message.MessageTranslation> translationMap = new HashMap<>();
+
+        for (User recipient : recipients) {
+            if (recipient == null || !hasActiveSubscription(recipient)) {
+                continue;
+            }
+            String targetLanguage = recipient.getNativeLanguage();
+            if (!LanguageUtils.canTranslate(sourceLanguage, targetLanguage)) {
+                continue;
+            }
+            translationService.translate(text, sourceLanguage, targetLanguage)
+                .ifPresent(translation -> translationMap.put(translation.getTo(), translation));
+        }
+
+        if (translationMap.isEmpty()) {
+            message.setTranslations(null);
+        } else {
+            message.setTranslations(translationMap);
+        }
+    }
+
+    private boolean hasActiveSubscription(User user) {
+        if (user == null || user.getSubscription() == null) {
+            return false;
+        }
+        return Boolean.TRUE.equals(user.getSubscription().getIsActive());
     }
 }

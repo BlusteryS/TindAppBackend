@@ -39,7 +39,8 @@ public final class ResponseMapper {
             .put("balance", user.getBalance())
             .put("profileCost", user.getProfileCost())
             .put("isBanned", user.isBanned())
-            .put("banReason", user.getBanReason());
+            .put("banReason", user.getBanReason())
+            .put("nativeLanguage", user.getNativeLanguage());
 
         response.put("lastSeen", DateTimeUtils.formatToIso(user.getLastSeenDateTime()));
         response.put("createdAt", DateTimeUtils.formatToIso(user.getCreatedAtDateTime()));
@@ -128,6 +129,23 @@ public final class ResponseMapper {
                 attachments.add(attachmentJson.getMap());
             });
             response.put("attachments", attachments);
+        }
+
+        if (message.getTranslations() != null && !message.getTranslations().isEmpty()) {
+            JsonObject translated = new JsonObject();
+            message.getTranslations().forEach((language, translation) -> {
+                if (translation == null) {
+                    return;
+                }
+                JsonObject translationJson = new JsonObject()
+                    .put("text", translation.getText())
+                    .put("from", translation.getFrom())
+                    .put("to", translation.getTo());
+                translated.put(language, translationJson.getMap());
+            });
+            if (!translated.isEmpty()) {
+                response.put("translated", translated.getMap());
+            }
         }
 
         return response;

@@ -94,7 +94,8 @@ public class UserService {
         String birthDate,
         Boolean isVisible,
         User.UserSettings settings,
-        Integer profileCost
+        Integer profileCost,
+        String nativeLanguage
     ) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
@@ -170,6 +171,9 @@ public class UserService {
             user.setProfileCost(normalized);
         } else {
             ensureProfileCost(user);
+        }
+        if (nativeLanguage != null) {
+            user.setNativeLanguage(nativeLanguage);
         }
 
         applySpecialPrivileges(user);

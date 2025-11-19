@@ -42,6 +42,7 @@ public class AppConfig {
     public static final String VK_COMMUNITY_ACCESS_TOKEN = System.getenv("VK_COMMUNITY_ACCESS_TOKEN");
     public static final String VK_API_VERSION = "5.199";
     public static final int VK_APP_ID = Integer.parseInt(System.getenv("VK_APP_ID"));
+    public static final String TRANSLATION_API_URL = System.getenv("TRANSLATION_API_URL");
 
     public static io.vertx.core.json.JsonObject getHttpConfig() {
         return new io.vertx.core.json.JsonObject()

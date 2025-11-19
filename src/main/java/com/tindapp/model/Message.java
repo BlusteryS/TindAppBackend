@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import com.tindapp.util.DateTimeUtils;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -24,6 +26,7 @@ public class Message {
     private Boolean isEdited;
     private String createdAt;
     private String updatedAt;
+    private Map<String, MessageTranslation> translations;
 
     public Message() {
         this.isRead = false;
@@ -31,6 +34,7 @@ public class Message {
         this.type = MessageType.TEXT;
         this.createdAt = DateTimeUtils.nowAsIso();
         this.updatedAt = DateTimeUtils.nowAsIso();
+        this.translations = new HashMap<>();
     }
 
     public Message(String id, String chatId, Long senderId, String text) {
@@ -99,6 +103,29 @@ public class Message {
         public void setPreview(String preview) { this.preview = preview; }
     }
 
+    public static class MessageTranslation {
+        private String to;
+        private String from;
+        private String text;
+
+        public MessageTranslation() {}
+
+        public MessageTranslation(String to, String from, String text) {
+            this.to = to;
+            this.from = from;
+            this.text = text;
+        }
+
+        public String getTo() { return to; }
+        public void setTo(String to) { this.to = to; }
+
+        public String getFrom() { return from; }
+        public void setFrom(String from) { this.from = from; }
+
+        public String getText() { return text; }
+        public void setText(String text) { this.text = text; }
+    }
+
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
 
@@ -131,6 +158,24 @@ public class Message {
 
     public String getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
+    public Map<String, MessageTranslation> getTranslations() { return translations; }
+    public void setTranslations(Map<String, MessageTranslation> translations) { this.translations = translations; }
+
+    public void addTranslation(MessageTranslation translation) {
+        if (translation == null || translation.getTo() == null) {
+            return;
+        }
+        if (this.translations == null) {
+            this.translations = new HashMap<>();
+        }
+        this.translations.put(translation.getTo().toLowerCase(), translation);
+    }
+
+    public void clearTranslations() {
+        if (this.translations != null) {
+            this.translations.clear();
+        }
+    }
 
     public void markAsRead() {
         this.isRead = true;

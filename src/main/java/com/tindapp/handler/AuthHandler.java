@@ -4,6 +4,7 @@ import com.tindapp.config.AppConfig;
 import com.tindapp.model.User;
 import com.tindapp.service.TokenService;
 import com.tindapp.service.UserService;
+import com.tindapp.util.LanguageUtils;
 import io.vertx.core.Handler;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
@@ -202,6 +203,7 @@ public class AuthHandler implements Handler<RoutingContext> {
             newUser.setBalance(AppConfig.INITIAL_USER_BALANCE); // Стартовый баланс
             newUser.setCreatedAtDateTime(java.time.LocalDateTime.now());
             newUser.setUpdatedAtDateTime(java.time.LocalDateTime.now());
+            newUser.setNativeLanguage(LanguageUtils.normalizeLanguage(vkUserData.getString("vk_language")));
             applyVkProfileData(newUser, vkUserData);
 
             User createdUser = userService.createUser(newUser);
