@@ -80,50 +80,47 @@ public class WebSocketHandler {
 
         String token = query.substring(6); // убираем "token="
 
-        User user = tokenService.validateToken(token);
-        if (user == null) {
-            logger.warn("WebSocket connection rejected: invalid or expired token: {}", token);
-            webSocket.reject();
-            return;
-        }
-
-        if (user.getId() == null) {
-            logger.error("WebSocket connection rejected: user ID is null for vkId={}", user.getVkId());
-            webSocket.reject();
-            return;
-        }
-
-        Integer socketKey = webSocket.hashCode();
-
-        userConnections.put(user.getId(), webSocket);
-        socketToUser.put(socketKey, user.getId());
-
-        userService.updateOnlineStatus(user.getId(), true);
-        notifyProfileUpdated(user);
-
-        logger.info("WebSocket connection established for user: id={}, vkId={}", user.getId(), user.getVkId());
-
-        webSocket.handler(buffer -> {
-            try {
-                String message = buffer.toString();
-                JsonObject messageObj = new JsonObject(message);
-                handleWebSocketMessage(webSocket, messageObj);
-            } catch (Exception e) {
-                logger.error("Error handling WebSocket message", e);
-                sendError(webSocket, "Invalid message format");
+        runOnWorker(webSocket, () -> {
+            User user = tokenService.validateToken(token);
+            if (user == null) {
+                logger.warn("WebSocket connection rejected: invalid or expired token: {}", token);
+                closeQuietly(webSocket);
+                return;
             }
-        });
 
-        webSocket.closeHandler(v -> {
-            handleWebSocketClose(webSocket);
-        });
+            if (user.getId() == null) {
+                logger.error("WebSocket connection rejected: user ID is null for vkId={}", user.getVkId());
+                closeQuietly(webSocket);
+                return;
+            }
 
-        webSocket.exceptionHandler(throwable -> {
-            logger.error("WebSocket exception", throwable);
-            handleWebSocketClose(webSocket);
-        });
+            Integer socketKey = webSocket.hashCode();
+            userConnections.put(user.getId(), webSocket);
+            socketToUser.put(socketKey, user.getId());
 
-        sendMessage(webSocket, "connected", new JsonObject().put("status", "connected"));
+            userService.updateOnlineStatus(user.getId(), true);
+            notifyProfileUpdated(user);
+
+            logger.info("WebSocket connection established for user: id={}, vkId={}", user.getId(), user.getVkId());
+
+            vertx.runOnContext(v -> {
+                webSocket.handler(buffer -> runOnWorker(webSocket, () -> {
+                    String message = buffer.toString();
+                    JsonObject messageObj = new JsonObject(message);
+                    handleWebSocketMessage(webSocket, messageObj);
+                }, "Error handling WebSocket message"));
+
+                webSocket.closeHandler(v2 -> runOnWorker(webSocket, () -> handleWebSocketClose(webSocket),
+                    "Error on WebSocket close"));
+
+                webSocket.exceptionHandler(throwable -> {
+                    logger.error("WebSocket exception", throwable);
+                    runOnWorker(webSocket, () -> handleWebSocketClose(webSocket), "WebSocket exception");
+                });
+
+                sendMessage(webSocket, "connected", new JsonObject().put("status", "connected"));
+            });
+        }, "Error establishing WebSocket connection");
     }
 
     private void handleWebSocketMessage(ServerWebSocket webSocket, JsonObject message) {
@@ -176,7 +173,7 @@ public class WebSocketHandler {
     }
 
     private void handleAuth(ServerWebSocket webSocket, JsonObject data) {
-        Long userId = socketToUser.get(webSocket.textHandlerID());
+        Long userId = socketToUser.get(webSocket.hashCode());
         if (userId != null) {
             JsonObject authData = new JsonObject()
                 .put("userId", userId)
@@ -787,5 +784,28 @@ public class WebSocketHandler {
 
     public int getOnlineUsersCount() {
         return userConnections.size();
+    }
+
+    private void runOnWorker(ServerWebSocket webSocket, Runnable action, String errorContext) {
+        vertx.<Void>executeBlocking(promise -> {
+            try {
+                action.run();
+                promise.complete();
+            } catch (Exception e) {
+                promise.fail(e);
+            }
+        }, false, ar -> {
+            if (ar.failed()) {
+                logger.error(errorContext, ar.cause());
+                sendError(webSocket, "Internal server error");
+            }
+        });
+    }
+
+    private void closeQuietly(ServerWebSocket webSocket) {
+        try {
+            webSocket.close();
+        } catch (Exception ignored) {
+        }
     }
 }

@@ -3,6 +3,8 @@ package com.tindapp;
 import com.tindapp.auth.TokenAuthHandler;
 import com.tindapp.auth.VKAuthHandler;
 import com.tindapp.config.AppConfig;
+import com.tindapp.config.DatabaseConfig;
+import com.tindapp.db.PostgresClientFactory;
 import com.tindapp.handler.ApiHandler;
 import com.tindapp.handler.AuthHandler;
 import com.tindapp.handler.VkPaymentHandler;
@@ -21,6 +23,13 @@ import com.tindapp.repository.NotificationRepository;
 import com.tindapp.repository.ReportRepository;
 import com.tindapp.repository.SubscriptionRepository;
 import com.tindapp.repository.UserRepository;
+import com.tindapp.repository.postgres.PostgresBlackListRepository;
+import com.tindapp.repository.postgres.PostgresChatRepository;
+import com.tindapp.repository.postgres.PostgresMessageRepository;
+import com.tindapp.repository.postgres.PostgresNotificationRepository;
+import com.tindapp.repository.postgres.PostgresReportRepository;
+import com.tindapp.repository.postgres.PostgresSubscriptionRepository;
+import com.tindapp.repository.postgres.PostgresUserRepository;
 import com.tindapp.service.BlackListService;
 import com.tindapp.service.ChatService;
 import com.tindapp.service.LocationService;
@@ -40,13 +49,16 @@ import io.vertx.core.VertxOptions;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import io.vertx.ext.web.handler.StaticHandler;
+import io.vertx.pgclient.PgPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.function.Supplier;
 
 public class MainVerticle extends AbstractVerticle {
 
@@ -70,39 +82,90 @@ public class MainVerticle extends AbstractVerticle {
     private VKAuthHandler vkAuthHandler;
     private TokenAuthHandler tokenAuthHandler;
     private AuthHandler authHandler;
+    private PgPool pgPool;
 
     @Override
     public void start(Promise<Void> startPromise) {
-        initializeServices();
+        vertx.executeBlocking(promise -> {
+            try {
+                initializeServices();
+                promise.complete();
+            } catch (Exception e) {
+                promise.fail(e);
+            }
+        }, false, ar -> {
+            if (ar.failed()) {
+                logger.error("Failed to initialize services", ar.cause());
+                startPromise.fail(ar.cause());
+                return;
+            }
 
-        HttpServer server = vertx.createHttpServer();
-        Router router = createRouter();
+            HttpServer server = vertx.createHttpServer();
+            Router router = createRouter();
 
-        int port = config().getInteger("http.port", AppConfig.HTTP_PORT);
+            int port = config().getInteger("http.port", AppConfig.HTTP_PORT);
 
-        server
-            .requestHandler(router)
-            .webSocketHandler(webSocketHandler::handle)
-            .listen(port)
-            .onComplete(result -> {
-                if (result.succeeded()) {
-                    logger.info("TindApp server started on port {}", port);
-                    startPromise.complete();
-                } else {
-                    logger.error("Failed to start server", result.cause());
-                    startPromise.fail(result.cause());
-                }
-            });
+            server
+                .requestHandler(router)
+                .webSocketHandler(webSocketHandler::handle)
+                .listen(port)
+                .onComplete(result -> {
+                    if (result.succeeded()) {
+                        logger.info("TindApp server started on port {}", port);
+                        startPromise.complete();
+                    } else {
+                        logger.error("Failed to start server", result.cause());
+                        startPromise.fail(result.cause());
+                    }
+                });
+        });
     }
 
     private void initializeServices() {
-        UserRepository userRepository = new InMemoryUserRepository();
-        ChatRepository chatRepository = new InMemoryChatRepository();
-        MessageRepository messageRepository = new InMemoryMessageRepository();
-        NotificationRepository notificationRepository = new InMemoryNotificationRepository();
-        SubscriptionRepository subscriptionRepository = new InMemorySubscriptionRepository();
-        ReportRepository reportRepository = new InMemoryReportRepository();
-        BlackListRepository blackListRepository = new InMemoryBlackListRepository();
+        pgPool = setupPgPool();
+
+        boolean usePostgres = pgPool != null;
+        if (usePostgres) {
+            logger.info("Using PostgreSQL repositories");
+        } else {
+            logger.warn("PostgreSQL is disabled or not available, falling back to in-memory repositories");
+        }
+
+        UserRepository userRepository = createRepository(
+            () -> new PostgresUserRepository(pgPool),
+            InMemoryUserRepository::new,
+            "User"
+        );
+        ChatRepository chatRepository = createRepository(
+            () -> new PostgresChatRepository(pgPool),
+            InMemoryChatRepository::new,
+            "Chat"
+        );
+        MessageRepository messageRepository = createRepository(
+            () -> new PostgresMessageRepository(pgPool),
+            InMemoryMessageRepository::new,
+            "Message"
+        );
+        NotificationRepository notificationRepository = createRepository(
+            () -> new PostgresNotificationRepository(pgPool),
+            InMemoryNotificationRepository::new,
+            "Notification"
+        );
+        SubscriptionRepository subscriptionRepository = createRepository(
+            () -> new PostgresSubscriptionRepository(pgPool),
+            InMemorySubscriptionRepository::new,
+            "Subscription"
+        );
+        ReportRepository reportRepository = createRepository(
+            () -> new PostgresReportRepository(pgPool),
+            InMemoryReportRepository::new,
+            "Report"
+        );
+        BlackListRepository blackListRepository = createRepository(
+            () -> new PostgresBlackListRepository(pgPool),
+            InMemoryBlackListRepository::new,
+            "BlackList"
+        );
 
         userService = new UserService(userRepository);
         profileService = new ProfileService(userRepository);
@@ -205,7 +268,7 @@ public class MainVerticle extends AbstractVerticle {
             .setCachingEnabled(true)
             .setIncludeHidden(false));
 
-        router.post("/buy").handler(vkPaymentHandler);
+        router.post("/buy").blockingHandler(vkPaymentHandler, false);
 
         setupApiRoutes(router);
 
@@ -224,7 +287,7 @@ public class MainVerticle extends AbstractVerticle {
     private void setupApiRoutes(Router router) {
         Router apiRouter = Router.router(vertx);
 
-        apiRouter.get("/auth").handler(authHandler);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/auth", authHandler);
 
         apiRouter.route("/*").handler(ctx -> {
             logger.info("API Request: {} {} from {}",
@@ -234,57 +297,57 @@ public class MainVerticle extends AbstractVerticle {
             ctx.next();
         });
 
-        apiRouter.route("/*").handler(tokenAuthHandler);
+        apiRouter.route("/*").blockingHandler(tokenAuthHandler, false);
 
-        apiRouter.get("/geo/countries").handler(apiHandler::getCountries);
-        apiRouter.get("/geo/countries/:countryId/cities").handler(apiHandler::getCitiesByCountry);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/geo/countries", apiHandler::getCountries);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/geo/countries/:countryId/cities", apiHandler::getCitiesByCountry);
 
-        apiRouter.get("/users/me").handler(apiHandler::getCurrentUser);
-        apiRouter.put("/users/me").handler(apiHandler::updateProfile);
-        apiRouter.get("/users/:userId").handler(apiHandler::getUser);
-        apiRouter.post("/users/me/verify").handler(apiHandler::verifyUser);
-        apiRouter.get("/users/me/balance").handler(apiHandler::getBalance);
-        apiRouter.post("/users/me/purchase-coins").handler(apiHandler::purchaseCoins);
-        apiRouter.get("/users/me/stats").handler(apiHandler::getUserStats);
-        apiRouter.get("/profiles").handler(apiHandler::getProfiles);
-        apiRouter.post("/profiles/:profileId/chat").handler(apiHandler::startProfileChat);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/users/me", apiHandler::getCurrentUser);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.PUT, "/users/me", apiHandler::updateProfile);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/users/:userId", apiHandler::getUser);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/users/me/verify", apiHandler::verifyUser);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/users/me/balance", apiHandler::getBalance);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/users/me/purchase-coins", apiHandler::purchaseCoins);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/users/me/stats", apiHandler::getUserStats);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/profiles", apiHandler::getProfiles);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/profiles/:profileId/chat", apiHandler::startProfileChat);
 
         // Chats - specific routes before parameterized ones
-        apiRouter.get("/chats/cost").handler(apiHandler::getChatCost);
-        apiRouter.get("/chats/search-status").handler(apiHandler::getSearchStatus);
-        apiRouter.get("/chats").handler(apiHandler::getChats);
-        apiRouter.get("/chats/:chatId").handler(apiHandler::getChat);
-        apiRouter.post("/chats/:chatId/end").handler(apiHandler::endChat);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/chats/cost", apiHandler::getChatCost);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/chats/search-status", apiHandler::getSearchStatus);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/chats", apiHandler::getChats);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/chats/:chatId", apiHandler::getChat);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/chats/:chatId/end", apiHandler::endChat);
 
-        apiRouter.post("/uploads/images").handler(apiHandler::uploadImage);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/uploads/images", apiHandler::uploadImage);
 
-        apiRouter.get("/chats/:chatId/messages").handler(apiHandler::getMessages);
-        apiRouter.post("/messages").handler(apiHandler::sendMessage);
-        apiRouter.put("/messages/:messageId").handler(apiHandler::editMessage);
-        apiRouter.delete("/messages/:messageId").handler(apiHandler::deleteMessage);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/chats/:chatId/messages", apiHandler::getMessages);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/messages", apiHandler::sendMessage);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.PUT, "/messages/:messageId", apiHandler::editMessage);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.DELETE, "/messages/:messageId", apiHandler::deleteMessage);
 
-        apiRouter.post("/reports").handler(apiHandler::createReport);
-        apiRouter.get("/reports").handler(apiHandler::getReports);
-        apiRouter.patch("/reports/:reportId/status").handler(apiHandler::updateReportStatus);
-        apiRouter.post("/blacklist").handler(apiHandler::blockUser);
-        apiRouter.delete("/blacklist/:userId").handler(apiHandler::unblockUser);
-        apiRouter.get("/blacklist").handler(apiHandler::getBlacklist);
-        apiRouter.post("/admin/users/:userId/ban").handler(apiHandler::banUser);
-        apiRouter.delete("/admin/users/:userId/ban").handler(apiHandler::unbanUser);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/reports", apiHandler::createReport);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/reports", apiHandler::getReports);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.PATCH, "/reports/:reportId/status", apiHandler::updateReportStatus);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/blacklist", apiHandler::blockUser);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.DELETE, "/blacklist/:userId", apiHandler::unblockUser);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/blacklist", apiHandler::getBlacklist);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/admin/users/:userId/ban", apiHandler::banUser);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.DELETE, "/admin/users/:userId/ban", apiHandler::unbanUser);
 
-        apiRouter.get("/subscriptions/plans").handler(apiHandler::getSubscriptionPlans);
-        apiRouter.get("/subscriptions/active").handler(apiHandler::getActiveSubscription);
-        apiRouter.post("/subscriptions/purchase").handler(apiHandler::purchaseSubscription);
-        apiRouter.post("/subscriptions/cancel").handler(apiHandler::cancelSubscription);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/subscriptions/plans", apiHandler::getSubscriptionPlans);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/subscriptions/active", apiHandler::getActiveSubscription);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/subscriptions/purchase", apiHandler::purchaseSubscription);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/subscriptions/cancel", apiHandler::cancelSubscription);
 
-        apiRouter.get("/notifications").handler(apiHandler::getNotifications);
-        apiRouter.put("/notifications/read").handler(apiHandler::markNotificationsAsRead);
-        apiRouter.delete("/notifications/:notificationId").handler(apiHandler::deleteNotification);
-        apiRouter.post("/notifications/community").handler(apiHandler::updateCommunityNotifications);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/notifications", apiHandler::getNotifications);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.PUT, "/notifications/read", apiHandler::markNotificationsAsRead);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.DELETE, "/notifications/:notificationId", apiHandler::deleteNotification);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/notifications/community", apiHandler::updateCommunityNotifications);
 
-        apiRouter.get("/stats/online").handler(apiHandler::getOnlineStats);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/stats/online", apiHandler::getOnlineStats);
 
-        apiRouter.get("/config").handler(apiHandler::getAppConfig);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/config", apiHandler::getAppConfig);
 
         router.route("/api/v1/*").subRouter(apiRouter);
     }
@@ -309,5 +372,41 @@ public class MainVerticle extends AbstractVerticle {
                 vertx.close();
                 System.exit(1);
             });
+    }
+
+    @Override
+    public void stop() {
+        if (pgPool != null) {
+            pgPool.close();
+        }
+    }
+
+    private <T> T createRepository(Supplier<T> postgresSupplier, Supplier<T> fallbackSupplier, String repoName) {
+        if (pgPool == null) {
+            return fallbackSupplier.get();
+        }
+        try {
+            return postgresSupplier.get();
+        } catch (Exception e) {
+            logger.error("Failed to initialize {} repository with PostgreSQL, using in-memory fallback", repoName, e);
+            return fallbackSupplier.get();
+        }
+    }
+
+    private PgPool setupPgPool() {
+        DatabaseConfig dbConfig = DatabaseConfig.fromEnvironment();
+        if (!dbConfig.isEnabled()) {
+            return null;
+        }
+
+        PgPool pool = PostgresClientFactory.createPool(vertx, dbConfig);
+        if (pool != null) {
+            logger.info("Connected to PostgreSQL at {}", dbConfig.getSafeDescription());
+        }
+        return pool;
+    }
+
+    private void blocking(Router router, io.vertx.core.http.HttpMethod method, String path, io.vertx.core.Handler<RoutingContext> handler) {
+        router.route(method, path).blockingHandler(handler, false);
     }
 }

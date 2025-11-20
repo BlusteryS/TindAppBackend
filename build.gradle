@@ -14,10 +14,12 @@ repositories {
 }
 
 ext {
-    vertxVersion = '4.4.6'
+    vertxVersion = '4.5.22'
     logbackVersion = '1.4.11'
     jacksonVersion = '2.15.2'
-    postgresqlVersion = '42.6.0'
+    postgresqlVersion = '42.7.8'
+    scramVersion = '2.1'
+    stringprepVersion = '1.1'
 }
 
 dependencies {
@@ -32,6 +34,9 @@ dependencies {
     implementation "io.vertx:vertx-pg-client:$vertxVersion"
     implementation "io.vertx:vertx-sql-client:$vertxVersion"
     implementation "org.postgresql:postgresql:$postgresqlVersion"
+    implementation "com.ongres.scram:common:$scramVersion"
+    implementation "com.ongres.scram:client:$scramVersion"
+    implementation "com.ongres.stringprep:saslprep:$stringprepVersion"
 
     implementation "io.vertx:vertx-config:$vertxVersion"
 
