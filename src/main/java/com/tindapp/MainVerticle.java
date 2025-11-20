@@ -1,12 +1,11 @@
 package com.tindapp;
 
+import com.tindapp.auth.AuthHandler;
 import com.tindapp.auth.TokenAuthHandler;
-import com.tindapp.auth.VKAuthHandler;
 import com.tindapp.config.AppConfig;
 import com.tindapp.config.DatabaseConfig;
 import com.tindapp.db.PostgresClientFactory;
 import com.tindapp.handler.ApiHandler;
-import com.tindapp.handler.AuthHandler;
 import com.tindapp.handler.VkPaymentHandler;
 import com.tindapp.handler.WebSocketHandler;
 import com.tindapp.repository.BlackListRepository;
@@ -61,36 +60,44 @@ import java.io.File;
 import java.util.function.Supplier;
 
 public class MainVerticle extends AbstractVerticle {
-
     private static final Logger logger = LoggerFactory.getLogger(MainVerticle.class);
 
-    private UserService userService;
-    private ChatService chatService;
-    private MessageService messageService;
-    private NotificationService notificationService;
-    private SubscriptionService subscriptionService;
-    private ReportService reportService;
-    private BlackListService blackListService;
-    private TokenService tokenService;
-    private LocationService locationService;
-    private ProfileService profileService;
     private WebSocketHandler webSocketHandler;
-    private VkGroupNotificationService vkGroupNotificationService;
     private ApiHandler apiHandler;
     private VkPaymentHandler vkPaymentHandler;
-    private TranslationService translationService;
-    private VKAuthHandler vkAuthHandler;
     private TokenAuthHandler tokenAuthHandler;
     private AuthHandler authHandler;
     private PgPool pgPool;
 
+    public static void main(final String[] args) {
+        System.setProperty("vertx.logger-delegate-factory-class-name",
+            "io.vertx.core.logging.SLF4JLogDelegateFactory");
+
+        final Vertx vertx = Vertx.vertx(new VertxOptions());
+
+        final JsonObject config = new JsonObject()
+            .put("http", AppConfig.getHttpConfig())
+            .put("vk", AppConfig.getVkConfig());
+
+        vertx.deployVerticle(new MainVerticle(),
+                new io.vertx.core.DeploymentOptions().setConfig(config))
+            .onSuccess(id -> {
+                logger.info("Application started successfully with deployment ID: " + id);
+            })
+            .onFailure(error -> {
+                logger.error("Failed to start application", error);
+                vertx.close();
+                System.exit(1);
+            });
+    }
+
     @Override
-    public void start(Promise<Void> startPromise) {
+    public void start(final Promise<Void> startPromise) {
         vertx.executeBlocking(promise -> {
             try {
                 initializeServices();
                 promise.complete();
-            } catch (Exception e) {
+            } catch (final Exception e) {
                 promise.fail(e);
             }
         }, false, ar -> {
@@ -100,10 +107,10 @@ public class MainVerticle extends AbstractVerticle {
                 return;
             }
 
-            HttpServer server = vertx.createHttpServer();
-            Router router = createRouter();
+            final HttpServer server = vertx.createHttpServer();
+            final Router router = createRouter();
 
-            int port = config().getInteger("http.port", AppConfig.HTTP_PORT);
+            final int port = config().getInteger("http.port", AppConfig.HTTP_PORT);
 
             server
                 .requestHandler(router)
@@ -121,71 +128,77 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    @Override
+    public void stop() {
+        if (pgPool != null) {
+            pgPool.close();
+        }
+    }
+
     private void initializeServices() {
         pgPool = setupPgPool();
 
-        boolean usePostgres = pgPool != null;
+        final boolean usePostgres = pgPool != null;
         if (usePostgres) {
             logger.info("Using PostgreSQL repositories");
         } else {
             logger.warn("PostgreSQL is disabled or not available, falling back to in-memory repositories");
         }
 
-        UserRepository userRepository = createRepository(
+        final UserRepository userRepository = createRepository(
             () -> new PostgresUserRepository(pgPool),
             InMemoryUserRepository::new,
             "User"
         );
-        ChatRepository chatRepository = createRepository(
+        final ChatRepository chatRepository = createRepository(
             () -> new PostgresChatRepository(pgPool),
             InMemoryChatRepository::new,
             "Chat"
         );
-        MessageRepository messageRepository = createRepository(
+        final MessageRepository messageRepository = createRepository(
             () -> new PostgresMessageRepository(pgPool),
             InMemoryMessageRepository::new,
             "Message"
         );
-        NotificationRepository notificationRepository = createRepository(
+        final NotificationRepository notificationRepository = createRepository(
             () -> new PostgresNotificationRepository(pgPool),
             InMemoryNotificationRepository::new,
             "Notification"
         );
-        SubscriptionRepository subscriptionRepository = createRepository(
+        final SubscriptionRepository subscriptionRepository = createRepository(
             () -> new PostgresSubscriptionRepository(pgPool),
             InMemorySubscriptionRepository::new,
             "Subscription"
         );
-        ReportRepository reportRepository = createRepository(
+        final ReportRepository reportRepository = createRepository(
             () -> new PostgresReportRepository(pgPool),
             InMemoryReportRepository::new,
             "Report"
         );
-        BlackListRepository blackListRepository = createRepository(
+        final BlackListRepository blackListRepository = createRepository(
             () -> new PostgresBlackListRepository(pgPool),
             InMemoryBlackListRepository::new,
             "BlackList"
         );
 
-        userService = new UserService(userRepository);
-        profileService = new ProfileService(userRepository);
-        vkGroupNotificationService = new VkGroupNotificationService(
+        final UserService userService = new UserService(userRepository);
+        final ProfileService profileService = new ProfileService(userRepository);
+        final VkGroupNotificationService vkGroupNotificationService = new VkGroupNotificationService(
             AppConfig.VK_COMMUNITY_ACCESS_TOKEN,
             AppConfig.VK_COMMUNITY_GROUP_ID
         );
-        notificationService = new NotificationService(notificationRepository, userService, vkGroupNotificationService);
-        chatService = new ChatService(chatRepository, userRepository, userService, notificationService);
-        blackListService = new BlackListService(blackListRepository, userRepository);
-        translationService = new TranslationService();
-        messageService = new MessageService(messageRepository, chatRepository, blackListService, userService, translationService);
-        subscriptionService = new SubscriptionService(subscriptionRepository, userRepository, notificationService);
-        reportService = new ReportService(reportRepository, userRepository);
-        tokenService = new TokenService(userService);
+        final NotificationService notificationService = new NotificationService(notificationRepository, userService, vkGroupNotificationService);
+        final ChatService chatService = new ChatService(chatRepository, userRepository, userService, notificationService);
+        final BlackListService blackListService = new BlackListService(blackListRepository, userRepository);
+        final TranslationService translationService = new TranslationService();
+        final MessageService messageService = new MessageService(messageRepository, chatRepository, blackListService, userService, translationService);
+        final SubscriptionService subscriptionService = new SubscriptionService(subscriptionRepository, userRepository, notificationService);
+        final ReportService reportService = new ReportService(reportRepository, userRepository);
+        final TokenService tokenService = new TokenService(userService);
 
-        vkAuthHandler = new VKAuthHandler(config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET));
         tokenAuthHandler = new TokenAuthHandler(tokenService);
         authHandler = new AuthHandler(config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET), userService, tokenService);
-        locationService = new LocationService();
+        final LocationService locationService = new LocationService();
         webSocketHandler = new WebSocketHandler(
             vertx,
             chatService,
@@ -215,12 +228,12 @@ public class MainVerticle extends AbstractVerticle {
     }
 
     private Router createRouter() {
-        Router router = Router.router(vertx);
+        final Router router = Router.router(vertx);
 
-        CorsHandler corsHandler = CorsHandler.create();
+        final CorsHandler corsHandler = CorsHandler.create();
         boolean wildcardOrigin = false;
         boolean credentialsAllowed = false;
-        for (String origin : AppConfig.ALLOWED_ORIGINS) {
+        for (final String origin : AppConfig.ALLOWED_ORIGINS) {
             if (origin == null || origin.isBlank()) {
                 continue;
             }
@@ -251,12 +264,12 @@ public class MainVerticle extends AbstractVerticle {
             .allowedHeader("Access-Control-Request-Headers");
         router.route().handler(corsHandler);
 
-        File uploadDir = new File(AppConfig.UPLOAD_DIR);
+        final File uploadDir = new File(AppConfig.UPLOAD_DIR);
         if (!uploadDir.exists() && !uploadDir.mkdirs()) {
             logger.warn("Failed to create upload directory at {}", uploadDir.getAbsolutePath());
         }
 
-        BodyHandler bodyHandler = BodyHandler.create()
+        final BodyHandler bodyHandler = BodyHandler.create()
             .setUploadsDirectory(AppConfig.UPLOAD_DIR)
             .setDeleteUploadedFilesOnEnd(false)
             .setMergeFormAttributes(true)
@@ -273,7 +286,7 @@ public class MainVerticle extends AbstractVerticle {
         setupApiRoutes(router);
 
         router.get("/health").handler(ctx -> {
-            JsonObject health = AppConfig.getAppInfo()
+            final JsonObject health = AppConfig.getAppInfo()
                 .put("status", "UP")
                 .put("timestamp", System.currentTimeMillis());
             ctx.response()
@@ -284,8 +297,8 @@ public class MainVerticle extends AbstractVerticle {
         return router;
     }
 
-    private void setupApiRoutes(Router router) {
-        Router apiRouter = Router.router(vertx);
+    private void setupApiRoutes(final Router router) {
+        final Router apiRouter = Router.router(vertx);
 
         blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/auth", authHandler);
 
@@ -352,61 +365,32 @@ public class MainVerticle extends AbstractVerticle {
         router.route("/api/v1/*").subRouter(apiRouter);
     }
 
-    public static void main(String[] args) {
-        System.setProperty("vertx.logger-delegate-factory-class-name",
-            "io.vertx.core.logging.SLF4JLogDelegateFactory");
-
-        Vertx vertx = Vertx.vertx(new VertxOptions());
-
-        JsonObject config = new JsonObject()
-            .put("http", AppConfig.getHttpConfig())
-            .put("vk", AppConfig.getVkConfig());
-
-        vertx.deployVerticle(new MainVerticle(),
-                new io.vertx.core.DeploymentOptions().setConfig(config))
-            .onSuccess(id -> {
-                logger.info("Application started successfully with deployment ID: " + id);
-            })
-            .onFailure(error -> {
-                logger.error("Failed to start application", error);
-                vertx.close();
-                System.exit(1);
-            });
-    }
-
-    @Override
-    public void stop() {
-        if (pgPool != null) {
-            pgPool.close();
-        }
-    }
-
-    private <T> T createRepository(Supplier<T> postgresSupplier, Supplier<T> fallbackSupplier, String repoName) {
+    private <T> T createRepository(final Supplier<T> postgresSupplier, final Supplier<T> fallbackSupplier, final String repoName) {
         if (pgPool == null) {
             return fallbackSupplier.get();
         }
         try {
             return postgresSupplier.get();
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Failed to initialize {} repository with PostgreSQL, using in-memory fallback", repoName, e);
             return fallbackSupplier.get();
         }
     }
 
     private PgPool setupPgPool() {
-        DatabaseConfig dbConfig = DatabaseConfig.fromEnvironment();
+        final DatabaseConfig dbConfig = DatabaseConfig.fromEnvironment();
         if (!dbConfig.isEnabled()) {
             return null;
         }
 
-        PgPool pool = PostgresClientFactory.createPool(vertx, dbConfig);
+        final PgPool pool = PostgresClientFactory.createPool(vertx, dbConfig);
         if (pool != null) {
             logger.info("Connected to PostgreSQL at {}", dbConfig.getSafeDescription());
         }
         return pool;
     }
 
-    private void blocking(Router router, io.vertx.core.http.HttpMethod method, String path, io.vertx.core.Handler<RoutingContext> handler) {
+    private void blocking(final Router router, final io.vertx.core.http.HttpMethod method, final String path, final io.vertx.core.Handler<RoutingContext> handler) {
         router.route(method, path).blockingHandler(handler, false);
     }
 }

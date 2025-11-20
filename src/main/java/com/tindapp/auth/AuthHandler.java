@@ -1,4 +1,4 @@
-package com.tindapp.handler;
+package com.tindapp.auth;
 
 import com.tindapp.config.AppConfig;
 import com.tindapp.model.User;
