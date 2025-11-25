@@ -229,7 +229,10 @@ public class ChatService {
             return existing.get();
         }
 
-        int cost = target.getProfileCost() != null ? target.getProfileCost() : AppConfig.ANONYMOUS_CHAT_CREATION_COST;
+        boolean initiatorHasSubscription = initiator.getSubscription() != null
+            && Boolean.TRUE.equals(initiator.getSubscription().getIsActive());
+        int baseCost = target.getProfileCost() != null ? target.getProfileCost() : AppConfig.ANONYMOUS_CHAT_CREATION_COST;
+        int cost = initiatorHasSubscription ? 0 : baseCost;
         if (cost > 0) {
             userService.deductCoins(initiatorId, cost);
         }

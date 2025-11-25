@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import com.tindapp.config.AppConfig;
 import com.tindapp.util.LanguageUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -17,6 +18,7 @@ public class User {
     private Long id;
     private Long vkId;
     private Integer age;
+    private LocalDate birthDate;
     private String firstName;
     private String lastName;
     private String avatarUrl;
@@ -39,6 +41,7 @@ public class User {
     private String banReason;
     private LocalDateTime bannedAt;
     private String nativeLanguage;
+    private UserRewards rewards;
 
     public User() {
         this.isVerified = false;
@@ -56,6 +59,7 @@ public class User {
         this.isAdmin = false;
         this.isBanned = false;
         this.nativeLanguage = LanguageUtils.getDefaultLanguage();
+        this.rewards = new UserRewards();
     }
 
     public User(Long vkId) {
@@ -154,6 +158,23 @@ public class User {
         }
     }
 
+    public static class UserRewards {
+        private Boolean subscriptionBonusClaimed;
+        private LocalDateTime lastAdRewardAt;
+
+        public UserRewards() {
+            this.subscriptionBonusClaimed = false;
+        }
+
+        public Boolean getSubscriptionBonusClaimed() { return subscriptionBonusClaimed; }
+        public void setSubscriptionBonusClaimed(Boolean subscriptionBonusClaimed) {
+            this.subscriptionBonusClaimed = subscriptionBonusClaimed;
+        }
+
+        public LocalDateTime getLastAdRewardAt() { return lastAdRewardAt; }
+        public void setLastAdRewardAt(LocalDateTime lastAdRewardAt) { this.lastAdRewardAt = lastAdRewardAt; }
+    }
+
     public enum SubscriptionType {
         BASIC, PREMIUM
     }
@@ -166,6 +187,8 @@ public class User {
 
     public Integer getAge() { return age; }
     public void setAge(Integer age) { this.age = age; }
+    public LocalDate getBirthDate() { return birthDate; }
+    public void setBirthDate(LocalDate birthDate) { this.birthDate = birthDate; }
 
     public String getFirstName() { return firstName; }
     public void setFirstName(String firstName) { this.firstName = firstName; }
@@ -235,6 +258,8 @@ public class User {
     public void setNativeLanguage(String nativeLanguage) {
         this.nativeLanguage = LanguageUtils.normalizeLanguage(nativeLanguage);
     }
+    public UserRewards getRewards() { return rewards; }
+    public void setRewards(UserRewards rewards) { this.rewards = rewards; }
 
     public LocalDateTime getCreatedAtDateTime() { return createdAt; }
     public void setCreatedAtDateTime(LocalDateTime createdAt) { this.createdAt = createdAt; }

@@ -8,6 +8,7 @@ import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -162,8 +163,10 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
     @Override
     public List<User> findByAgeRange(Integer minAge, Integer maxAge) {
         return findAll().stream()
-            .filter(user -> user.getAge() != null)
-            .filter(user -> user.getAge() >= minAge && user.getAge() <= maxAge)
+            .filter(user -> {
+                Integer age = resolveAge(user);
+                return age != null && age >= minAge && age <= maxAge;
+            })
             .collect(Collectors.toList());
     }
 
@@ -185,7 +188,10 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
                 return Boolean.TRUE.equals(user.getSettings().getAllowMessages());
             })
             .filter(user -> gender == null || gender.equals(user.getGenderEnum()))
-            .filter(user -> user.getAge() == null || (user.getAge() >= minAge && user.getAge() <= maxAge))
+            .filter(user -> {
+                Integer age = resolveAge(user);
+                return age == null || (age >= minAge && age <= maxAge);
+            })
             .filter(user -> city == null || city.equals(user.getCity()))
             .collect(Collectors.toList());
     }
@@ -223,5 +229,23 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
         RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM users");
         Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
         return row != null ? row.getLong("cnt") : 0L;
+    }
+
+    private Integer resolveAge(User user) {
+        if (user == null) {
+            return null;
+        }
+        if (user.getAge() != null) {
+            return user.getAge();
+        }
+        if (user.getBirthDate() != null) {
+            LocalDate today = LocalDate.now();
+            int age = today.getYear() - user.getBirthDate().getYear();
+            if (user.getBirthDate().plusYears(age).isAfter(today)) {
+                age -= 1;
+            }
+            return Math.max(age, 0);
+        }
+        return null;
     }
 }

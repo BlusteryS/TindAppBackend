@@ -320,7 +320,9 @@ public class MainVerticle extends AbstractVerticle {
         blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/users/:userId", apiHandler::getUser);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/users/me/verify", apiHandler::verifyUser);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/users/me/balance", apiHandler::getBalance);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/users/me/rewards", apiHandler::getRewards);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/users/me/purchase-coins", apiHandler::purchaseCoins);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/users/me/rewards", apiHandler::claimReward);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/users/me/stats", apiHandler::getUserStats);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/profiles", apiHandler::getProfiles);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/profiles/:profileId/chat", apiHandler::startProfileChat);

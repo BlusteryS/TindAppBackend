@@ -346,6 +346,40 @@ public class ApiHandler {
         }
     }
 
+    private JsonObject toRewardsJson(UserService.RewardStatus status) {
+        if (status == null) {
+            return new JsonObject();
+        }
+        JsonObject ad = new JsonObject()
+            .put("available", status.isAdAvailable());
+        if (status.getAdCooldownSeconds() != null) {
+            ad.put("cooldownSeconds", status.getAdCooldownSeconds());
+        }
+
+        JsonObject subscription = new JsonObject()
+            .put("available", status.isSubscriptionAvailable())
+            .put("claimed", status.isSubscriptionClaimed());
+
+        return new JsonObject()
+            .put("ad", ad.getMap())
+            .put("subscription", subscription.getMap());
+    }
+
+    private UserService.RewardType parseRewardType(String type) {
+        if (type == null) {
+            throw new RuntimeException("Reward type is required");
+        }
+        switch (type.toLowerCase()) {
+            case "ad":
+                return UserService.RewardType.AD;
+            case "subscription":
+            case "community":
+                return UserService.RewardType.COMMUNITY;
+            default:
+                throw new RuntimeException("Unknown reward type");
+        }
+    }
+
     public void getBalance(RoutingContext ctx) {
         try {
             Long userId = getUserIdFromContext(ctx);
@@ -355,6 +389,17 @@ public class ApiHandler {
             sendSuccess(ctx, response);
         } catch (Exception e) {
             logger.error("Error getting user balance", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
+    }
+
+    public void getRewards(RoutingContext ctx) {
+        try {
+            Long userId = getUserIdFromContext(ctx);
+            UserService.RewardStatus status = userService.getRewardStatus(userId);
+            sendSuccess(ctx, toRewardsJson(status));
+        } catch (Exception e) {
+            logger.error("Error getting rewards status", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
@@ -373,6 +418,33 @@ public class ApiHandler {
             sendSuccess(ctx, response);
         } catch (Exception e) {
             logger.error("Error purchasing coins", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
+    }
+
+    public void claimReward(RoutingContext ctx) {
+        try {
+            Long userId = getUserIdFromContext(ctx);
+            JsonObject body = ctx.getBodyAsJson();
+            if (body == null) {
+                body = new JsonObject();
+            }
+
+            String type = trimToNull(body.getString("type"));
+            boolean success = body.getBoolean("success", false);
+            UserService.RewardType rewardType = parseRewardType(type);
+
+            UserService.RewardClaimResult result = userService.claimReward(userId, rewardType, success);
+            JsonObject response = new JsonObject()
+                .put("balance", result.getBalance())
+                .put("rewarded", result.getRewardedAmount())
+                .put("rewards", toRewardsJson(result.getRewards()));
+            sendSuccess(ctx, response);
+        } catch (RuntimeException e) {
+            logger.error("Error claiming reward", e);
+            sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error claiming reward", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }

@@ -22,6 +22,8 @@ public class AppConfig {
     public static final int MAX_BIO_LENGTH = 500;
 
     public static final int INITIAL_USER_BALANCE = 0;
+    public static final int AD_REWARD_AMOUNT = 20;
+    public static final int SUBSCRIPTION_REWARD_AMOUNT = 200;
 
     public static final int VK_PAY_COIN_RATE = 100; // 1 рубль = 100 фиан
     public static final int VOTES_COIN_RATE = 10;   // 1 голос = 10 фиан

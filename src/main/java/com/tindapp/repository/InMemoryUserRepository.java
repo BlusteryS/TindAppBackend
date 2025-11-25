@@ -2,6 +2,7 @@ package com.tindapp.repository;
 
 import com.tindapp.model.User;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -76,8 +77,10 @@ public class InMemoryUserRepository implements UserRepository {
     @Override
     public List<User> findByAgeRange(Integer minAge, Integer maxAge) {
         return users.values().stream()
-                .filter(user -> user.getAge() != null)
-                .filter(user -> user.getAge() >= minAge && user.getAge() <= maxAge)
+                .filter(user -> {
+                    Integer age = resolveAge(user);
+                    return age != null && age >= minAge && age <= maxAge;
+                })
                 .collect(Collectors.toList());
     }
 
@@ -94,7 +97,10 @@ public class InMemoryUserRepository implements UserRepository {
                 .filter(user -> Boolean.TRUE.equals(user.getIsVisible()))
                 .filter(user -> Boolean.TRUE.equals(user.getSettings().getAllowMessages()))
                 .filter(user -> gender == null || gender.equals(user.getGender()))
-                .filter(user -> user.getAge() == null || (user.getAge() >= minAge && user.getAge() <= maxAge))
+                .filter(user -> {
+                    Integer age = resolveAge(user);
+                    return age == null || (age >= minAge && age <= maxAge);
+                })
                 .filter(user -> city == null || city.equals(user.getCity()))
                 .collect(Collectors.toList());
     }
@@ -132,5 +138,23 @@ public class InMemoryUserRepository implements UserRepository {
     @Override
     public long count() {
         return users.size();
+    }
+
+    private Integer resolveAge(User user) {
+        if (user == null) {
+            return null;
+        }
+        if (user.getAge() != null) {
+            return user.getAge();
+        }
+        if (user.getBirthDate() != null) {
+            LocalDate today = LocalDate.now();
+            int age = today.getYear() - user.getBirthDate().getYear();
+            if (user.getBirthDate().plusYears(age).isAfter(today)) {
+                age -= 1;
+            }
+            return Math.max(age, 0);
+        }
+        return null;
     }
 }

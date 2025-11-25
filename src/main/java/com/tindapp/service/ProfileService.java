@@ -112,14 +112,21 @@ public class ProfileService {
             DateTimeUtils.formatToIso(candidate.getLastSeenDateTime()) :
             null;
 
+        boolean viewerHasSubscription = viewer != null
+            && viewer.getSubscription() != null
+            && Boolean.TRUE.equals(viewer.getSubscription().getIsActive());
         boolean hasActiveSubscription = candidate.getSubscription() != null
             && Boolean.TRUE.equals(candidate.getSubscription().getIsActive());
+        int baseCost = candidate.getProfileCost() != null
+            ? candidate.getProfileCost()
+            : AppConfig.ANONYMOUS_CHAT_CREATION_COST;
+        int cost = viewerHasSubscription ? 0 : baseCost;
 
         return new ProfileCard(
             candidate.getId(),
             candidate.getFirstName(),
             candidate.getLastName(),
-            candidate.getAge(),
+            resolveAge(candidate),
             candidate.getCity(),
             candidate.getCountry(),
             candidate.getAvatarUrl(),
@@ -128,7 +135,7 @@ public class ProfileService {
             lastSeen,
             candidate.getBio(),
             candidate.getGender(),
-            candidate.getProfileCost() != null ? candidate.getProfileCost() : AppConfig.ANONYMOUS_CHAT_CREATION_COST,
+            cost,
             sameCity,
             hasActiveSubscription
         );
@@ -149,7 +156,7 @@ public class ProfileService {
             return false;
         }
 
-        Integer age = candidate.getAge();
+        Integer age = resolveAge(candidate);
         if (age != null) {
             if (age < filters.getMinAge() || age > filters.getMaxAge()) {
                 return false;
@@ -184,6 +191,24 @@ public class ProfileService {
         }
 
         return result;
+    }
+
+    private Integer resolveAge(User user) {
+        if (user == null) {
+            return null;
+        }
+        if (user.getAge() != null) {
+            return user.getAge();
+        }
+        if (user.getBirthDate() != null) {
+            LocalDate today = LocalDate.now();
+            int age = today.getYear() - user.getBirthDate().getYear();
+            if (user.getBirthDate().plusYears(age).isAfter(today)) {
+                age -= 1;
+            }
+            return Math.max(age, 0);
+        }
+        return null;
     }
 
     private ProfileFilters defaultFilters(User viewer) {

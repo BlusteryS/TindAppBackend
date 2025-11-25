@@ -25,6 +25,7 @@ public final class ResponseMapper {
             .put("id", user.getId())
             .put("vkId", user.getVkId())
             .put("age", user.getAge())
+            .put("birthDate", user.getBirthDate() != null ? user.getBirthDate().toString() : null)
             .put("firstName", user.getFirstName())
             .put("lastName", user.getLastName())
             .put("avatarUrl", user.getAvatarUrl())
@@ -89,6 +90,18 @@ public final class ResponseMapper {
                 .put("notifySubscriptionProblems", true);
         }
         response.put("settings", settings.getMap());
+
+        JsonObject rewards = new JsonObject();
+        if (user.getRewards() != null) {
+            rewards
+                .put("subscriptionBonusClaimed", user.getRewards().getSubscriptionBonusClaimed())
+                .put("lastAdRewardAt", DateTimeUtils.formatToIso(user.getRewards().getLastAdRewardAt()));
+        } else {
+            rewards
+                .put("subscriptionBonusClaimed", false)
+                .put("lastAdRewardAt", null);
+        }
+        response.put("rewards", rewards.getMap());
 
         return response;
     }
