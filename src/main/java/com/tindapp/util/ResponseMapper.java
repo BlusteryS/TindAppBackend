@@ -32,6 +32,7 @@ public final class ResponseMapper {
             .put("country", user.getCountry())
             .put("city", user.getCity())
             .put("isVerified", user.isVerified())
+            .put("wasVerified", user.wasVerified())
             .put("isOnline", user.isOnline())
             .put("isAdmin", user.isAdmin())
             .put("bio", user.getBio())

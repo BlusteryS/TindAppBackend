@@ -25,6 +25,7 @@ public class User {
     private String country;
     private String city;
     private Boolean isVerified;
+    private Boolean wasVerified;
     private Boolean isOnline;
     private LocalDateTime lastSeen;
     private String bio;
@@ -45,6 +46,7 @@ public class User {
 
     public User() {
         this.isVerified = false;
+        this.wasVerified = false;
         this.isOnline = false;
         this.isVisible = true;
         this.balance = 0;
@@ -208,8 +210,13 @@ public class User {
     public Boolean getIsVerified() { return isVerified; }
     public void setIsVerified(Boolean isVerified) { this.isVerified = isVerified; }
 
+    public Boolean getWasVerified() { return wasVerified; }
+    public void setWasVerified(Boolean wasVerified) { this.wasVerified = wasVerified; }
+
     public boolean isVerified() { return isVerified != null ? isVerified : false; }
     public void setVerified(boolean verified) { this.isVerified = verified; }
+
+    public boolean wasVerified() { return wasVerified != null ? wasVerified : false; }
 
     public Boolean getIsOnline() { return isOnline; }
     public void setIsOnline(Boolean isOnline) { this.isOnline = isOnline; }

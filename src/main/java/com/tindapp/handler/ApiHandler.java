@@ -310,16 +310,85 @@ public class ApiHandler {
     }
 
     public void verifyUser(RoutingContext ctx) {
+        FileUpload upload = null;
+        Path selfiePath = null;
         try {
             Long userId = getUserIdFromContext(ctx);
-            User verifiedUser = userService.verifyUser(userId);
+            if (userId == null) {
+                sendError(ctx, 401, ErrorCodes.UNAUTHORIZED, "Not authenticated");
+                return;
+            }
+
+            List<FileUpload> uploads = ctx.fileUploads();
+            if (uploads == null || uploads.isEmpty()) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Selfie is required");
+                return;
+            }
+
+            upload = uploads.iterator().next();
+
+            if (upload.size() > AppConfig.MAX_UPLOAD_SIZE_BYTES) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "File too large");
+                deleteTempFile(upload);
+                return;
+            }
+
+            String contentType = upload.contentType();
+            if (contentType == null || !contentType.startsWith("image/")) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Only image uploads are allowed");
+                deleteTempFile(upload);
+                return;
+            }
+
+            String originalFileName = upload.fileName();
+            String extension = getFileExtension(originalFileName);
+            if (extension.isEmpty()) {
+                extension = getExtensionFromContentType(contentType);
+            }
+            if (extension.isEmpty()) {
+                extension = ".jpg";
+            }
+
+            String fileName = "selfie-" + UUID.randomUUID() + extension;
+            selfiePath = Paths.get(AppConfig.UPLOAD_DIR, fileName);
+
+            Files.move(Paths.get(upload.uploadedFileName()), selfiePath, StandardCopyOption.REPLACE_EXISTING);
+
+            UserService.UserVerificationResult result = userService.verifyUserWithSelfie(userId, selfiePath);
 
             JsonObject response = new JsonObject()
-                .put("isVerified", verifiedUser.getIsVerified());
+                .put("isVerified", result.isVerified())
+                .put("similarity", result.getSimilarity())
+                .put("reason", result.getReason());
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
+            logger.warn("Verification validation error", e);
+            sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, e.getMessage());
+        } catch (RuntimeException e) {
             logger.error("Error verifying user", e);
+            String message = e.getMessage() != null ? e.getMessage() : "Verification failed";
+            String lower = message.toLowerCase();
+            if (lower.contains("subscription required")) {
+                sendError(ctx, 403, ErrorCodes.SUBSCRIPTION_REQUIRED, message);
+            } else if (lower.contains("not found")) {
+                sendError(ctx, 404, ErrorCodes.NOT_FOUND, message);
+            } else {
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, message);
+            }
+        } catch (Exception e) {
+            logger.error("Unexpected error verifying user", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        } finally {
+            if (selfiePath != null) {
+                try {
+                    Files.deleteIfExists(selfiePath);
+                } catch (Exception cleanupError) {
+                    logger.warn("Failed to cleanup selfie file {}", selfiePath, cleanupError);
+                }
+            }
+            if (upload != null) {
+                deleteTempFile(upload);
+            }
         }
     }
 

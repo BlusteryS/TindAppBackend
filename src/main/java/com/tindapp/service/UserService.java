@@ -3,16 +3,26 @@ package com.tindapp.service;
 import com.tindapp.config.AppConfig;
 import com.tindapp.model.User;
 import com.tindapp.repository.UserRepository;
+import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.InputStream;
 import java.net.URI;
+import java.net.URL;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -25,6 +35,9 @@ public class UserService {
     private static final Set<Long> ADMIN_VK_IDS = java.util.Arrays.stream(System.getenv("ADMIN_VK_IDS").split(","))
         .map(Long::parseLong)
         .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    private static final double VERIFICATION_THRESHOLD = 0.55;
+    private static final double MIN_SKIN_COVERAGE = 0.12;
+    private static final double MAX_SKIN_COVERAGE = 0.65;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
     public UserService(UserRepository userRepository) {
@@ -114,6 +127,8 @@ public class UserService {
             .orElseThrow(() -> new RuntimeException("User not found"));
         ensureRewards(user);
 
+        String previousAvatar = user.getAvatarUrl();
+
         if (firstName != null) {
             user.setFirstName(firstName);
         }
@@ -122,6 +137,10 @@ public class UserService {
         }
         if (avatarUrl != null) {
             user.setAvatarUrl(avatarUrl);
+            if (user.isVerified() && (previousAvatar == null || !previousAvatar.equals(avatarUrl))) {
+                user.setWasVerified(true);
+                user.setIsVerified(false);
+            }
         }
         if (gender != null) {
             user.setGender(gender);
@@ -198,12 +217,60 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public User verifyUser(Long userId) {
+    public UserVerificationResult verifyUserWithSelfie(Long userId, Path selfiePath) {
+        if (selfiePath == null || !Files.exists(selfiePath)) {
+            throw new IllegalArgumentException("Selfie file not found");
+        }
+
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
-        user.setIsVerified(true);
-        return userRepository.save(user);
+        if (!hasActiveSubscription(user)) {
+            throw new RuntimeException("Subscription required");
+        }
+
+        if (Boolean.TRUE.equals(user.getIsVerified())) {
+            return new UserVerificationResult(true, 1.0, null);
+        }
+
+        if (user.getAvatarUrl() == null || user.getAvatarUrl().isBlank()) {
+            throw new IllegalArgumentException("Avatar is required for verification");
+        }
+
+        try {
+            BufferedImage avatarImage = loadImageFromSource(user.getAvatarUrl());
+            BufferedImage selfieImage = ImageIO.read(selfiePath.toFile());
+
+            if (avatarImage == null || selfieImage == null) {
+                throw new IllegalArgumentException("Failed to read images for verification");
+            }
+
+            String validationError = validateHumanPresence(avatarImage, true);
+            if (validationError != null) {
+                return new UserVerificationResult(false, 0.0, validationError);
+            }
+
+            validationError = validateHumanPresence(selfieImage, false);
+            if (validationError != null) {
+                return new UserVerificationResult(false, 0.0, validationError);
+            }
+
+            double similarity = calculateSimilarity(avatarImage, selfieImage);
+            if (similarity < VERIFICATION_THRESHOLD) {
+                return new UserVerificationResult(false, 0.0, "Вы не похожи на того человека");
+            }
+
+            user.setIsVerified(true);
+            user.setWasVerified(true);
+            userRepository.save(user);
+
+            return new UserVerificationResult(true, 1, null);
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            logger.error("Failed to verify user {} using selfie {}", userId, selfiePath, ex);
+            throw new RuntimeException("Unable to verify user at this time");
+        }
     }
 
     public Integer getUserBalance(Long userId) {
@@ -306,6 +373,433 @@ public class UserService {
         }
     }
 
+    private BufferedImage loadImageFromSource(String source) {
+        if (source == null || source.trim().isEmpty()) {
+            return null;
+        }
+
+        try {
+            if (source.startsWith("http://") || source.startsWith("https://")) {
+                try (InputStream stream = new URL(source).openStream()) {
+                    return ImageIO.read(stream);
+                }
+            }
+
+            String normalized = source.startsWith("/") ? source.substring(1) : source;
+            List<Path> candidates = new ArrayList<>();
+            candidates.add(Paths.get(normalized));
+            candidates.add(Paths.get(AppConfig.UPLOAD_DIR, normalized));
+
+            if (normalized.startsWith("uploads/")) {
+                String withoutPrefix = normalized.substring("uploads/".length());
+                candidates.add(Paths.get(AppConfig.UPLOAD_DIR, withoutPrefix));
+            }
+
+            Path fileName = Paths.get(normalized).getFileName();
+            if (fileName != null) {
+                candidates.add(Paths.get(AppConfig.UPLOAD_DIR, fileName.toString()));
+            }
+
+            for (Path candidate : candidates) {
+                if (candidate != null && Files.exists(candidate)) {
+                    return ImageIO.read(candidate.toFile());
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to load image from {}", source, e);
+        }
+
+        return null;
+    }
+
+    public String mirrorExternalAvatar(String source) {
+        if (source == null || source.trim().isEmpty()) {
+            return null;
+        }
+
+        String trimmed = source.trim();
+        if (trimmed.contains(AppConfig.UPLOAD_DIR)) {
+            return trimmed;
+        }
+
+        try (InputStream in = new URL(trimmed).openStream()) {
+            String extension = ".jpg";
+            String lower = trimmed.toLowerCase();
+            if (lower.contains(".png")) {
+                extension = ".png";
+            } else if (lower.contains(".webp")) {
+                extension = ".webp";
+            }
+
+            String fileName = "vk-avatar-" + System.currentTimeMillis() + "-" + Math.abs(trimmed.hashCode()) + extension;
+            Path target = Paths.get(AppConfig.UPLOAD_DIR, fileName);
+            Files.copy(in, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            return "/uploads/" + fileName;
+        } catch (Exception e) {
+            logger.warn("Failed to mirror external avatar {}", source, e);
+            return null;
+        }
+    }
+
+    private double calculateSimilarity(BufferedImage first, BufferedImage second) {
+        final int size = 64;
+        BufferedImage normalizedFirst = resizeImage(first, size, size);
+        BufferedImage normalizedSecond = resizeImage(second, size, size);
+
+        if (isTooBlurry(normalizedSecond)) {
+            throw new IllegalArgumentException("Selfie too blurry for verification");
+        }
+
+        double pixelSimilarity = pixelSimilarity(normalizedFirst, normalizedSecond);
+        double hashSimilarity = dhashSimilarity(normalizedFirst, normalizedSecond);
+        double histogramSimilarity = histogramCosineSimilarity(normalizedFirst, normalizedSecond);
+
+        double combined = (hashSimilarity * 0.5) + (histogramSimilarity * 0.3) + (pixelSimilarity * 0.2);
+        return Math.max(0.0, Math.min(1.0, combined));
+    }
+
+    private BufferedImage resizeImage(BufferedImage source, int width, int height) {
+        BufferedImage output = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = output.createGraphics();
+        graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        graphics.drawImage(source, 0, 0, width, height, null);
+        graphics.dispose();
+        return output;
+    }
+
+    private double pixelSimilarity(BufferedImage first, BufferedImage second) {
+        final int width = first.getWidth();
+        final int height = first.getHeight();
+        double diff = 0.0;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int grayA = rgbToGray(first.getRGB(x, y));
+                int grayB = rgbToGray(second.getRGB(x, y));
+                diff += Math.abs(grayA - grayB) / 255.0;
+            }
+        }
+        double similarity = 1.0 - (diff / (width * height));
+        return Math.max(0.0, Math.min(1.0, similarity));
+    }
+
+    private double dhashSimilarity(BufferedImage first, BufferedImage second) {
+        long hashA = calculateDHash(first);
+        long hashB = calculateDHash(second);
+        int distance = Long.bitCount(hashA ^ hashB);
+        double similarity = 1.0 - (distance / 64.0);
+        return Math.max(0.0, Math.min(1.0, similarity));
+    }
+
+    private long calculateDHash(BufferedImage image) {
+        BufferedImage resized = resizeImage(image, 9, 8);
+        long hash = 0L;
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                int left = rgbToGray(resized.getRGB(x, y));
+                int right = rgbToGray(resized.getRGB(x + 1, y));
+                boolean bit = left > right;
+                hash = (hash << 1) | (bit ? 1L : 0L);
+            }
+        }
+        return hash;
+    }
+
+    private double histogramCosineSimilarity(BufferedImage first, BufferedImage second) {
+        double[] histA = grayscaleHistogram(first);
+        double[] histB = grayscaleHistogram(second);
+
+        double dot = 0.0;
+        double normA = 0.0;
+        double normB = 0.0;
+        for (int i = 0; i < histA.length; i++) {
+            dot += histA[i] * histB[i];
+            normA += histA[i] * histA[i];
+            normB += histB[i] * histB[i];
+        }
+        if (normA == 0 || normB == 0) {
+            return 0.0;
+        }
+        double similarity = dot / (Math.sqrt(normA) * Math.sqrt(normB));
+        return Math.max(0.0, Math.min(1.0, similarity));
+    }
+
+    private boolean hasActiveSubscription(User user) {
+        if (user == null || user.getSubscription() == null) {
+            return false;
+        }
+        Boolean active = user.getSubscription().getIsActive();
+        return Boolean.TRUE.equals(active);
+    }
+
+    private double[] grayscaleHistogram(BufferedImage image) {
+        double[] hist = new double[256];
+        int width = image.getWidth();
+        int height = image.getHeight();
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int gray = rgbToGray(image.getRGB(x, y));
+                hist[gray] += 1.0;
+            }
+        }
+        double total = width * height;
+        if (total > 0) {
+            for (int i = 0; i < hist.length; i++) {
+                hist[i] /= total;
+            }
+        }
+        return hist;
+    }
+
+    private boolean isTooBlurry(BufferedImage image) {
+        double variance = laplacianVariance(image);
+        return variance < 35.0;
+    }
+
+    private String validateHumanPresence(BufferedImage image, boolean isAvatar) {
+        BufferedImage normalized = resizeImage(image, 160, 160);
+        SkinStats stats = calculateSkinStats(normalized);
+
+        if (stats.coverage < MIN_SKIN_COVERAGE || stats.coverage > MAX_SKIN_COVERAGE) {
+            return isAvatar ? "Аватар не похож на лицо" : "На селфи не найдено лицо";
+        }
+
+        if (stats.boundingBoxCoverage < 0.02) {
+            return isAvatar ? "Аватар не похож на лицо" : "На селфи не найдено лицо";
+        }
+
+        if (stats.aspectRatio < 0.6 || stats.aspectRatio > 1.8) {
+            return isAvatar ? "Аватар имеет некорректные пропорции" : "Лицо имеет некорректные пропорции";
+        }
+
+        if (stats.darkOnSkin < 0.01 || stats.darkOnSkin > 0.25) {
+            return isAvatar ? "На аватаре не видно черт лица" : "На селфи не видно черт лица";
+        }
+
+        if (stats.centerCoverage < 0.3) {
+            return isAvatar ? "Аватар не похож на лицо" : "Лицо должно быть ближе к центру кадра";
+        }
+
+        if (stats.edgeSkinRatio > 0.35) {
+            return isAvatar ? "Аватар не похож на лицо" : "Камера смотрит не на лицо (слишком много кожи по краям)";
+        }
+
+        if (isTooBlurry(normalized)) {
+            return isAvatar ? "Аватар слишком размытый" : "Селфи слишком размыто";
+        }
+
+        if (calculateEntropy(normalized) < 3.0) {
+            return isAvatar ? "Аватар слишком однотонный" : "Селфи слишком однотонное";
+        }
+
+        if (looksLikeScreen(normalized)) {
+            return "Похоже, камера смотрит на экран, а не на человека";
+        }
+
+        return null;
+    }
+
+    private SkinStats calculateSkinStats(BufferedImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        int total = width * height;
+        int skinPixels = 0;
+        int darkOnSkin = 0;
+        int centerSkin = 0;
+        int edgeSkin = 0;
+
+        int minX = width, minY = height, maxX = -1, maxY = -1;
+
+        int centerStartX = (int) (width * 0.25);
+        int centerEndX = (int) (width * 0.75);
+        int centerStartY = (int) (height * 0.25);
+        int centerEndY = (int) (height * 0.75);
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int rgb = image.getRGB(x, y);
+                int r = (rgb >> 16) & 0xFF;
+                int g = (rgb >> 8) & 0xFF;
+                int b = rgb & 0xFF;
+
+                double cb = (-0.168736 * r) + (-0.331264 * g) + (0.5 * b) + 128;
+                double cr = (0.5 * r) + (-0.418688 * g) + (-0.081312 * b) + 128;
+
+                boolean skin =
+                    r > 60 && g > 40 && b > 20 &&
+                        (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) > 15) &&
+                        r > g && r > b &&
+                        cr > 135 && cr < 180 &&
+                        cb > 85 && cb < 135;
+
+                if (skin) {
+                    skinPixels++;
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+
+                    int gray = rgbToGray(rgb);
+                    if (gray < 70) {
+                        darkOnSkin++;
+                    }
+
+                    boolean inCenter = x >= centerStartX && x <= centerEndX && y >= centerStartY && y <= centerEndY;
+                    if (inCenter) {
+                        centerSkin++;
+                    } else if (x < 8 || x > width - 9 || y < 8 || y > height - 9) {
+                        edgeSkin++;
+                    }
+                }
+            }
+        }
+
+        double coverage = total > 0 ? (double) skinPixels / total : 0.0;
+        double darkRatio = skinPixels > 0 ? (double) darkOnSkin / skinPixels : 0.0;
+        double centerCoverage = skinPixels > 0 ? (double) centerSkin / skinPixels : 0.0;
+        double edgeSkinRatio = skinPixels > 0 ? (double) edgeSkin / skinPixels : 0.0;
+
+        double aspectRatio = 0.0;
+        double bboxCoverage = 0.0;
+        if (maxX >= minX && maxY >= minY) {
+            int bboxW = (maxX - minX) + 1;
+            int bboxH = (maxY - minY) + 1;
+            aspectRatio = (double) bboxW / bboxH;
+            bboxCoverage = (double) (bboxW * bboxH) / total;
+        }
+
+        return new SkinStats(coverage, bboxCoverage, aspectRatio, darkRatio, centerCoverage, edgeSkinRatio);
+    }
+
+    private double calculateEntropy(BufferedImage image) {
+        double[] hist = grayscaleHistogram(image);
+        double entropy = 0.0;
+        for (double v : hist) {
+            if (v > 0) {
+                entropy += -v * (Math.log(v) / Math.log(2));
+            }
+        }
+        return entropy;
+    }
+
+    private boolean looksLikeScreen(BufferedImage image) {
+        double gridScore = pixelGridScore(image);
+        double saturation = averageSaturation(image);
+        return gridScore > 22.0 && saturation < 0.25;
+    }
+
+    private double pixelGridScore(BufferedImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        double accum = 0.0;
+        int count = 0;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int current = rgbToGray(image.getRGB(x, y));
+                if (x + 1 < width) {
+                    int right = rgbToGray(image.getRGB(x + 1, y));
+                    if ((x & 1) == 0) {
+                        accum += Math.abs(current - right);
+                        count++;
+                    }
+                }
+                if (y + 1 < height) {
+                    int down = rgbToGray(image.getRGB(x, y + 1));
+                    if ((y & 1) == 0) {
+                        accum += Math.abs(current - down);
+                        count++;
+                    }
+                }
+            }
+        }
+
+        return count > 0 ? accum / count : 0.0;
+    }
+
+    private double averageSaturation(BufferedImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        double total = 0.0;
+        int count = 0;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int rgb = image.getRGB(x, y);
+                int r = (rgb >> 16) & 0xFF;
+                int g = (rgb >> 8) & 0xFF;
+                int b = rgb & 0xFF;
+
+                double max = Math.max(r, Math.max(g, b));
+                double min = Math.min(r, Math.min(g, b));
+                double s = max == 0 ? 0 : (max - min) / max;
+                total += s;
+                count++;
+            }
+        }
+
+        return count > 0 ? total / count : 0.0;
+    }
+
+    private double laplacianVariance(BufferedImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        double sum = 0.0;
+        double sumSq = 0.0;
+        int count = 0;
+
+        int[][] kernel = {
+            {0, 1, 0},
+            {1, -4, 1},
+            {0, 1, 0}
+        };
+
+        for (int y = 1; y < height - 1; y++) {
+            for (int x = 1; x < width - 1; x++) {
+                double lap = 0.0;
+                for (int ky = -1; ky <= 1; ky++) {
+                    for (int kx = -1; kx <= 1; kx++) {
+                        int gray = rgbToGray(image.getRGB(x + kx, y + ky));
+                        lap += gray * kernel[ky + 1][kx + 1];
+                    }
+                }
+                sum += lap;
+                sumSq += lap * lap;
+                count++;
+            }
+        }
+
+        if (count == 0) {
+            return 0.0;
+        }
+        double mean = sum / count;
+        return (sumSq / count) - (mean * mean);
+    }
+
+    private int rgbToGray(int rgb) {
+        int r = (rgb >> 16) & 0xFF;
+        int g = (rgb >> 8) & 0xFF;
+        int b = rgb & 0xFF;
+        return (r + g + b) / 3;
+    }
+
+    private static class SkinStats {
+        final double coverage;
+        final double boundingBoxCoverage;
+        final double aspectRatio;
+        final double darkOnSkin;
+        final double centerCoverage;
+        final double edgeSkinRatio;
+
+        SkinStats(double coverage, double boundingBoxCoverage, double aspectRatio, double darkOnSkin, double centerCoverage, double edgeSkinRatio) {
+            this.coverage = coverage;
+            this.boundingBoxCoverage = boundingBoxCoverage;
+            this.aspectRatio = aspectRatio;
+            this.darkOnSkin = darkOnSkin;
+            this.centerCoverage = centerCoverage;
+            this.edgeSkinRatio = edgeSkinRatio;
+        }
+    }
+
     private boolean isCommunityMember(Long vkId) {
         if (vkId == null) {
             return false;
@@ -362,7 +856,6 @@ public class UserService {
         }
 
         if (ADMIN_VK_IDS.contains(user.getVkId())) {
-            user.setIsVerified(true);
             user.setIsAdmin(true);
             if (user.getBalance() == null || user.getBalance() < 1000) {
                 user.setBalance(1000);
@@ -471,6 +964,22 @@ public class UserService {
             !subscriptionClaimed,
             subscriptionClaimed
         );
+    }
+
+    public static class UserVerificationResult {
+        private final boolean verified;
+        private final double similarity;
+        private final String reason;
+
+        public UserVerificationResult(boolean verified, double similarity, String reason) {
+            this.verified = verified;
+            this.similarity = similarity;
+            this.reason = reason;
+        }
+
+        public boolean isVerified() { return verified; }
+        public double getSimilarity() { return similarity; }
+        public String getReason() { return reason; }
     }
 
     public enum RewardType {

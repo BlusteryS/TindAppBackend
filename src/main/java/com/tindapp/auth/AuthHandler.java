@@ -223,6 +223,7 @@ public class AuthHandler implements Handler<RoutingContext> {
                 .put("country", user.getCountry())
                 .put("city", user.getCity())
                 .put("isVerified", user.isVerified())
+                .put("wasVerified", user.wasVerified())
                 .put("isOnline", user.isOnline())
                 .put("lastSeen", user.getLastSeen())
                 .put("bio", user.getBio())
@@ -290,7 +291,10 @@ public class AuthHandler implements Handler<RoutingContext> {
             vkUserData.getString("vk_profile_photo")
         );
         if (avatarUrl != null && isBlank(user.getAvatarUrl())) {
-            user.setAvatarUrl(avatarUrl.trim());
+            String mirrored = userService.mirrorExternalAvatar(avatarUrl.trim());
+            if (mirrored != null) {
+                user.setAvatarUrl(mirrored);
+            }
         }
 
         Integer sex = vkUserData.getInteger("sex");
