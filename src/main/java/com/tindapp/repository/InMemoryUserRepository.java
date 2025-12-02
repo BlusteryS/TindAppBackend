@@ -92,10 +92,17 @@ public class InMemoryUserRepository implements UserRepository {
     }
 
     @Override
-    public List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city) {
+    public List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly) {
         return users.values().stream()
                 .filter(user -> Boolean.TRUE.equals(user.getIsVisible()))
+                .filter(user -> {
+                    if (user.getSettings() == null) {
+                        return false;
+                    }
+                    return Boolean.TRUE.equals(user.getSettings().getAllowMessages());
+                })
                 .filter(user -> Boolean.TRUE.equals(user.getSettings().getAllowMessages()))
+                .filter(user -> verifiedOnly == null || !verifiedOnly || Boolean.TRUE.equals(user.getIsVerified()))
                 .filter(user -> gender == null || gender.equals(user.getGender()))
                 .filter(user -> {
                     Integer age = resolveAge(user);
@@ -103,6 +110,17 @@ public class InMemoryUserRepository implements UserRepository {
                 })
                 .filter(user -> city == null || city.equals(user.getCity()))
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly, int page, int limit) {
+        List<User> all = findForMatching(gender, minAge, maxAge, city, verifiedOnly);
+        int start = Math.max(0, (page - 1) * limit);
+        int end = Math.min(start + limit, all.size());
+        if (start >= all.size()) {
+            return new ArrayList<>();
+        }
+        return all.subList(start, end);
     }
 
     @Override

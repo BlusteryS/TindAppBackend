@@ -2,18 +2,19 @@ package com.tindapp.repository.postgres;
 
 import com.tindapp.model.User;
 import com.tindapp.repository.UserRepository;
+import com.tindapp.util.JacksonUtils;
 import io.vertx.core.json.JsonObject;
 import io.vertx.pgclient.PgPool;
 import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 public class PostgresUserRepository extends AbstractPostgresRepository implements UserRepository {
 
@@ -23,9 +24,45 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
             CREATE TABLE IF NOT EXISTS users (
                 id BIGSERIAL PRIMARY KEY,
                 vk_id BIGINT UNIQUE,
-                data JSONB NOT NULL
-            )
+                age INT,
+                birth_date DATE,
+                first_name TEXT,
+                last_name TEXT,
+                avatar_url TEXT,
+                country TEXT,
+                city TEXT,
+                is_verified BOOLEAN DEFAULT FALSE,
+                was_verified BOOLEAN DEFAULT FALSE,
+                is_online BOOLEAN DEFAULT FALSE,
+                last_seen TIMESTAMPTZ,
+                bio TEXT,
+                gender TEXT,
+                is_visible BOOLEAN DEFAULT TRUE,
+                allow_messages BOOLEAN DEFAULT TRUE,
+                subscription_is_active BOOLEAN DEFAULT FALSE,
+                subscription_type TEXT,
+                subscription_expires_at TIMESTAMPTZ,
+                balance INT,
+                settings JSONB,
+                rewards JSONB,
+                profile_cost INT,
+                is_admin BOOLEAN DEFAULT FALSE,
+                is_banned BOOLEAN DEFAULT FALSE,
+                ban_reason TEXT,
+                banned_at TIMESTAMPTZ,
+                native_language TEXT,
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
             """);
+        execute("CREATE INDEX IF NOT EXISTS idx_users_city ON users(city)");
+        execute("CREATE INDEX IF NOT EXISTS idx_users_gender_age ON users(gender, age)");
+        execute("CREATE INDEX IF NOT EXISTS idx_users_is_verified ON users(is_verified)");
+        execute("CREATE INDEX IF NOT EXISTS idx_users_is_visible ON users(is_visible)");
+        execute("CREATE INDEX IF NOT EXISTS idx_users_allow_messages ON users(allow_messages)");
+        execute("CREATE INDEX IF NOT EXISTS idx_users_is_online ON users(is_online)");
+        execute("CREATE INDEX IF NOT EXISTS idx_users_subscription_active ON users(subscription_is_active)");
+        execute("CREATE INDEX IF NOT EXISTS idx_users_updated_at ON users(updated_at DESC)");
     }
 
     @Override
@@ -40,37 +77,89 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
         user.setUpdatedAtDateTime(LocalDateTime.now());
 
         boolean isNew = user.getId() == null;
-        JsonObject payload = toJson(user);
-        RowSet<Row> rows;
+        String sql = """
+            INSERT INTO users (
+                vk_id, age, birth_date, first_name, last_name, avatar_url, country, city,
+                is_verified, was_verified, is_online, last_seen, bio, gender, is_visible,
+                allow_messages, subscription_is_active, subscription_type, subscription_expires_at,
+                balance, settings, rewards, profile_cost, is_admin, is_banned, ban_reason, banned_at,
+                native_language, updated_at, created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                    $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+            ON CONFLICT (vk_id) DO UPDATE SET
+                age = EXCLUDED.age,
+                birth_date = EXCLUDED.birth_date,
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name,
+                avatar_url = EXCLUDED.avatar_url,
+                country = EXCLUDED.country,
+                city = EXCLUDED.city,
+                is_verified = EXCLUDED.is_verified,
+                was_verified = EXCLUDED.was_verified,
+                is_online = EXCLUDED.is_online,
+                last_seen = EXCLUDED.last_seen,
+                bio = EXCLUDED.bio,
+                gender = EXCLUDED.gender,
+                is_visible = EXCLUDED.is_visible,
+                allow_messages = EXCLUDED.allow_messages,
+                subscription_is_active = EXCLUDED.subscription_is_active,
+                subscription_type = EXCLUDED.subscription_type,
+                subscription_expires_at = EXCLUDED.subscription_expires_at,
+                balance = EXCLUDED.balance,
+                settings = EXCLUDED.settings,
+                rewards = EXCLUDED.rewards,
+                profile_cost = EXCLUDED.profile_cost,
+                is_admin = EXCLUDED.is_admin,
+                is_banned = EXCLUDED.is_banned,
+                ban_reason = EXCLUDED.ban_reason,
+                banned_at = EXCLUDED.banned_at,
+                native_language = EXCLUDED.native_language,
+                updated_at = NOW()
+            RETURNING id, created_at
+            """;
 
-        if (isNew) {
-            rows = execute(
-                "INSERT INTO users (vk_id, data) VALUES ($1, $2::jsonb) " +
-                    "ON CONFLICT (vk_id) DO UPDATE SET data = EXCLUDED.data " +
-                    "RETURNING id",
-                Tuple.of(user.getVkId(), payload)
-            );
-        } else {
-            rows = execute(
-                "INSERT INTO users (id, vk_id, data) VALUES ($1, $2, $3::jsonb) " +
-                    "ON CONFLICT (id) DO UPDATE SET vk_id = EXCLUDED.vk_id, data = EXCLUDED.data " +
-                    "RETURNING id",
-                Tuple.of(user.getId(), user.getVkId(), payload)
-            );
-        }
+        Tuple params = Tuple.of(
+            user.getVkId(),
+            user.getAge(),
+            user.getBirthDate(),
+            user.getFirstName(),
+            user.getLastName(),
+            user.getAvatarUrl(),
+            user.getCountry(),
+            user.getCity(),
+            user.getIsVerified(),
+            user.getWasVerified(),
+            user.getIsOnline(),
+            toOffset(user.getLastSeenDateTime()),
+            user.getBio(),
+            user.getGender(),
+            user.getIsVisible(),
+            user.getSettings() != null ? user.getSettings().getAllowMessages() : Boolean.TRUE,
+            user.getSubscription() != null && Boolean.TRUE.equals(user.getSubscription().getIsActive()),
+            user.getSubscription() != null && user.getSubscription().getType() != null ? user.getSubscription().getType().name().toLowerCase() : null,
+            user.getSubscription() != null ? toOffset(user.getSubscription().getExpiresAt()) : null,
+            user.getBalance(),
+            user.getSettings() != null ? toJson(user.getSettings()) : null,
+            user.getRewards() != null ? toJson(user.getRewards()) : null,
+            user.getProfileCost(),
+            user.getIsAdmin(),
+            user.getIsBanned(),
+            user.getBanReason(),
+            toOffset(user.getBannedAt()),
+            user.getNativeLanguage(),
+            toOffset(user.getUpdatedAtDateTime()),
+            toOffset(user.getCreatedAtDateTime())
+        );
 
+        RowSet<Row> rows = execute(sql, params);
         Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
         if (row != null) {
             Long generatedId = row.getLong("id");
-            user.setId(generatedId);
-        }
-
-        if (isNew && user.getId() != null) {
-            JsonObject updatedPayload = toJson(user);
-            execute(
-                "UPDATE users SET data = $2::jsonb, vk_id = $3 WHERE id = $1",
-                Tuple.of(user.getId(), updatedPayload, user.getVkId())
-            );
+            if (user.getId() == null) {
+                user.setId(generatedId);
+            }
+            user.setCreatedAtDateTime(row.getOffsetDateTime("created_at") != null ? row.getOffsetDateTime("created_at").toLocalDateTime() : user.getCreatedAtDateTime());
         }
         return user;
     }
@@ -80,16 +169,12 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
         if (id == null) {
             return Optional.empty();
         }
-        RowSet<Row> rows = execute("SELECT id, data FROM users WHERE id = $1 LIMIT 1", Tuple.of(id));
+        RowSet<Row> rows = execute("SELECT * FROM users WHERE id = $1 LIMIT 1", Tuple.of(id));
         if (!rows.iterator().hasNext()) {
             return Optional.empty();
         }
         Row row = rows.iterator().next();
-        User user = mapRow(row, User.class);
-        if (user != null && user.getId() == null) {
-            user.setId(row.getLong("id"));
-        }
-        return Optional.ofNullable(user);
+        return Optional.ofNullable(mapUser(row));
     }
 
     @Override
@@ -97,120 +182,138 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
         if (vkId == null) {
             return Optional.empty();
         }
-        RowSet<Row> rows = execute("SELECT id, data FROM users WHERE vk_id = $1 LIMIT 1", Tuple.of(vkId));
+        RowSet<Row> rows = execute("SELECT * FROM users WHERE vk_id = $1 LIMIT 1", Tuple.of(vkId));
         if (!rows.iterator().hasNext()) {
             return Optional.empty();
         }
         Row row = rows.iterator().next();
-        User user = mapRow(row, User.class);
-        if (user != null && user.getId() == null) {
-            user.setId(row.getLong("id"));
-        }
-        return Optional.ofNullable(user);
+        return Optional.ofNullable(mapUser(row));
     }
 
     @Override
     public List<User> findAll() {
-        RowSet<Row> rows = execute("SELECT id, data FROM users");
-        List<User> result = new ArrayList<>();
-        for (Row row : rows) {
-            User user = mapRow(row, User.class);
-            if (user != null && user.getId() == null) {
-                user.setId(row.getLong("id"));
-            }
-            if (user != null) {
-                result.add(user);
-            }
-        }
-        return result;
+        RowSet<Row> rows = execute("SELECT * FROM users");
+        return mapUsers(rows);
     }
 
     @Override
     public List<User> findAll(int page, int limit) {
-        List<User> allUsers = findAll().stream()
-            .sorted((u1, u2) -> {
-                LocalDateTime date1 = u1.getUpdatedAtDateTime();
-                LocalDateTime date2 = u2.getUpdatedAtDateTime();
-                if (date1 == null && date2 == null) return 0;
-                if (date1 == null) return 1;
-                if (date2 == null) return -1;
-                return date2.compareTo(date1);
-            })
-            .collect(Collectors.toList());
-
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, allUsers.size());
-        if (start >= allUsers.size()) {
-            return new ArrayList<>();
-        }
-        return allUsers.subList(start, end);
+        int offset = Math.max(0, (page - 1) * limit);
+        RowSet<Row> rows = execute(
+            "SELECT * FROM users ORDER BY updated_at DESC OFFSET $1 LIMIT $2",
+            Tuple.of(offset, limit)
+        );
+        return mapUsers(rows);
     }
 
     @Override
     public List<User> findOnlineUsers() {
-        return findAll().stream()
-            .filter(user -> Boolean.TRUE.equals(user.getIsOnline()))
-            .collect(Collectors.toList());
+        RowSet<Row> rows = execute("SELECT * FROM users WHERE is_online = TRUE");
+        return mapUsers(rows);
     }
 
     @Override
     public List<User> findByGender(User.Gender gender) {
-        return findAll().stream()
-            .filter(user -> gender.equals(user.getGenderEnum()))
-            .collect(Collectors.toList());
+        if (gender == null) {
+            return findAll();
+        }
+        RowSet<Row> rows = execute("SELECT * FROM users WHERE gender = $1", Tuple.of(gender.toString().toLowerCase()));
+        return mapUsers(rows);
     }
 
     @Override
     public List<User> findByAgeRange(Integer minAge, Integer maxAge) {
-        return findAll().stream()
-            .filter(user -> {
-                Integer age = resolveAge(user);
-                return age != null && age >= minAge && age <= maxAge;
-            })
-            .collect(Collectors.toList());
+        String ageExpr = "COALESCE(age, CAST(date_part('year', age(birth_date)) AS INT))";
+        StringBuilder sql = new StringBuilder("SELECT * FROM users WHERE 1=1");
+        List<Object> params = new ArrayList<>();
+        if (minAge != null) {
+            sql.append(" AND ").append(ageExpr).append(" >= $").append(params.size() + 1);
+            params.add(minAge);
+        }
+        if (maxAge != null) {
+            sql.append(" AND ").append(ageExpr).append(" <= $").append(params.size() + 1);
+            params.add(maxAge);
+        }
+        RowSet<Row> rows = execute(sql.toString(), Tuple.tuple(params));
+        return mapUsers(rows);
     }
 
     @Override
     public List<User> findByCity(String city) {
-        return findAll().stream()
-            .filter(user -> city.equals(user.getCity()))
-            .collect(Collectors.toList());
+        RowSet<Row> rows = execute(
+            "SELECT * FROM users WHERE city = $1",
+            Tuple.of(city)
+        );
+        return mapUsers(rows);
     }
 
     @Override
-    public List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city) {
-        return findAll().stream()
-            .filter(user -> Boolean.TRUE.equals(user.getIsVisible()))
-            .filter(user -> {
-                if (user.getSettings() == null) {
-                    return false;
-                }
-                return Boolean.TRUE.equals(user.getSettings().getAllowMessages());
-            })
-            .filter(user -> gender == null || gender.equals(user.getGenderEnum()))
-            .filter(user -> {
-                Integer age = resolveAge(user);
-                return age == null || (age >= minAge && age <= maxAge);
-            })
-            .filter(user -> city == null || city.equals(user.getCity()))
-            .collect(Collectors.toList());
+    public List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly) {
+        return findForMatching(gender, minAge, maxAge, city, verifiedOnly, 1, 500);
+    }
+
+    public List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly, int page, int limit) {
+        String ageExpr = "COALESCE(age, CAST(date_part('year', age(birth_date)) AS INT))";
+        StringBuilder sql = new StringBuilder("SELECT * FROM users WHERE is_visible = TRUE AND allow_messages = TRUE");
+        List<Object> params = new ArrayList<>();
+
+        if (city != null) {
+            sql.append(" AND city = $").append(params.size() + 1);
+            params.add(city);
+        }
+        if (gender != null) {
+            sql.append(" AND gender = $").append(params.size() + 1);
+            params.add(gender.toString().toLowerCase());
+        }
+        if (minAge != null) {
+            sql
+                .append(" AND (")
+                .append(ageExpr)
+                .append(" IS NULL OR ")
+                .append(ageExpr)
+                .append(" >= $")
+                .append(params.size() + 1)
+                .append(")");
+            params.add(minAge);
+        }
+        if (maxAge != null) {
+            sql
+                .append(" AND (")
+                .append(ageExpr)
+                .append(" IS NULL OR ")
+                .append(ageExpr)
+                .append(" <= $")
+                .append(params.size() + 1)
+                .append(")");
+            params.add(maxAge);
+        }
+        if (verifiedOnly != null && verifiedOnly) {
+            sql.append(" AND is_verified = TRUE");
+        }
+
+        int safeLimit = Math.min(Math.max(limit, 1), 500);
+        int offset = Math.max(0, (page - 1) * safeLimit);
+        sql.append(" ORDER BY updated_at DESC, is_verified DESC OFFSET $").append(params.size() + 1).append(" LIMIT $").append(params.size() + 2);
+        params.add(offset);
+        params.add(safeLimit);
+        RowSet<Row> rows = execute(sql.toString(), Tuple.tuple(params));
+        return mapUsers(rows);
     }
 
     @Override
     public void updateOnlineStatus(Long userId, boolean isOnline) {
-        findById(userId).ifPresent(user -> {
-            user.updateOnlineStatus(isOnline);
-            save(user);
-        });
+        execute(
+            "UPDATE users SET " +
+                "is_online = $2, " +
+                "last_seen = CASE WHEN $2 = false THEN NOW() ELSE last_seen END, " +
+                "updated_at = NOW() " +
+                "WHERE id = $1",
+            Tuple.of(userId, isOnline));
     }
 
     @Override
     public void updateBalance(Long userId, Integer balance) {
-        findById(userId).ifPresent(user -> {
-            user.setBalance(balance);
-            user.setUpdatedAtDateTime(LocalDateTime.now());
-            save(user);
-        });
+        execute("UPDATE users SET data = jsonb_set(data, '{balance}', to_jsonb($2::int), true), updated_at = NOW() WHERE id = $1", Tuple.of(userId, balance));
     }
 
     @Override
@@ -231,21 +334,77 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
         return row != null ? row.getLong("cnt") : 0L;
     }
 
-    private Integer resolveAge(User user) {
-        if (user == null) {
+    private List<User> mapUsers(RowSet<Row> rows) {
+        List<User> result = new ArrayList<>();
+        for (Row row : rows) {
+            User user = mapUser(row);
+            if (user != null) {
+                result.add(user);
+            }
+        }
+        return result;
+    }
+
+    private OffsetDateTime toOffset(LocalDateTime time) {
+        return time != null ? time.atOffset(ZoneOffset.UTC) : null;
+    }
+
+    private User mapUser(Row row) {
+        if (row == null) {
             return null;
         }
-        if (user.getAge() != null) {
-            return user.getAge();
-        }
-        if (user.getBirthDate() != null) {
-            LocalDate today = LocalDate.now();
-            int age = today.getYear() - user.getBirthDate().getYear();
-            if (user.getBirthDate().plusYears(age).isAfter(today)) {
-                age -= 1;
+        User user = new User();
+        user.setId(row.getLong("id"));
+        user.setVkId(row.getLong("vk_id"));
+        user.setAge((Integer) row.getValue("age"));
+        user.setBirthDate(row.getLocalDate("birth_date"));
+        user.setFirstName(row.getString("first_name"));
+        user.setLastName(row.getString("last_name"));
+        user.setAvatarUrl(row.getString("avatar_url"));
+        user.setCountry(row.getString("country"));
+        user.setCity(row.getString("city"));
+        user.setIsVerified(row.getBoolean("is_verified"));
+        user.setWasVerified(row.getBoolean("was_verified"));
+        user.setOnline(Boolean.TRUE.equals(row.getBoolean("is_online")));
+        user.setLastSeenDateTime(row.getLocalDateTime("last_seen"));
+        user.setBio(row.getString("bio"));
+        user.setGender(row.getString("gender"));
+        user.setIsVisible(row.getBoolean("is_visible"));
+
+        User.UserSubscription subscription = new User.UserSubscription();
+        subscription.setIsActive(row.getBoolean("subscription_is_active"));
+        String subType = row.getString("subscription_type");
+        if (subType != null) {
+            try {
+                subscription.setType(User.SubscriptionType.valueOf(subType.toUpperCase()));
+            } catch (Exception ignored) {
             }
-            return Math.max(age, 0);
         }
-        return null;
+        subscription.setExpiresAt(row.getLocalDateTime("subscription_expires_at"));
+        user.setSubscription(subscription);
+
+        user.setBalance(row.getInteger("balance"));
+
+        JsonObject settingsJson = row.getJsonObject("settings");
+        if (settingsJson != null) {
+            User.UserSettings settings = JacksonUtils.fromJson(settingsJson, User.UserSettings.class);
+            user.setSettings(settings);
+        }
+
+        JsonObject rewardsJson = row.getJsonObject("rewards");
+        if (rewardsJson != null) {
+            User.UserRewards rewards = JacksonUtils.fromJson(rewardsJson, User.UserRewards.class);
+            user.setRewards(rewards);
+        }
+
+        user.setProfileCost(row.getInteger("profile_cost"));
+        user.setIsAdmin(row.getBoolean("is_admin"));
+        user.setIsBanned(row.getBoolean("is_banned"));
+        user.setBanReason(row.getString("ban_reason"));
+        user.setBannedAt(row.getLocalDateTime("banned_at"));
+        user.setNativeLanguage(row.getString("native_language"));
+        user.setUpdatedAtDateTime(row.getOffsetDateTime("updated_at") != null ? row.getOffsetDateTime("updated_at").toLocalDateTime() : null);
+        user.setCreatedAtDateTime(row.getOffsetDateTime("created_at") != null ? row.getOffsetDateTime("created_at").toLocalDateTime() : null);
+        return user;
     }
 }

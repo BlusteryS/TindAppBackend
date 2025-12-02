@@ -1,70 +1,48 @@
 package com.tindapp.service;
 
+import com.tindapp.config.AppConfig;
 import com.tindapp.model.User;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Map;
+import java.util.Base64;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 public class TokenService {
 
     private static final Logger logger = LoggerFactory.getLogger(TokenService.class);
 
     private static final int TOKEN_EXPIRY_HOURS = 24;
-
-    private final Map<String, TokenInfo> tokens = new ConcurrentHashMap<>();
-
-    private final Map<String, User> userTokens = new ConcurrentHashMap<>();
-
-    private final Map<Long, String> userToToken = new ConcurrentHashMap<>();
+    private static final String HMAC_ALGO = "HmacSHA256";
+    private static final Base64.Encoder BASE64_ENCODER = Base64.getUrlEncoder().withoutPadding();
+    private static final Base64.Decoder BASE64_DECODER = Base64.getUrlDecoder();
 
     private final UserService userService;
-    private final ScheduledExecutorService cleanupExecutor;
+    private final byte[] secret;
 
     public TokenService(UserService userService) {
         this.userService = userService;
-        this.cleanupExecutor = Executors.newSingleThreadScheduledExecutor();
-
-        cleanupExecutor.scheduleAtFixedRate(this::cleanupExpiredTokens, 1, 1, TimeUnit.HOURS);
+        String rawSecret = System.getenv().getOrDefault("TOKEN_SECRET", AppConfig.TOKEN_SECRET);
+        this.secret = rawSecret.getBytes(StandardCharsets.UTF_8);
     }
 
     public String createToken(User user) {
-        if (user == null) {
-            logger.error("Cannot create token: user is null");
-            throw new IllegalArgumentException("User cannot be null");
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User or user ID is null");
         }
 
-        if (user.getId() == null) {
-            logger.error("Cannot create token: user ID is null for vkId={}", user.getVkId());
-            throw new IllegalArgumentException("User ID cannot be null");
-        }
+        long expiresAt = Instant.now().plus(TOKEN_EXPIRY_HOURS, ChronoUnit.HOURS).getEpochSecond();
+        String nonce = UUID.randomUUID().toString().replace("-", "");
+        String payload = user.getId() + ":" + expiresAt + ":" + nonce;
+        String signature = sign(payload);
 
-        String token = generateToken();
-        LocalDateTime expiresAt = LocalDateTime.now().plus(TOKEN_EXPIRY_HOURS, ChronoUnit.HOURS);
-
-        TokenInfo tokenInfo = new TokenInfo(
-            user.getId(),
-            LocalDateTime.now(),
-            expiresAt,
-            System.currentTimeMillis()
-        );
-
-        removeUserToken(user.getId());
-
-        User refreshedUser = userService.getUserById(user.getId()).orElse(user);
-
-        tokens.put(token, tokenInfo);
-        userTokens.put(token, refreshedUser);
-        userToToken.put(user.getId(), token);
-
-        return token;
+        return BASE64_ENCODER.encodeToString(payload.getBytes(StandardCharsets.UTF_8)) + "." + signature;
     }
 
     public User validateToken(String token) {
@@ -72,179 +50,55 @@ public class TokenService {
             return null;
         }
 
-        TokenInfo tokenInfo = tokens.get(token);
-        if (tokenInfo == null) {
-            return null;
-        }
-
-        if (tokenInfo.isExpired()) {
-            removeToken(token);
-            return null;
-        }
-
-        tokenInfo.updateLastUsed();
-
-        User user = userTokens.get(token);
-        if (user != null) {
-            if (user.getId() == null) {
-                logger.error("Token validation failed: user ID is null for vkId={}, removing token", user.getVkId());
-                removeToken(token);
+        try {
+            String[] parts = token.split("\\.");
+            if (parts.length != 2) {
                 return null;
             }
 
-            User freshUser = userService.getUserById(user.getId()).orElse(user);
+            String payload = new String(BASE64_DECODER.decode(parts[0]), StandardCharsets.UTF_8);
+            String providedSignature = parts[1];
+            String expectedSignature = sign(payload);
 
-            userTokens.put(token, freshUser);
-
-            return freshUser;
-        } else {
-            logger.warn("Token validation failed: user not found for token {}", token);
-        }
-
-        return null;
-    }
-
-    public TokenInfo getTokenInfo(String token) {
-        return tokens.get(token);
-    }
-
-    public int getActiveTokensCount() {
-        return tokens.size();
-    }
-
-    public boolean hasActiveToken(Long userId) {
-        String token = userToToken.get(userId);
-        if (token == null) {
-            return false;
-        }
-
-        TokenInfo tokenInfo = tokens.get(token);
-        return tokenInfo != null && !tokenInfo.isExpired();
-    }
-
-    public String getUserToken(Long userId) {
-        String token = userToToken.get(userId);
-        if (token != null) {
-            TokenInfo tokenInfo = tokens.get(token);
-            if (tokenInfo != null && !tokenInfo.isExpired()) {
-                return token;
+            if (!MessageDigest.isEqual(expectedSignature.getBytes(StandardCharsets.UTF_8), providedSignature.getBytes(StandardCharsets.UTF_8))) {
+                return null;
             }
-        }
-        return null;
-    }
 
-    private String generateToken() {
-        return UUID.randomUUID().toString().replace("-", "") +
-               System.currentTimeMillis() +
-               UUID.randomUUID().toString().replace("-", "");
-    }
-
-    private void removeToken(String token) {
-        TokenInfo tokenInfo = tokens.remove(token);
-        userTokens.remove(token);
-
-        if (tokenInfo != null) {
-            userToToken.remove(tokenInfo.getUserId());
-        }
-    }
-
-    private void removeUserToken(Long userId) {
-        String oldToken = userToToken.get(userId);
-        if (oldToken != null) {
-            removeToken(oldToken);
-        }
-    }
-
-    private void cleanupExpiredTokens() {
-        int removedCount = 0;
-        LocalDateTime now = LocalDateTime.now();
-
-        var iterator = tokens.entrySet().iterator();
-        while (iterator.hasNext()) {
-            var entry = iterator.next();
-            String token = entry.getKey();
-            TokenInfo tokenInfo = entry.getValue();
-
-            if (tokenInfo.getExpiresAt().isBefore(now)) {
-                iterator.remove();
-                userTokens.remove(token);
-                userToToken.remove(tokenInfo.getUserId());
-                removedCount++;
+            String[] payloadParts = payload.split(":");
+            if (payloadParts.length != 3) {
+                return null;
             }
-        }
 
-        if (removedCount > 0) {
-            logger.info("Cleaned up {} expired tokens", removedCount);
+            long userId = Long.parseLong(payloadParts[0]);
+            long expiresAt = Long.parseLong(payloadParts[1]);
+
+            if (Instant.now().getEpochSecond() > expiresAt) {
+                return null;
+            }
+
+            return userService.getUserById(userId).orElse(null);
+        } catch (Exception e) {
+            logger.warn("Token validation error", e);
+            return null;
         }
     }
 
-    public void shutdown() {
-        cleanupExecutor.shutdown();
+    private String sign(String payload) {
         try {
-            if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                cleanupExecutor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            cleanupExecutor.shutdownNow();
-            Thread.currentThread().interrupt();
+            Mac mac = Mac.getInstance(HMAC_ALGO);
+            mac.init(new SecretKeySpec(secret, HMAC_ALGO));
+            byte[] raw = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
+            return toHex(raw);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to sign token", e);
         }
-
-        tokens.clear();
-        userTokens.clear();
-        userToToken.clear();
-
-        logger.info("TokenService shut down");
     }
 
-    public static class TokenInfo {
-        private final Long userId;
-        private final LocalDateTime createdAt;
-        private LocalDateTime expiresAt;
-        private long lastUsed;
-
-        public TokenInfo(Long userId, LocalDateTime createdAt, LocalDateTime expiresAt, long lastUsed) {
-            this.userId = userId;
-            this.createdAt = createdAt;
-            this.expiresAt = expiresAt;
-            this.lastUsed = lastUsed;
+    private String toHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
         }
-
-        public Long getUserId() {
-            return userId;
-        }
-
-        public LocalDateTime getCreatedAt() {
-            return createdAt;
-        }
-
-        public LocalDateTime getExpiresAt() {
-            return expiresAt;
-        }
-
-        public long getLastUsed() {
-            return lastUsed;
-        }
-
-        public boolean isExpired() {
-            return LocalDateTime.now().isAfter(expiresAt);
-        }
-
-        public void updateLastUsed() {
-            this.lastUsed = System.currentTimeMillis();
-        }
-
-        public void extendExpiry(int hours) {
-            this.expiresAt = LocalDateTime.now().plus(hours, ChronoUnit.HOURS);
-        }
-
-        @Override
-        public String toString() {
-            return "TokenInfo{" +
-                    "userId=" + userId +
-                    ", createdAt=" + createdAt +
-                    ", expiresAt=" + expiresAt +
-                    ", lastUsed=" + lastUsed +
-                    '}';
-        }
+        return sb.toString();
     }
 }

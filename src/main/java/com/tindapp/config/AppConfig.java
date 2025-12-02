@@ -5,6 +5,8 @@ public class AppConfig {
     public static final int HTTP_PORT = 8012;
     public static final String HTTP_HOST = "0.0.0.0";
 
+    public static final String TOKEN_SECRET = System.getenv("TOKEN_SECRET");
+
     public static final String VK_CLIENT_SECRET = System.getenv("VK_CLIENT_SECRET");
 
     public static final boolean ANONYMOUS_CHAT_ENABLED = true;

@@ -45,10 +45,9 @@ public class ProfileService {
 
         ProfileFilters filters = normalizeFilters(rawFilters, viewer);
 
-        List<User> candidates = userRepository.findAll().stream()
+        User.Gender genderEnum = toGenderEnum(filters.getGender());
+        List<User> candidates = userRepository.findForMatching(genderEnum, filters.getMinAge(), filters.getMaxAge(), filters.getCity(), filters.isVerifiedOnly(), page, limit * 2).stream()
             .filter(user -> !Objects.equals(user.getId(), viewer.getId()))
-            .filter(user -> Boolean.TRUE.equals(user.getIsVisible()))
-            .filter(user -> user.getSettings() == null || Boolean.TRUE.equals(user.getSettings().getAllowMessages()))
             .filter(user -> matchesFilters(viewer, user, filters))
             .collect(Collectors.toList());
 
@@ -104,6 +103,23 @@ public class ProfileService {
         }
 
         return normalizeFilters(filters, viewer);
+    }
+
+    private User.Gender toGenderEnum(String gender) {
+        if (gender == null) {
+            return null;
+        }
+        if ("any".equalsIgnoreCase(gender)) {
+            return null; // no gender filter
+        }
+        switch (gender.toLowerCase()) {
+            case "male":
+                return User.Gender.MALE;
+            case "female":
+                return User.Gender.FEMALE;
+            default:
+                return User.Gender.OTHER;
+        }
     }
 
     public ProfileCard toProfileCard(User viewer, User candidate) {
@@ -288,6 +304,18 @@ public class ProfileService {
 
         public boolean isPrioritizeCity() { return prioritizeCity; }
         public void setPrioritizeCity(boolean prioritizeCity) { this.prioritizeCity = prioritizeCity; }
+
+        @Override
+        public String toString() {
+            return "ProfileFilters{" +
+                "gender='" + gender + '\'' +
+                ", minAge=" + minAge +
+                ", maxAge=" + maxAge +
+                ", city='" + city + '\'' +
+                ", verifiedOnly=" + verifiedOnly +
+                ", prioritizeCity=" + prioritizeCity +
+                '}';
+        }
     }
 
     public static class ProfileCard {

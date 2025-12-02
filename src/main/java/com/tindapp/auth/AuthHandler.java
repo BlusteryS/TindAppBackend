@@ -183,7 +183,6 @@ public class AuthHandler implements Handler<RoutingContext> {
             User user = existingUser.get();
             user.setLastSeenDateTime(java.time.LocalDateTime.now());
             user.setOnline(true);
-            applyVkProfileData(user, vkUserData);
             userService.updateUser(user);
             return user;
         } else {

@@ -198,7 +198,7 @@ public class MainVerticle extends AbstractVerticle {
 
         tokenAuthHandler = new TokenAuthHandler(tokenService);
         authHandler = new AuthHandler(config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET), userService, tokenService);
-        final LocationService locationService = new LocationService();
+        final LocationService locationService = LocationService.getInstance();
         webSocketHandler = new WebSocketHandler(
             vertx,
             chatService,

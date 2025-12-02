@@ -17,7 +17,8 @@ public interface UserRepository extends Repository<User, Long> {
 
     List<User> findByCity(String city);
 
-    List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city);
+    List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly);
+    List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly, int page, int limit);
 
     void updateOnlineStatus(Long userId, boolean isOnline);
 

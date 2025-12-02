@@ -870,7 +870,7 @@ public class UserService {
     }
 
     public List<User> findUsersForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city) {
-        return userRepository.findForMatching(gender, minAge, maxAge, city);
+        return userRepository.findForMatching(gender, minAge, maxAge, city, false);
     }
 
     public UserStats getUserStats(Long userId) {
