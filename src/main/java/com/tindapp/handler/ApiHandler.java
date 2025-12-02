@@ -1166,13 +1166,27 @@ public class ApiHandler {
 
             userService.updateCommunityNotifications(userId, enabled);
             boolean testSent = false;
+            UserService.RewardClaimResult rewardResult = null;
             if (enabled) {
                 testSent = notificationService.sendCommunityTestNotification(userId);
+                try {
+                    rewardResult = userService.claimReward(userId, UserService.RewardType.COMMUNITY, true);
+                } catch (RuntimeException rewardException) {
+                    logger.info("Community reward not issued for user {}: {}", userId, rewardException.getMessage());
+                } catch (Exception rewardException) {
+                    logger.warn("Failed to issue community reward for user {}", userId, rewardException);
+                }
             }
 
             JsonObject response = new JsonObject()
                 .put("enabled", enabled)
                 .put("testSent", testSent);
+            if (rewardResult != null) {
+                response
+                    .put("rewarded", rewardResult.getRewardedAmount())
+                    .put("balance", rewardResult.getBalance())
+                    .put("rewards", toRewardsJson(rewardResult.getRewards()));
+            }
             sendSuccess(ctx, response);
         } catch (Exception e) {
             logger.error("Error updating community notifications", e);
