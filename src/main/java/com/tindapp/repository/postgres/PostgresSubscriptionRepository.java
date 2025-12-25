@@ -22,7 +22,7 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
         .comparing(Subscription::getStartDate, Comparator.nullsLast(Comparator.naturalOrder()))
         .reversed();
 
-    public PostgresSubscriptionRepository(PgPool client) {
+    public PostgresSubscriptionRepository(final PgPool client) {
         super(client);
         ensureTable("""
             CREATE TABLE IF NOT EXISTS subscriptions (
@@ -33,14 +33,14 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public Subscription save(Subscription subscription) {
+    public Subscription save(final Subscription subscription) {
         if (subscription == null) {
             throw new IllegalArgumentException("Subscription is null");
         }
         if (subscription.getId() == null) {
             subscription.setId(UUID.randomUUID().toString());
         }
-        JsonObject payload = toJson(subscription);
+        final JsonObject payload = toJson(subscription);
         execute(
             "INSERT INTO subscriptions (id, data) VALUES ($1, $2::jsonb) " +
                 "ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
@@ -50,11 +50,11 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public Optional<Subscription> findById(String id) {
+    public Optional<Subscription> findById(final String id) {
         if (id == null) {
             return Optional.empty();
         }
-        RowSet<Row> rows = execute("SELECT data FROM subscriptions WHERE id = $1 LIMIT 1", Tuple.of(id));
+        final RowSet<Row> rows = execute("SELECT data FROM subscriptions WHERE id = $1 LIMIT 1", Tuple.of(id));
         if (!rows.iterator().hasNext()) {
             return Optional.empty();
         }
@@ -63,10 +63,10 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
 
     @Override
     public List<Subscription> findAll() {
-        RowSet<Row> rows = execute("SELECT data FROM subscriptions");
-        List<Subscription> result = new ArrayList<>();
-        for (Row row : rows) {
-            Subscription subscription = mapRow(row, Subscription.class);
+        final RowSet<Row> rows = execute("SELECT data FROM subscriptions");
+        final List<Subscription> result = new ArrayList<>();
+        for (final Row row : rows) {
+            final Subscription subscription = mapRow(row, Subscription.class);
             if (subscription != null) {
                 result.add(subscription);
             }
@@ -75,12 +75,12 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public List<Subscription> findAll(int page, int limit) {
-        List<Subscription> allSubs = findAll().stream()
+    public List<Subscription> findAll(final int page, final int limit) {
+        final List<Subscription> allSubs = findAll().stream()
             .sorted(START_DATE_DESC)
             .collect(Collectors.toList());
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, allSubs.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, allSubs.size());
         if (start >= allSubs.size()) {
             return new ArrayList<>();
         }
@@ -88,7 +88,7 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public Optional<Subscription> findActiveByUserId(Long userId) {
+    public Optional<Subscription> findActiveByUserId(final Long userId) {
         return findAll().stream()
             .filter(sub -> userId.equals(sub.getUserId()))
             .filter(Subscription::isActive)
@@ -96,7 +96,7 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public List<Subscription> findByUserId(Long userId) {
+    public List<Subscription> findByUserId(final Long userId) {
         return findAll().stream()
             .filter(sub -> userId.equals(sub.getUserId()))
             .sorted(START_DATE_DESC)
@@ -104,14 +104,14 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public List<Subscription> findByStatus(Subscription.SubscriptionStatus status) {
+    public List<Subscription> findByStatus(final Subscription.SubscriptionStatus status) {
         return findAll().stream()
             .filter(sub -> status.equals(sub.getStatus()))
             .collect(Collectors.toList());
     }
 
     @Override
-    public List<Subscription> findByType(Subscription.SubscriptionType type) {
+    public List<Subscription> findByType(final Subscription.SubscriptionType type) {
         return findAll().stream()
             .filter(sub -> type.equals(sub.getType()))
             .collect(Collectors.toList());
@@ -119,7 +119,7 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
 
     @Override
     public List<Subscription> findExpiring() {
-        LocalDateTime tomorrow = LocalDateTime.now().plusDays(1);
+        final LocalDateTime tomorrow = LocalDateTime.now().plusDays(1);
         return findAll().stream()
             .filter(sub -> sub.getStatus() == Subscription.SubscriptionStatus.ACTIVE)
             .filter(sub -> sub.getEndDate() != null && sub.getEndDate().isBefore(tomorrow))
@@ -127,7 +127,7 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public void cancelByUserId(Long userId) {
+    public void cancelByUserId(final Long userId) {
         findByUserId(userId).stream()
             .filter(sub -> sub.getStatus() == Subscription.SubscriptionStatus.ACTIVE)
             .forEach(sub -> {
@@ -137,7 +137,7 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public void expireById(String subscriptionId) {
+    public void expireById(final String subscriptionId) {
         findById(subscriptionId).ifPresent(sub -> {
             sub.expire();
             save(sub);
@@ -145,19 +145,19 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public boolean hasActiveSubscription(Long userId) {
+    public boolean hasActiveSubscription(final Long userId) {
         return findActiveByUserId(userId).isPresent();
     }
 
     @Override
-    public Optional<Subscription> findByVkSubscriptionId(String vkSubscriptionId) {
+    public Optional<Subscription> findByVkSubscriptionId(final String vkSubscriptionId) {
         return findAll().stream()
             .filter(sub -> vkSubscriptionId != null && vkSubscriptionId.equals(sub.getVkSubscriptionId()))
             .findFirst();
     }
 
     @Override
-    public void cancelByVkSubscriptionId(String vkSubscriptionId) {
+    public void cancelByVkSubscriptionId(final String vkSubscriptionId) {
         findByVkSubscriptionId(vkSubscriptionId).ifPresent(sub -> {
             sub.cancel();
             save(sub);
@@ -172,20 +172,20 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public void deleteById(String id) {
+    public void deleteById(final String id) {
         execute("DELETE FROM subscriptions WHERE id = $1", Tuple.of(id));
     }
 
     @Override
-    public boolean existsById(String id) {
-        RowSet<Row> rows = execute("SELECT 1 FROM subscriptions WHERE id = $1 LIMIT 1", Tuple.of(id));
+    public boolean existsById(final String id) {
+        final RowSet<Row> rows = execute("SELECT 1 FROM subscriptions WHERE id = $1 LIMIT 1", Tuple.of(id));
         return rows.iterator().hasNext();
     }
 
     @Override
     public long count() {
-        RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM subscriptions");
-        Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
+        final RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM subscriptions");
+        final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
         return row != null ? row.getLong("cnt") : 0L;
     }
 }

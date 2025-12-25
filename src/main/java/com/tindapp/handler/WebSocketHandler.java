@@ -46,8 +46,8 @@ public class WebSocketHandler {
     private final Map<Long, Boolean> typingStatus = new ConcurrentHashMap<>();
     private final Map<Long, ProfileSubscription> profileSubscriptions = new ConcurrentHashMap<>();
 
-    public WebSocketHandler(Vertx vertx, ChatService chatService, MessageService messageService, UserService userService,
-                            TokenService tokenService, ProfileService profileService, NotificationService notificationService) {
+    public WebSocketHandler(final Vertx vertx, final ChatService chatService, final MessageService messageService, final UserService userService,
+                            final TokenService tokenService, final ProfileService profileService, final NotificationService notificationService) {
         this.vertx = vertx;
         this.chatService = chatService;
         this.messageService = messageService;
@@ -56,32 +56,32 @@ public class WebSocketHandler {
         this.profileService = profileService;
         this.notificationService = notificationService;
 
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
+        objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
 
         startHeartbeatTimer();
         startTypingCleanup();
     }
 
-    public void handle(ServerWebSocket webSocket) {
-        String path = webSocket.path();
+    public void handle(final ServerWebSocket webSocket) {
+        final String path = webSocket.path();
 
         if (!path.equals("/ws")) {
             webSocket.reject();
             return;
         }
 
-        String query = webSocket.query();
+        final String query = webSocket.query();
         if (query == null || !query.startsWith("token=")) {
             logger.warn("WebSocket connection rejected: missing token");
             webSocket.reject();
             return;
         }
 
-        String token = query.substring(6); // убираем "token="
+        final String token = query.substring(6); // убираем "token="
 
         runOnWorker(webSocket, () -> {
-            User user = tokenService.validateToken(token);
+            final User user = tokenService.validateToken(token);
             if (user == null) {
                 logger.warn("WebSocket connection rejected: invalid or expired token: {}", token);
                 closeQuietly(webSocket);
@@ -94,7 +94,7 @@ public class WebSocketHandler {
                 return;
             }
 
-            Integer socketKey = webSocket.hashCode();
+            final Integer socketKey = webSocket.hashCode();
             userConnections.put(user.getId(), webSocket);
             socketToUser.put(socketKey, user.getId());
 
@@ -105,8 +105,8 @@ public class WebSocketHandler {
 
             vertx.runOnContext(v -> {
                 webSocket.handler(buffer -> runOnWorker(webSocket, () -> {
-                    String message = buffer.toString();
-                    JsonObject messageObj = new JsonObject(message);
+                    final String message = buffer.toString();
+                    final JsonObject messageObj = new JsonObject(message);
                     handleWebSocketMessage(webSocket, messageObj);
                 }, "Error handling WebSocket message"));
 
@@ -123,9 +123,9 @@ public class WebSocketHandler {
         }, "Error establishing WebSocket connection");
     }
 
-    private void handleWebSocketMessage(ServerWebSocket webSocket, JsonObject message) {
-        String type = message.getString("type");
-        JsonObject data = message.getJsonObject("data", new JsonObject());
+    private void handleWebSocketMessage(final ServerWebSocket webSocket, final JsonObject message) {
+        final String type = message.getString("type");
+        final JsonObject data = message.getJsonObject("data", new JsonObject());
 
         switch (type) {
             case "auth":
@@ -172,10 +172,10 @@ public class WebSocketHandler {
         }
     }
 
-    private void handleAuth(ServerWebSocket webSocket, JsonObject data) {
-        Long userId = socketToUser.get(webSocket.hashCode());
+    private void handleAuth(final ServerWebSocket webSocket, final JsonObject data) {
+        final Long userId = socketToUser.get(webSocket.hashCode());
         if (userId != null) {
-            JsonObject authData = new JsonObject()
+            final JsonObject authData = new JsonObject()
                 .put("userId", userId)
                 .put("authenticated", true);
             sendMessage(webSocket, "authenticated", authData);
@@ -184,15 +184,15 @@ public class WebSocketHandler {
         }
     }
 
-    private void handleJoinChat(ServerWebSocket webSocket, JsonObject data) {
+    private void handleJoinChat(final ServerWebSocket webSocket, final JsonObject data) {
         try {
-            Long userId = getUserId(webSocket);
+            final Long userId = getUserId(webSocket);
             if (userId == null) {
                 sendError(webSocket, "Not authenticated");
                 return;
             }
 
-            String chatId = data.getString("chatId");
+            final String chatId = data.getString("chatId");
             if (chatId == null) {
                 sendError(webSocket, "Missing chatId");
                 return;
@@ -203,17 +203,17 @@ public class WebSocketHandler {
                 return;
             }
 
-            Optional<com.tindapp.model.Chat> chatOpt = chatService.getChatById(chatId);
+            final Optional<com.tindapp.model.Chat> chatOpt = chatService.getChatById(chatId);
             if (chatOpt.isEmpty()) {
                 sendError(webSocket, "Chat not found");
                 return;
             }
 
-            com.tindapp.model.Chat chat = chatOpt.get();
-            Long companionId = chat.getCompanionId(userId);
-            boolean companionInChat = isUserActiveInChat(companionId, chatId);
+            final com.tindapp.model.Chat chat = chatOpt.get();
+            final Long companionId = chat.getCompanionId(userId);
+            final boolean companionInChat = isUserActiveInChat(companionId, chatId);
 
-            String previousChatId = userChats.get(userId);
+            final String previousChatId = userChats.get(userId);
             if (previousChatId != null && !previousChatId.equals(chatId)) {
                 handleLeaveChat(webSocket, new JsonObject().put("chatId", previousChatId));
             }
@@ -221,12 +221,12 @@ public class WebSocketHandler {
             userChats.put(userId, chatId);
             logger.info("User {} joined chat {}", userId, chatId);
 
-            JsonArray activeParticipants = new JsonArray().add(userId);
+            final JsonArray activeParticipants = new JsonArray().add(userId);
             if (companionInChat && companionId != null) {
                 activeParticipants.add(companionId);
             }
 
-            JsonObject joinData = new JsonObject()
+            final JsonObject joinData = new JsonObject()
                 .put("chatId", chatId)
                 .put("joined", true)
                 .put("userId", userId)
@@ -239,15 +239,15 @@ public class WebSocketHandler {
                 .put("userId", userId)
                 .put("chatId", chatId));
 
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error joining chat", e);
             sendError(webSocket, "Failed to join chat");
         }
     }
 
-    private void handleLeaveChat(ServerWebSocket webSocket, JsonObject data) {
+    private void handleLeaveChat(final ServerWebSocket webSocket, final JsonObject data) {
         try {
-            Long userId = getUserId(webSocket);
+            final Long userId = getUserId(webSocket);
             if (userId == null) {
                 sendError(webSocket, "Not authenticated");
                 return;
@@ -262,7 +262,7 @@ public class WebSocketHandler {
                 userChats.remove(userId);
                 logger.info("User {} left chat {}", userId, chatId);
 
-                JsonObject leaveData = new JsonObject()
+                final JsonObject leaveData = new JsonObject()
                     .put("chatId", chatId)
                     .put("left", true);
                 sendMessage(webSocket, "chat_left", leaveData);
@@ -272,25 +272,25 @@ public class WebSocketHandler {
                     .put("chatId", chatId));
             }
 
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error leaving chat", e);
             sendError(webSocket, "Failed to leave chat");
         }
     }
 
-    private void handleSendMessage(ServerWebSocket webSocket, JsonObject data) {
+    private void handleSendMessage(final ServerWebSocket webSocket, final JsonObject data) {
         try {
-            Long userId = getUserId(webSocket);
+            final Long userId = getUserId(webSocket);
             if (userId == null) {
                 sendError(webSocket, "Not authenticated");
                 return;
             }
 
-            String chatId = data.getString("chatId");
-            String text = data.getString("text", "");
-            String replyToMessageId = data.getString("replyToMessageId");
-            io.vertx.core.json.JsonArray attachmentsJson = data.getJsonArray("attachments");
-            List<Message.MessageAttachment> attachments = parseAttachments(attachmentsJson);
+            final String chatId = data.getString("chatId");
+            final String text = data.getString("text", "");
+            final String replyToMessageId = data.getString("replyToMessageId");
+            final io.vertx.core.json.JsonArray attachmentsJson = data.getJsonArray("attachments");
+            final List<Message.MessageAttachment> attachments = parseAttachments(attachmentsJson);
 
             if (chatId == null) {
                 sendError(webSocket, "Missing chatId");
@@ -302,27 +302,27 @@ public class WebSocketHandler {
                 return;
             }
 
-            Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId, attachments);
-            JsonObject messageJson = ResponseMapper.toMessageResponse(message);
+            final Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId, attachments);
+            final JsonObject messageJson = ResponseMapper.toMessageResponse(message);
 
             broadcastToChat(chatId, "message", messageJson);
 
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error sending message via WebSocket", e);
             sendError(webSocket, e.getMessage());
         }
     }
 
-    private void handleTyping(ServerWebSocket webSocket, JsonObject data) {
+    private void handleTyping(final ServerWebSocket webSocket, final JsonObject data) {
         try {
-            Long userId = getUserId(webSocket);
+            final Long userId = getUserId(webSocket);
             if (userId == null) {
                 sendError(webSocket, "Not authenticated");
                 return;
             }
 
-            String chatId = data.getString("chatId");
-            Boolean isTyping = data.getBoolean("isTyping", false);
+            final String chatId = data.getString("chatId");
+            final Boolean isTyping = data.getBoolean("isTyping", false);
 
             if (chatId == null) {
                 sendError(webSocket, "Missing chatId");
@@ -331,7 +331,7 @@ public class WebSocketHandler {
 
             typingStatus.put(userId, isTyping);
 
-            JsonObject typingData = new JsonObject()
+            final JsonObject typingData = new JsonObject()
                 .put("userId", userId)
                 .put("chatId", chatId)
                 .put("isTyping", isTyping);
@@ -341,7 +341,7 @@ public class WebSocketHandler {
             if (isTyping) {
                 vertx.setTimer(5000, timerId -> {
                     typingStatus.remove(userId);
-                    JsonObject stopTypingData = new JsonObject()
+                    final JsonObject stopTypingData = new JsonObject()
                         .put("userId", userId)
                         .put("chatId", chatId)
                         .put("isTyping", false);
@@ -349,22 +349,22 @@ public class WebSocketHandler {
                 });
             }
 
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error handling typing indicator", e);
             sendError(webSocket, "Failed to update typing status");
         }
     }
 
-    private void handleReadReceipt(ServerWebSocket webSocket, JsonObject data) {
+    private void handleReadReceipt(final ServerWebSocket webSocket, final JsonObject data) {
         try {
-            Long userId = getUserId(webSocket);
+            final Long userId = getUserId(webSocket);
             if (userId == null) {
                 sendError(webSocket, "Not authenticated");
                 return;
             }
 
-            String chatId = data.getString("chatId");
-            String messageId = data.getString("messageId");
+            final String chatId = data.getString("chatId");
+            final String messageId = data.getString("messageId");
 
             if (chatId == null || messageId == null) {
                 sendError(webSocket, "Missing chatId or messageId");
@@ -373,11 +373,11 @@ public class WebSocketHandler {
 
             try {
                 messageService.markMessagesAsRead(chatId, userId, List.of(messageId));
-            } catch (Exception e) {
+            } catch (final Exception e) {
                 logger.warn("Error marking message as read in database: {}", e.getMessage());
             }
 
-            JsonObject readData = new JsonObject()
+            final JsonObject readData = new JsonObject()
                 .put("chatId", chatId)
                 .put("messageId", messageId)
                 .put("userId", userId)
@@ -385,33 +385,33 @@ public class WebSocketHandler {
 
             notifyOtherParticipants(chatId, userId, "read", readData);
 
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error handling read receipt", e);
             sendError(webSocket, "Failed to process read receipt");
         }
     }
 
-    private void handlePing(ServerWebSocket webSocket) {
+    private void handlePing(final ServerWebSocket webSocket) {
         sendMessage(webSocket, "pong", new JsonObject().put("timestamp", System.currentTimeMillis()));
     }
 
-    private void handleStartCompanionSearch(ServerWebSocket webSocket, JsonObject data) {
+    private void handleStartCompanionSearch(final ServerWebSocket webSocket, final JsonObject data) {
         try {
-            Long userId = getUserId(webSocket);
+            final Long userId = getUserId(webSocket);
             if (userId == null) {
                 sendError(webSocket, "Not authenticated");
                 return;
             }
 
-            boolean isAlreadySearching = chatService.isSearchingCompanion(userId);
+            final boolean isAlreadySearching = chatService.isSearchingCompanion(userId);
             if (isAlreadySearching) {
                 logger.info("User {} is already searching, restarting search with new filters", userId);
                 chatService.cancelCompanionSearch(userId);
             }
 
-            JsonObject filters = data.getJsonObject("filters", new JsonObject());
+            final JsonObject filters = data.getJsonObject("filters", new JsonObject());
 
-            ChatService.SearchFilters searchFilters = new ChatService.SearchFilters(
+            final ChatService.SearchFilters searchFilters = new ChatService.SearchFilters(
                 filters.getString("gender", "any"),
                 filters.getJsonArray("ageRange", new io.vertx.core.json.JsonArray().add(18).add(80))
                     .stream().mapToInt(o -> (Integer) o).toArray(),
@@ -419,24 +419,24 @@ public class WebSocketHandler {
                 filters.getString("city")
             );
 
-            ChatService.FindCompanionResult findResult = chatService.findCompanion(userId, searchFilters);
+            final ChatService.FindCompanionResult findResult = chatService.findCompanion(userId, searchFilters);
 
-            if (findResult.isInQueue()) {
-                JsonObject queueResponse = new JsonObject()
+            if (findResult.inQueue()) {
+                final JsonObject queueResponse = new JsonObject()
                     .put("inQueue", true)
-                    .put("queueSize", findResult.getQueueSize())
-                    .put("message", findResult.getMessage());
+                    .put("queueSize", findResult.queueSize())
+                    .put("message", findResult.message());
                 sendMessage(webSocket, "search_queued", queueResponse);
-            } else if (findResult.getMatchResult() != null) {
-                ChatService.MatchResult result = findResult.getMatchResult();
+            } else if (findResult.matchResult() != null) {
+                final ChatService.MatchResult result = findResult.matchResult();
 
                 sendMessage(webSocket, "match_found", JsonObject.mapFrom(result));
 
-                ServerWebSocket companionSocket = userConnections.get(result.getCompanion().getId());
+                final ServerWebSocket companionSocket = userConnections.get(result.companion().id());
                 if (companionSocket != null) {
-                    JsonObject companionMatchData = new JsonObject()
-                        .put("chatId", result.getChatId())
-                        .put("cost", result.getCost())
+                    final JsonObject companionMatchData = new JsonObject()
+                        .put("chatId", result.chatId())
+                        .put("cost", result.cost())
                         .put("companion", new JsonObject()
                             .put("id", userId)
                             .put("nickname", "Собеседник #" + userId)
@@ -449,38 +449,38 @@ public class WebSocketHandler {
                 sendMatchNotifications(userId, result);
             }
 
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error starting companion search", e);
             sendError(webSocket, e.getMessage());
         }
     }
 
-    private void handleStopCompanionSearch(ServerWebSocket webSocket) {
-        Long userId = getUserId(webSocket);
+    private void handleStopCompanionSearch(final ServerWebSocket webSocket) {
+        final Long userId = getUserId(webSocket);
         if (userId == null) {
             sendError(webSocket, "Not authenticated");
             return;
         }
 
         try {
-            boolean wasStopped = chatService.cancelCompanionSearch(userId);
-            JsonObject response = new JsonObject()
+            final boolean wasStopped = chatService.cancelCompanionSearch(userId);
+            final JsonObject response = new JsonObject()
                 .put("stopped", wasStopped)
                 .put("message", wasStopped ? "Search stopped" : "No active search");
 
             sendMessage(webSocket, "search_stopped", response);
             logger.info("User {} stopped companion search: {}", userId, wasStopped);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error stopping companion search for user: " + userId, e);
             sendError(webSocket, "Failed to stop search: " + e.getMessage());
         }
     }
 
-    private void handleWebSocketClose(ServerWebSocket webSocket) {
+    private void handleWebSocketClose(final ServerWebSocket webSocket) {
         Long userId = getUserId(webSocket);
 
         if (userId == null) {
-            for (Map.Entry<Long, ServerWebSocket> entry : userConnections.entrySet()) {
+            for (final Map.Entry<Long, ServerWebSocket> entry : userConnections.entrySet()) {
                 if (entry.getValue().equals(webSocket)) {
                     userId = entry.getKey();
                     userConnections.remove(userId);
@@ -491,11 +491,11 @@ public class WebSocketHandler {
             userConnections.remove(userId);
         }
 
-        Integer socketKey = webSocket.hashCode();
+        final Integer socketKey = webSocket.hashCode();
         socketToUser.remove(socketKey);
 
         if (userId != null) {
-            String activeChatId = userChats.remove(userId);
+            final String activeChatId = userChats.remove(userId);
             if (activeChatId != null) {
                 notifyOtherParticipants(activeChatId, userId, "user_left", new JsonObject()
                     .put("userId", userId)
@@ -513,39 +513,39 @@ public class WebSocketHandler {
         }
     }
 
-    private void updateOnlineStatus(JsonObject data) {
+    private void updateOnlineStatus(final JsonObject data) {
     }
 
-    private Long getUserId(ServerWebSocket webSocket) {
+    private Long getUserId(final ServerWebSocket webSocket) {
         return socketToUser.get(webSocket.hashCode());
     }
 
-    private void handleProfilesSubscribe(ServerWebSocket webSocket, JsonObject data) {
+    private void handleProfilesSubscribe(final ServerWebSocket webSocket, final JsonObject data) {
         try {
-            Long userId = getUserId(webSocket);
+            final Long userId = getUserId(webSocket);
             if (userId == null) {
                 sendError(webSocket, "Not authenticated");
                 return;
             }
 
-            User viewer = userService.getUserById(userId)
+            final User viewer = userService.getUserById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-            JsonObject filtersJson = data.getJsonObject("filters", new JsonObject());
-            ProfileService.ProfileFilters filters = profileService.parseFilters(filtersJson, viewer);
+            final JsonObject filtersJson = data.getJsonObject("filters", new JsonObject());
+            final ProfileService.ProfileFilters filters = profileService.parseFilters(filtersJson, viewer);
             profileSubscriptions.put(userId, new ProfileSubscription(userId, filters, webSocket));
 
-            JsonObject payload = new JsonObject()
+            final JsonObject payload = new JsonObject()
                 .put("filters", JsonObject.mapFrom(filters));
             sendMessage(webSocket, "profiles_subscribed", payload);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error subscribing to profiles", e);
             sendError(webSocket, "Failed to subscribe to profiles");
         }
     }
 
-    private void handleProfilesUnsubscribe(ServerWebSocket webSocket) {
-        Long userId = getUserId(webSocket);
+    private void handleProfilesUnsubscribe(final ServerWebSocket webSocket) {
+        final Long userId = getUserId(webSocket);
         if (userId == null) {
             sendError(webSocket, "Not authenticated");
             return;
@@ -554,65 +554,65 @@ public class WebSocketHandler {
         sendMessage(webSocket, "profiles_unsubscribed", new JsonObject().put("success", true));
     }
 
-    public void notifyProfileUpdated(Long userId) {
+    public void notifyProfileUpdated(final Long userId) {
         if (userId == null) {
             return;
         }
         userService.getUserById(userId).ifPresent(this::notifyProfileUpdated);
     }
 
-    public void notifyProfileUpdated(User updatedUser) {
+    public void notifyProfileUpdated(final User updatedUser) {
         if (updatedUser == null) {
             return;
         }
 
         profileSubscriptions.forEach((subscriberId, subscription) -> {
             try {
-                User viewer = userService.getUserById(subscriberId).orElse(null);
+                final User viewer = userService.getUserById(subscriberId).orElse(null);
                 if (viewer == null) {
                     return;
                 }
 
-                boolean matches = profileService.matchesFilters(viewer, updatedUser, subscription.filters);
-                JsonObject payload = new JsonObject()
+                final boolean matches = profileService.matchesFilters(viewer, updatedUser, subscription.filters);
+                final JsonObject payload = new JsonObject()
                     .put("profileId", updatedUser.getId())
                     .put("isMatch", matches);
 
                 if (matches) {
-                    ProfileService.ProfileCard card = profileService.toProfileCard(viewer, updatedUser);
+                    final ProfileService.ProfileCard card = profileService.toProfileCard(viewer, updatedUser);
                     payload.put("profile", JsonObject.mapFrom(card));
                 }
 
                 sendMessage(subscription.webSocket, "profiles_changed", payload);
-            } catch (Exception e) {
+            } catch (final Exception e) {
                 logger.error("Error notifying profile update", e);
             }
         });
     }
 
-    private void sendMatchNotifications(Long currentUserId, ChatService.MatchResult result) {
+    private void sendMatchNotifications(final Long currentUserId, final ChatService.MatchResult result) {
         if (notificationService == null || result == null) {
             return;
         }
 
         try {
-            Long companionUserId = result.getCompanion() != null ? result.getCompanion().getId() : null;
+            final Long companionUserId = result.companion() != null ? result.companion().id() : null;
             notificationService.sendMatchFoundNotification(currentUserId, "Собеседник");
 
             if (companionUserId != null) {
                 notificationService.sendMatchFoundNotification(companionUserId, "Собеседник");
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.warn("Failed to send match notifications", e);
         }
     }
 
-    public void notifyChatClosed(String chatId, Long closedByUserId, Chat.ChatClosureReason reason, String closedAt) {
+    public void notifyChatClosed(final String chatId, final Long closedByUserId, final Chat.ChatClosureReason reason, final String closedAt) {
         if (chatId == null) {
             return;
         }
 
-        JsonObject payload = new JsonObject()
+        final JsonObject payload = new JsonObject()
             .put("chatId", chatId)
             .put("closedByUserId", closedByUserId)
             .put("reason", reason != null ? reason.name() : null)
@@ -621,125 +621,115 @@ public class WebSocketHandler {
         broadcastToChat(chatId, "chat_closed", payload);
     }
 
-    public void notifyChatReopened(String chatId) {
+    public void notifyChatReopened(final String chatId) {
         if (chatId == null) {
             return;
         }
 
-        JsonObject payload = new JsonObject()
+        final JsonObject payload = new JsonObject()
             .put("chatId", chatId);
 
         broadcastToChat(chatId, "chat_reopened", payload);
     }
 
-    private static class ProfileSubscription {
-        private final Long userId;
-        private final ProfileService.ProfileFilters filters;
-        private final ServerWebSocket webSocket;
-
-        private ProfileSubscription(Long userId, ProfileService.ProfileFilters filters, ServerWebSocket webSocket) {
-            this.userId = userId;
-            this.filters = filters;
-            this.webSocket = webSocket;
-        }
+    private record ProfileSubscription(Long userId, ProfileService.ProfileFilters filters, ServerWebSocket webSocket) {
     }
 
-    private List<Message.MessageAttachment> parseAttachments(io.vertx.core.json.JsonArray attachmentsJson) {
-        List<Message.MessageAttachment> attachments = new ArrayList<>();
+    private List<Message.MessageAttachment> parseAttachments(final io.vertx.core.json.JsonArray attachmentsJson) {
+        final List<Message.MessageAttachment> attachments = new ArrayList<>();
         if (attachmentsJson == null || attachmentsJson.isEmpty()) {
             return attachments;
         }
 
         for (int i = 0; i < attachmentsJson.size(); i++) {
-            Object raw = attachmentsJson.getValue(i);
-            if (!(raw instanceof io.vertx.core.json.JsonObject)) {
+            final Object raw = attachmentsJson.getValue(i);
+            if (!(raw instanceof JsonObject attachmentJson)) {
                 continue;
             }
-            io.vertx.core.json.JsonObject attachmentJson = (io.vertx.core.json.JsonObject) raw;
-            String typeString = attachmentJson.getString("type", "image");
+            final String typeString = attachmentJson.getString("type", "image");
             Message.MessageAttachment.AttachmentType type;
             try {
                 type = Message.MessageAttachment.AttachmentType.valueOf(typeString.toUpperCase());
-            } catch (IllegalArgumentException e) {
+            } catch (final IllegalArgumentException e) {
                 type = Message.MessageAttachment.AttachmentType.IMAGE;
             }
-            String url = attachmentJson.getString("url");
+            final String url = attachmentJson.getString("url");
             if (url == null || url.isEmpty()) {
                 continue;
             }
-            String preview = attachmentJson.getString("preview", url);
+            final String preview = attachmentJson.getString("preview", url);
             attachments.add(new Message.MessageAttachment(type, url, preview));
         }
         return attachments;
     }
 
-    private void broadcastToChat(String chatId, String type, JsonObject data) {
+    private void broadcastToChat(final String chatId, final String type, final JsonObject data) {
         try {
-            Optional<Chat> chatOpt = chatService.getChatById(chatId);
+            final Optional<Chat> chatOpt = chatService.getChatById(chatId);
             if (!chatOpt.isPresent()) {
                 return;
             }
 
-            com.tindapp.model.Chat chat = chatOpt.get();
+            final com.tindapp.model.Chat chat = chatOpt.get();
 
-            ServerWebSocket socket1 = userConnections.get(chat.getUser1Id());
+            final ServerWebSocket socket1 = userConnections.get(chat.getUser1Id());
             if (socket1 != null) {
                 sendMessage(socket1, type, data);
             }
 
-            ServerWebSocket socket2 = userConnections.get(chat.getUser2Id());
+            final ServerWebSocket socket2 = userConnections.get(chat.getUser2Id());
             if (socket2 != null) {
                 sendMessage(socket2, type, data);
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error broadcasting to chat", e);
         }
     }
 
-    private void notifyOtherParticipants(String chatId, Long excludeUserId, String type, JsonObject data) {
+    private void notifyOtherParticipants(final String chatId, final Long excludeUserId, final String type, final JsonObject data) {
         try {
-            Optional<com.tindapp.model.Chat> chatOpt = chatService.getChatById(chatId);
+            final Optional<com.tindapp.model.Chat> chatOpt = chatService.getChatById(chatId);
             if (!chatOpt.isPresent()) {
                 return;
             }
 
-            com.tindapp.model.Chat chat = chatOpt.get();
+            final com.tindapp.model.Chat chat = chatOpt.get();
 
-            Long companionId = chat.getCompanionId(excludeUserId);
+            final Long companionId = chat.getCompanionId(excludeUserId);
             if (companionId != null) {
-                ServerWebSocket socket = userConnections.get(companionId);
+                final ServerWebSocket socket = userConnections.get(companionId);
                 if (socket != null) {
                     sendMessage(socket, type, data);
                 }
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error notifying other participants", e);
         }
     }
 
-    private boolean isUserActiveInChat(Long userId, String chatId) {
+    private boolean isUserActiveInChat(final Long userId, final String chatId) {
         if (userId == null || chatId == null) {
             return false;
         }
-        String activeChatId = userChats.get(userId);
+        final String activeChatId = userChats.get(userId);
         return chatId.equals(activeChatId);
     }
 
-    private void sendMessage(ServerWebSocket webSocket, String type, JsonObject data) {
+    private void sendMessage(final ServerWebSocket webSocket, final String type, final JsonObject data) {
         try {
-            JsonObject message = new JsonObject()
+            final JsonObject message = new JsonObject()
                 .put("type", type)
                 .put("data", data)
                 .put("timestamp", LocalDateTime.now().toString());
 
             webSocket.writeTextMessage(message.encode());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error sending WebSocket message", e);
         }
     }
 
-    private void sendError(ServerWebSocket webSocket, String error) {
-        JsonObject errorData = new JsonObject()
+    private void sendError(final ServerWebSocket webSocket, final String error) {
+        final JsonObject errorData = new JsonObject()
             .put("error", error);
         sendMessage(webSocket, "error", errorData);
     }
@@ -749,7 +739,7 @@ public class WebSocketHandler {
             userConnections.values().forEach(socket -> {
                 try {
                     sendMessage(socket, "ping", new JsonObject().put("timestamp", System.currentTimeMillis()));
-                } catch (Exception e) {
+                } catch (final Exception e) {
                 }
             });
         });
@@ -761,15 +751,15 @@ public class WebSocketHandler {
         });
     }
 
-    public void sendNotificationToUser(Long userId, JsonObject notification) {
-        ServerWebSocket socket = userConnections.get(userId);
+    public void sendNotificationToUser(final Long userId, final JsonObject notification) {
+        final ServerWebSocket socket = userConnections.get(userId);
         if (socket != null) {
             sendMessage(socket, "notification", notification);
         }
     }
 
-    public void sendMessageToUser(Long userId, String type, JsonObject data) {
-        ServerWebSocket socket = userConnections.get(userId);
+    public void sendMessageToUser(final Long userId, final String type, final JsonObject data) {
+        final ServerWebSocket socket = userConnections.get(userId);
         if (socket != null) {
             logger.info("Sending WebSocket message to user {}: type={}, data={}", userId, type, data.encode());
             sendMessage(socket, type, data);
@@ -778,7 +768,7 @@ public class WebSocketHandler {
         }
     }
 
-    public boolean isUserOnline(Long userId) {
+    public boolean isUserOnline(final Long userId) {
         return userConnections.containsKey(userId);
     }
 
@@ -786,12 +776,12 @@ public class WebSocketHandler {
         return userConnections.size();
     }
 
-    private void runOnWorker(ServerWebSocket webSocket, Runnable action, String errorContext) {
+    private void runOnWorker(final ServerWebSocket webSocket, final Runnable action, final String errorContext) {
         vertx.<Void>executeBlocking(promise -> {
             try {
                 action.run();
                 promise.complete();
-            } catch (Exception e) {
+            } catch (final Exception e) {
                 promise.fail(e);
             }
         }, false, ar -> {
@@ -802,10 +792,10 @@ public class WebSocketHandler {
         });
     }
 
-    private void closeQuietly(ServerWebSocket webSocket) {
+    private void closeQuietly(final ServerWebSocket webSocket) {
         try {
             webSocket.close();
-        } catch (Exception ignored) {
+        } catch (final Exception ignored) {
         }
     }
 }

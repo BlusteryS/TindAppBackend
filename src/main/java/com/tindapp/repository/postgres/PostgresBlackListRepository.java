@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 
 public class PostgresBlackListRepository extends AbstractPostgresRepository implements BlackListRepository {
 
-    public PostgresBlackListRepository(PgPool client) {
+    public PostgresBlackListRepository(final PgPool client) {
         super(client);
         ensureTable("""
             CREATE TABLE IF NOT EXISTS blacklist (
@@ -28,7 +28,7 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
     }
 
     @Override
-    public BlackListItem save(BlackListItem entity) {
+    public BlackListItem save(final BlackListItem entity) {
         if (entity == null) {
             throw new IllegalArgumentException("BlackListItem is null");
         }
@@ -38,7 +38,7 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
         if (entity.getCreatedAt() == null) {
             entity.setCreatedAt(LocalDateTime.now());
         }
-        JsonObject payload = toJson(entity);
+        final JsonObject payload = toJson(entity);
         execute(
             "INSERT INTO blacklist (id, data) VALUES ($1, $2::jsonb) " +
                 "ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
@@ -48,11 +48,11 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
     }
 
     @Override
-    public Optional<BlackListItem> findById(String id) {
+    public Optional<BlackListItem> findById(final String id) {
         if (id == null) {
             return Optional.empty();
         }
-        RowSet<Row> rows = execute("SELECT data FROM blacklist WHERE id = $1 LIMIT 1", Tuple.of(id));
+        final RowSet<Row> rows = execute("SELECT data FROM blacklist WHERE id = $1 LIMIT 1", Tuple.of(id));
         if (!rows.iterator().hasNext()) {
             return Optional.empty();
         }
@@ -61,10 +61,10 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
 
     @Override
     public List<BlackListItem> findAll() {
-        RowSet<Row> rows = execute("SELECT data FROM blacklist");
-        List<BlackListItem> result = new ArrayList<>();
-        for (Row row : rows) {
-            BlackListItem item = mapRow(row, BlackListItem.class);
+        final RowSet<Row> rows = execute("SELECT data FROM blacklist");
+        final List<BlackListItem> result = new ArrayList<>();
+        for (final Row row : rows) {
+            final BlackListItem item = mapRow(row, BlackListItem.class);
             if (item != null) {
                 result.add(item);
             }
@@ -73,10 +73,10 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
     }
 
     @Override
-    public List<BlackListItem> findAll(int page, int limit) {
-        List<BlackListItem> all = findAll();
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, all.size());
+    public List<BlackListItem> findAll(final int page, final int limit) {
+        final List<BlackListItem> all = findAll();
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, all.size());
         if (start >= all.size()) {
             return new ArrayList<>();
         }
@@ -84,7 +84,7 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
     }
 
     @Override
-    public List<BlackListItem> findByUserId(Long userId) {
+    public List<BlackListItem> findByUserId(final Long userId) {
         return findAll().stream()
             .filter(item -> userId.equals(item.getUserId()))
             .sorted(java.util.Comparator.comparing(
@@ -95,10 +95,10 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
     }
 
     @Override
-    public List<BlackListItem> findByUserId(Long userId, int page, int limit) {
-        List<BlackListItem> items = findByUserId(userId);
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, items.size());
+    public List<BlackListItem> findByUserId(final Long userId, final int page, final int limit) {
+        final List<BlackListItem> items = findByUserId(userId);
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, items.size());
         if (start >= items.size()) {
             return new ArrayList<>();
         }
@@ -106,14 +106,14 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
     }
 
     @Override
-    public Optional<BlackListItem> findByUserIdAndBlockedUserId(Long userId, Long blockedUserId) {
+    public Optional<BlackListItem> findByUserIdAndBlockedUserId(final Long userId, final Long blockedUserId) {
         return findAll().stream()
             .filter(item -> userId.equals(item.getUserId()) && blockedUserId.equals(item.getBlockedUserId()))
             .findFirst();
     }
 
     @Override
-    public List<BlackListItem> findByBlockedUserId(Long blockedUserId) {
+    public List<BlackListItem> findByBlockedUserId(final Long blockedUserId) {
         return findAll().stream()
             .filter(item -> blockedUserId.equals(item.getBlockedUserId()))
             .sorted(java.util.Comparator.comparing(
@@ -124,46 +124,46 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
     }
 
     @Override
-    public boolean isBlocked(Long userId, Long blockedUserId) {
+    public boolean isBlocked(final Long userId, final Long blockedUserId) {
         return findByUserIdAndBlockedUserId(userId, blockedUserId).isPresent();
     }
 
     @Override
-    public void unblockUser(Long userId, Long blockedUserId) {
+    public void unblockUser(final Long userId, final Long blockedUserId) {
         deleteByUserIdAndBlockedUserId(userId, blockedUserId);
     }
 
     @Override
-    public long countByUserId(Long userId) {
+    public long countByUserId(final Long userId) {
         return findByUserId(userId).size();
     }
 
     @Override
-    public long countByBlockedUserId(Long blockedUserId) {
+    public long countByBlockedUserId(final Long blockedUserId) {
         return findByBlockedUserId(blockedUserId).size();
     }
 
     @Override
-    public void deleteByUserIdAndBlockedUserId(Long userId, Long blockedUserId) {
+    public void deleteByUserIdAndBlockedUserId(final Long userId, final Long blockedUserId) {
         findByUserIdAndBlockedUserId(userId, blockedUserId)
             .ifPresent(item -> deleteById(item.getId()));
     }
 
     @Override
-    public void deleteById(String id) {
+    public void deleteById(final String id) {
         execute("DELETE FROM blacklist WHERE id = $1", Tuple.of(id));
     }
 
     @Override
-    public boolean existsById(String id) {
-        RowSet<Row> rows = execute("SELECT 1 FROM blacklist WHERE id = $1 LIMIT 1", Tuple.of(id));
+    public boolean existsById(final String id) {
+        final RowSet<Row> rows = execute("SELECT 1 FROM blacklist WHERE id = $1 LIMIT 1", Tuple.of(id));
         return rows.iterator().hasNext();
     }
 
     @Override
     public long count() {
-        RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM blacklist");
-        Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
+        final RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM blacklist");
+        final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
         return row != null ? row.getLong("cnt") : 0L;
     }
 }

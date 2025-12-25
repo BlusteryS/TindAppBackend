@@ -16,7 +16,7 @@ public class InMemoryReportRepository implements ReportRepository {
     private final AtomicLong idGenerator = new AtomicLong(1);
 
     @Override
-    public Report save(Report report) {
+    public Report save(final Report report) {
         if (report.getId() == null) {
             report.setId(String.valueOf(idGenerator.getAndIncrement()));
         }
@@ -25,7 +25,7 @@ public class InMemoryReportRepository implements ReportRepository {
     }
 
     @Override
-    public Optional<Report> findById(String id) {
+    public Optional<Report> findById(final String id) {
         return Optional.ofNullable(reports.get(id));
     }
 
@@ -35,13 +35,13 @@ public class InMemoryReportRepository implements ReportRepository {
     }
 
     @Override
-    public List<Report> findAll(int page, int limit) {
-        List<Report> allReports = findAll().stream()
-                .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-                .collect(Collectors.toList());
+    public List<Report> findAll(final int page, final int limit) {
+        final List<Report> allReports = findAll().stream()
+            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
+            .collect(Collectors.toList());
 
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, allReports.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, allReports.size());
 
         if (start >= allReports.size()) {
             return new ArrayList<>();
@@ -51,51 +51,51 @@ public class InMemoryReportRepository implements ReportRepository {
     }
 
     @Override
-    public List<Report> findByReporterId(Long reporterId) {
+    public List<Report> findByReporterId(final Long reporterId) {
         return reports.values().stream()
-                .filter(report -> reporterId.equals(report.getReporterId()))
-                .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(report -> reporterId.equals(report.getReporterId()))
+            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<Report> findByTargetId(Long targetId) {
+    public List<Report> findByTargetId(final Long targetId) {
         return reports.values().stream()
-                .filter(report -> targetId.equals(report.getTargetId()))
-                .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(report -> targetId.equals(report.getTargetId()))
+            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<Report> findByStatus(Report.ReportStatus status) {
+    public List<Report> findByStatus(final Report.ReportStatus status) {
         return reports.values().stream()
-                .filter(report -> status.equals(report.getStatus()))
-                .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(report -> status.equals(report.getStatus()))
+            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<Report> findByReason(Report.ReportReason reason) {
+    public List<Report> findByReason(final Report.ReportReason reason) {
         return reports.values().stream()
-                .filter(report -> reason.equals(report.getReason()))
-                .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(report -> reason.equals(report.getReason()))
+            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<Report> findByChatId(String chatId) {
+    public List<Report> findByChatId(final String chatId) {
         return reports.values().stream()
-                .filter(report -> chatId.equals(report.getChatId()))
-                .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(report -> chatId.equals(report.getChatId()))
+            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<Report> findByMessageId(String messageId) {
+    public List<Report> findByMessageId(final String messageId) {
         return reports.values().stream()
-                .filter(report -> messageId.equals(report.getMessageId()))
-                .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(report -> messageId.equals(report.getMessageId()))
+            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
@@ -104,41 +104,41 @@ public class InMemoryReportRepository implements ReportRepository {
     }
 
     @Override
-    public void updateStatus(String reportId, Report.ReportStatus status) {
-        Report report = reports.get(reportId);
+    public void updateStatus(final String reportId, final Report.ReportStatus status) {
+        final Report report = reports.get(reportId);
         if (report != null) {
             report.setStatus(status);
         }
     }
 
     @Override
-    public long countByTargetId(Long targetId) {
+    public long countByTargetId(final Long targetId) {
         return reports.values().stream()
-                .filter(report -> targetId.equals(report.getTargetId()))
-                .count();
+            .filter(report -> targetId.equals(report.getTargetId()))
+            .count();
     }
 
     @Override
-    public long countByReporterId(Long reporterId) {
+    public long countByReporterId(final Long reporterId) {
         return reports.values().stream()
-                .filter(report -> reporterId.equals(report.getReporterId()))
-                .count();
+            .filter(report -> reporterId.equals(report.getReporterId()))
+            .count();
     }
 
     @Override
-    public boolean existsByReporterAndTarget(Long reporterId, Long targetId) {
+    public boolean existsByReporterAndTarget(final Long reporterId, final Long targetId) {
         return reports.values().stream()
-                .anyMatch(report -> reporterId.equals(report.getReporterId()) &&
-                                   targetId.equals(report.getTargetId()));
+            .anyMatch(report -> reporterId.equals(report.getReporterId()) &&
+                targetId.equals(report.getTargetId()));
     }
 
     @Override
-    public void deleteById(String id) {
+    public void deleteById(final String id) {
         reports.remove(id);
     }
 
     @Override
-    public boolean existsById(String id) {
+    public boolean existsById(final String id) {
         return reports.containsKey(id);
     }
 

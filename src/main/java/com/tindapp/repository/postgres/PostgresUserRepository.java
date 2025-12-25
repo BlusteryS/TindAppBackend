@@ -18,7 +18,7 @@ import java.util.Optional;
 
 public class PostgresUserRepository extends AbstractPostgresRepository implements UserRepository {
 
-    public PostgresUserRepository(PgPool client) {
+    public PostgresUserRepository(final PgPool client) {
         super(client);
         ensureTable("""
             CREATE TABLE IF NOT EXISTS users (
@@ -66,7 +66,7 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
     }
 
     @Override
-    public User save(User user) {
+    public User save(final User user) {
         if (user == null) {
             throw new IllegalArgumentException("User is null");
         }
@@ -76,8 +76,8 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
         }
         user.setUpdatedAtDateTime(LocalDateTime.now());
 
-        boolean isNew = user.getId() == null;
-        String sql = """
+        final boolean isNew = user.getId() == null;
+        final String sql = """
             INSERT INTO users (
                 vk_id, age, birth_date, first_name, last_name, avatar_url, country, city,
                 is_verified, was_verified, is_online, last_seen, bio, gender, is_visible,
@@ -119,7 +119,7 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
             RETURNING id, created_at
             """;
 
-        Tuple params = Tuple.of(
+        final Tuple params = Tuple.of(
             user.getVkId(),
             user.getAge(),
             user.getBirthDate(),
@@ -152,10 +152,10 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
             toOffset(user.getCreatedAtDateTime())
         );
 
-        RowSet<Row> rows = execute(sql, params);
-        Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
+        final RowSet<Row> rows = execute(sql, params);
+        final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
         if (row != null) {
-            Long generatedId = row.getLong("id");
+            final Long generatedId = row.getLong("id");
             if (user.getId() == null) {
                 user.setId(generatedId);
             }
@@ -165,41 +165,41 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
     }
 
     @Override
-    public Optional<User> findById(Long id) {
+    public Optional<User> findById(final Long id) {
         if (id == null) {
             return Optional.empty();
         }
-        RowSet<Row> rows = execute("SELECT * FROM users WHERE id = $1 LIMIT 1", Tuple.of(id));
+        final RowSet<Row> rows = execute("SELECT * FROM users WHERE id = $1 LIMIT 1", Tuple.of(id));
         if (!rows.iterator().hasNext()) {
             return Optional.empty();
         }
-        Row row = rows.iterator().next();
+        final Row row = rows.iterator().next();
         return Optional.ofNullable(mapUser(row));
     }
 
     @Override
-    public Optional<User> findByVkId(Long vkId) {
+    public Optional<User> findByVkId(final Long vkId) {
         if (vkId == null) {
             return Optional.empty();
         }
-        RowSet<Row> rows = execute("SELECT * FROM users WHERE vk_id = $1 LIMIT 1", Tuple.of(vkId));
+        final RowSet<Row> rows = execute("SELECT * FROM users WHERE vk_id = $1 LIMIT 1", Tuple.of(vkId));
         if (!rows.iterator().hasNext()) {
             return Optional.empty();
         }
-        Row row = rows.iterator().next();
+        final Row row = rows.iterator().next();
         return Optional.ofNullable(mapUser(row));
     }
 
     @Override
     public List<User> findAll() {
-        RowSet<Row> rows = execute("SELECT * FROM users");
+        final RowSet<Row> rows = execute("SELECT * FROM users");
         return mapUsers(rows);
     }
 
     @Override
-    public List<User> findAll(int page, int limit) {
-        int offset = Math.max(0, (page - 1) * limit);
-        RowSet<Row> rows = execute(
+    public List<User> findAll(final int page, final int limit) {
+        final int offset = Math.max(0, (page - 1) * limit);
+        final RowSet<Row> rows = execute(
             "SELECT * FROM users ORDER BY updated_at DESC OFFSET $1 LIMIT $2",
             Tuple.of(offset, limit)
         );
@@ -208,24 +208,24 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
 
     @Override
     public List<User> findOnlineUsers() {
-        RowSet<Row> rows = execute("SELECT * FROM users WHERE is_online = TRUE");
+        final RowSet<Row> rows = execute("SELECT * FROM users WHERE is_online = TRUE");
         return mapUsers(rows);
     }
 
     @Override
-    public List<User> findByGender(User.Gender gender) {
+    public List<User> findByGender(final User.Gender gender) {
         if (gender == null) {
             return findAll();
         }
-        RowSet<Row> rows = execute("SELECT * FROM users WHERE gender = $1", Tuple.of(gender.toString().toLowerCase()));
+        final RowSet<Row> rows = execute("SELECT * FROM users WHERE gender = $1", Tuple.of(gender.toString().toLowerCase()));
         return mapUsers(rows);
     }
 
     @Override
-    public List<User> findByAgeRange(Integer minAge, Integer maxAge) {
-        String ageExpr = "COALESCE(age, CAST(date_part('year', age(birth_date)) AS INT))";
-        StringBuilder sql = new StringBuilder("SELECT * FROM users WHERE 1=1");
-        List<Object> params = new ArrayList<>();
+    public List<User> findByAgeRange(final Integer minAge, final Integer maxAge) {
+        final String ageExpr = "COALESCE(age, CAST(date_part('year', age(birth_date)) AS INT))";
+        final StringBuilder sql = new StringBuilder("SELECT * FROM users WHERE 1=1");
+        final List<Object> params = new ArrayList<>();
         if (minAge != null) {
             sql.append(" AND ").append(ageExpr).append(" >= $").append(params.size() + 1);
             params.add(minAge);
@@ -234,13 +234,13 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
             sql.append(" AND ").append(ageExpr).append(" <= $").append(params.size() + 1);
             params.add(maxAge);
         }
-        RowSet<Row> rows = execute(sql.toString(), Tuple.tuple(params));
+        final RowSet<Row> rows = execute(sql.toString(), Tuple.tuple(params));
         return mapUsers(rows);
     }
 
     @Override
-    public List<User> findByCity(String city) {
-        RowSet<Row> rows = execute(
+    public List<User> findByCity(final String city) {
+        final RowSet<Row> rows = execute(
             "SELECT * FROM users WHERE city = $1",
             Tuple.of(city)
         );
@@ -248,14 +248,15 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
     }
 
     @Override
-    public List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly) {
+    public List<User> findForMatching(final User.Gender gender, final Integer minAge, final Integer maxAge, final String city, final Boolean verifiedOnly) {
         return findForMatching(gender, minAge, maxAge, city, verifiedOnly, 1, 500);
     }
 
-    public List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly, int page, int limit) {
-        String ageExpr = "COALESCE(age, CAST(date_part('year', age(birth_date)) AS INT))";
-        StringBuilder sql = new StringBuilder("SELECT * FROM users WHERE is_visible = TRUE AND allow_messages = TRUE");
-        List<Object> params = new ArrayList<>();
+    @Override
+    public List<User> findForMatching(final User.Gender gender, final Integer minAge, final Integer maxAge, final String city, final Boolean verifiedOnly, final int page, final int limit) {
+        final String ageExpr = "COALESCE(age, CAST(date_part('year', age(birth_date)) AS INT))";
+        final StringBuilder sql = new StringBuilder("SELECT * FROM users WHERE is_visible = TRUE AND allow_messages = TRUE");
+        final List<Object> params = new ArrayList<>();
 
         if (city != null) {
             sql.append(" AND city = $").append(params.size() + 1);
@@ -273,7 +274,7 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
                 .append(ageExpr)
                 .append(" >= $")
                 .append(params.size() + 1)
-                .append(")");
+                .append(')');
             params.add(minAge);
         }
         if (maxAge != null) {
@@ -284,24 +285,24 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
                 .append(ageExpr)
                 .append(" <= $")
                 .append(params.size() + 1)
-                .append(")");
+                .append(')');
             params.add(maxAge);
         }
         if (verifiedOnly != null && verifiedOnly) {
             sql.append(" AND is_verified = TRUE");
         }
 
-        int safeLimit = Math.min(Math.max(limit, 1), 500);
-        int offset = Math.max(0, (page - 1) * safeLimit);
+        final int safeLimit = Math.min(Math.max(limit, 1), 500);
+        final int offset = Math.max(0, (page - 1) * safeLimit);
         sql.append(" ORDER BY updated_at DESC, is_verified DESC OFFSET $").append(params.size() + 1).append(" LIMIT $").append(params.size() + 2);
         params.add(offset);
         params.add(safeLimit);
-        RowSet<Row> rows = execute(sql.toString(), Tuple.tuple(params));
+        final RowSet<Row> rows = execute(sql.toString(), Tuple.tuple(params));
         return mapUsers(rows);
     }
 
     @Override
-    public void updateOnlineStatus(Long userId, boolean isOnline) {
+    public void updateOnlineStatus(final Long userId, final boolean isOnline) {
         execute(
             "UPDATE users SET " +
                 "is_online = $2, " +
@@ -312,32 +313,32 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
     }
 
     @Override
-    public void updateBalance(Long userId, Integer balance) {
+    public void updateBalance(final Long userId, final Integer balance) {
         execute("UPDATE users SET data = jsonb_set(data, '{balance}', to_jsonb($2::int), true), updated_at = NOW() WHERE id = $1", Tuple.of(userId, balance));
     }
 
     @Override
-    public void deleteById(Long id) {
+    public void deleteById(final Long id) {
         execute("DELETE FROM users WHERE id = $1", Tuple.of(id));
     }
 
     @Override
-    public boolean existsById(Long id) {
-        RowSet<Row> rows = execute("SELECT 1 FROM users WHERE id = $1 LIMIT 1", Tuple.of(id));
+    public boolean existsById(final Long id) {
+        final RowSet<Row> rows = execute("SELECT 1 FROM users WHERE id = $1 LIMIT 1", Tuple.of(id));
         return rows.iterator().hasNext();
     }
 
     @Override
     public long count() {
-        RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM users");
-        Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
+        final RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM users");
+        final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
         return row != null ? row.getLong("cnt") : 0L;
     }
 
-    private List<User> mapUsers(RowSet<Row> rows) {
-        List<User> result = new ArrayList<>();
-        for (Row row : rows) {
-            User user = mapUser(row);
+    private List<User> mapUsers(final RowSet<Row> rows) {
+        final List<User> result = new ArrayList<>();
+        for (final Row row : rows) {
+            final User user = mapUser(row);
             if (user != null) {
                 result.add(user);
             }
@@ -345,15 +346,15 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
         return result;
     }
 
-    private OffsetDateTime toOffset(LocalDateTime time) {
+    private OffsetDateTime toOffset(final LocalDateTime time) {
         return time != null ? time.atOffset(ZoneOffset.UTC) : null;
     }
 
-    private User mapUser(Row row) {
+    private User mapUser(final Row row) {
         if (row == null) {
             return null;
         }
-        User user = new User();
+        final User user = new User();
         user.setId(row.getLong("id"));
         user.setVkId(row.getLong("vk_id"));
         user.setAge((Integer) row.getValue("age"));
@@ -371,13 +372,13 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
         user.setGender(row.getString("gender"));
         user.setIsVisible(row.getBoolean("is_visible"));
 
-        User.UserSubscription subscription = new User.UserSubscription();
+        final User.UserSubscription subscription = new User.UserSubscription();
         subscription.setIsActive(row.getBoolean("subscription_is_active"));
-        String subType = row.getString("subscription_type");
+        final String subType = row.getString("subscription_type");
         if (subType != null) {
             try {
                 subscription.setType(User.SubscriptionType.valueOf(subType.toUpperCase()));
-            } catch (Exception ignored) {
+            } catch (final Exception ignored) {
             }
         }
         subscription.setExpiresAt(row.getLocalDateTime("subscription_expires_at"));
@@ -385,15 +386,15 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
 
         user.setBalance(row.getInteger("balance"));
 
-        JsonObject settingsJson = row.getJsonObject("settings");
+        final JsonObject settingsJson = row.getJsonObject("settings");
         if (settingsJson != null) {
-            User.UserSettings settings = JacksonUtils.fromJson(settingsJson, User.UserSettings.class);
+            final User.UserSettings settings = JacksonUtils.fromJson(settingsJson, User.UserSettings.class);
             user.setSettings(settings);
         }
 
-        JsonObject rewardsJson = row.getJsonObject("rewards");
+        final JsonObject rewardsJson = row.getJsonObject("rewards");
         if (rewardsJson != null) {
-            User.UserRewards rewards = JacksonUtils.fromJson(rewardsJson, User.UserRewards.class);
+            final User.UserRewards rewards = JacksonUtils.fromJson(rewardsJson, User.UserRewards.class);
             user.setRewards(rewards);
         }
 

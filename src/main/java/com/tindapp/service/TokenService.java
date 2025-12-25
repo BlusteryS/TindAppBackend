@@ -26,77 +26,77 @@ public class TokenService {
     private final UserService userService;
     private final byte[] secret;
 
-    public TokenService(UserService userService) {
+    public TokenService(final UserService userService) {
         this.userService = userService;
-        String rawSecret = System.getenv().getOrDefault("TOKEN_SECRET", AppConfig.TOKEN_SECRET);
-        this.secret = rawSecret.getBytes(StandardCharsets.UTF_8);
+        final String rawSecret = System.getenv().getOrDefault("TOKEN_SECRET", AppConfig.TOKEN_SECRET);
+        secret = rawSecret.getBytes(StandardCharsets.UTF_8);
     }
 
-    public String createToken(User user) {
+    public String createToken(final User user) {
         if (user == null || user.getId() == null) {
             throw new IllegalArgumentException("User or user ID is null");
         }
 
-        long expiresAt = Instant.now().plus(TOKEN_EXPIRY_HOURS, ChronoUnit.HOURS).getEpochSecond();
-        String nonce = UUID.randomUUID().toString().replace("-", "");
-        String payload = user.getId() + ":" + expiresAt + ":" + nonce;
-        String signature = sign(payload);
+        final long expiresAt = Instant.now().plus(TOKEN_EXPIRY_HOURS, ChronoUnit.HOURS).getEpochSecond();
+        final String nonce = UUID.randomUUID().toString().replace("-", "");
+        final String payload = user.getId() + ":" + expiresAt + ':' + nonce;
+        final String signature = sign(payload);
 
-        return BASE64_ENCODER.encodeToString(payload.getBytes(StandardCharsets.UTF_8)) + "." + signature;
+        return BASE64_ENCODER.encodeToString(payload.getBytes(StandardCharsets.UTF_8)) + '.' + signature;
     }
 
-    public User validateToken(String token) {
+    public User validateToken(final String token) {
         if (token == null || token.isEmpty()) {
             return null;
         }
 
         try {
-            String[] parts = token.split("\\.");
+            final String[] parts = token.split("\\.");
             if (parts.length != 2) {
                 return null;
             }
 
-            String payload = new String(BASE64_DECODER.decode(parts[0]), StandardCharsets.UTF_8);
-            String providedSignature = parts[1];
-            String expectedSignature = sign(payload);
+            final String payload = new String(BASE64_DECODER.decode(parts[0]), StandardCharsets.UTF_8);
+            final String providedSignature = parts[1];
+            final String expectedSignature = sign(payload);
 
             if (!MessageDigest.isEqual(expectedSignature.getBytes(StandardCharsets.UTF_8), providedSignature.getBytes(StandardCharsets.UTF_8))) {
                 return null;
             }
 
-            String[] payloadParts = payload.split(":");
+            final String[] payloadParts = payload.split(":");
             if (payloadParts.length != 3) {
                 return null;
             }
 
-            long userId = Long.parseLong(payloadParts[0]);
-            long expiresAt = Long.parseLong(payloadParts[1]);
+            final long userId = Long.parseLong(payloadParts[0]);
+            final long expiresAt = Long.parseLong(payloadParts[1]);
 
             if (Instant.now().getEpochSecond() > expiresAt) {
                 return null;
             }
 
             return userService.getUserById(userId).orElse(null);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.warn("Token validation error", e);
             return null;
         }
     }
 
-    private String sign(String payload) {
+    private String sign(final String payload) {
         try {
-            Mac mac = Mac.getInstance(HMAC_ALGO);
+            final Mac mac = Mac.getInstance(HMAC_ALGO);
             mac.init(new SecretKeySpec(secret, HMAC_ALGO));
-            byte[] raw = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
+            final byte[] raw = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
             return toHex(raw);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             throw new RuntimeException("Failed to sign token", e);
         }
     }
 
-    private String toHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
+    private String toHex(final byte[] bytes) {
+        final StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (final byte b : bytes) {
             sb.append(String.format("%02x", b));
         }
         return sb.toString();

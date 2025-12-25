@@ -25,30 +25,30 @@ public class SubscriptionService {
     private final NotificationService notificationService;
     private final List<SubscriptionPlan> availablePlans;
 
-    public SubscriptionService(SubscriptionRepository subscriptionRepository, UserRepository userRepository,
-                               NotificationService notificationService) {
+    public SubscriptionService(final SubscriptionRepository subscriptionRepository, final UserRepository userRepository,
+                               final NotificationService notificationService) {
         this.subscriptionRepository = subscriptionRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
-        this.availablePlans = Collections.unmodifiableList(buildDefaultPlans());
+        availablePlans = Collections.unmodifiableList(buildDefaultPlans());
     }
 
     private List<SubscriptionPlan> buildDefaultPlans() {
-        List<String> premiumFeatures = List.of(
+        final List<String> premiumFeatures = List.of(
             "Все возможности базовой",
             "Анонимный режим",
             "Без рекламы",
             "Статистика профиля"
         );
 
-        List<SubscriptionPlan> plans = new ArrayList<>();
+        final List<SubscriptionPlan> plans = new ArrayList<>();
 
         plans.add(new SubscriptionPlan(
             "premium_month",
             "Премиум подписка (1 месяц)",
             Subscription.SubscriptionType.PREMIUM,
-            399.0,
-            100,
+            50.0,
+            50,
             30,
             premiumFeatures,
             "Премиум на 30 дней",
@@ -62,8 +62,8 @@ public class SubscriptionService {
             "premium_6months",
             "Премиум подписка (6 месяцев)",
             Subscription.SubscriptionType.PREMIUM,
-            2090.0,
-            504,
+            300.0,
+            240,
             180,
             premiumFeatures,
             "Премиум на 6 месяцев",
@@ -77,8 +77,8 @@ public class SubscriptionService {
             "premium_year",
             "Премиум подписка (12 месяцев)",
             Subscription.SubscriptionType.PREMIUM,
-            3590.0,
-            900,
+            600.0,
+            330,
             365,
             premiumFeatures,
             "Премиум на 12 месяцев",
@@ -95,7 +95,7 @@ public class SubscriptionService {
         return availablePlans;
     }
 
-    public Optional<SubscriptionPlan> findPlanById(String planId) {
+    public Optional<SubscriptionPlan> findPlanById(final String planId) {
         if (planId == null) {
             return Optional.empty();
         }
@@ -104,58 +104,58 @@ public class SubscriptionService {
             .findFirst();
     }
 
-    public Optional<SubscriptionPlan> findPlanByTypeAndPeriod(Subscription.SubscriptionType type, String periodCode) {
+    public Optional<SubscriptionPlan> findPlanByTypeAndPeriod(final Subscription.SubscriptionType type, final String periodCode) {
         return availablePlans.stream()
             .filter(plan -> plan.hasType(type))
             .filter(plan -> plan.getPeriodCode().equalsIgnoreCase(periodCode))
             .findFirst();
     }
 
-    public Optional<Subscription> getActiveSubscription(Long userId) {
+    public Optional<Subscription> getActiveSubscription(final Long userId) {
         return subscriptionRepository.findActiveByUserId(userId);
     }
 
-    public List<Subscription> getUserSubscriptions(Long userId) {
+    public List<Subscription> getUserSubscriptions(final Long userId) {
         return subscriptionRepository.findByUserId(userId);
     }
 
-    public Optional<Subscription> findByVkSubscriptionId(String vkSubscriptionId) {
+    public Optional<Subscription> findByVkSubscriptionId(final String vkSubscriptionId) {
         return subscriptionRepository.findByVkSubscriptionId(vkSubscriptionId);
     }
 
-    public Subscription purchaseSubscription(Long userId, String planId, Subscription.PaymentMethod paymentMethod) {
-        Optional<Subscription> existingSubscription = subscriptionRepository.findActiveByUserId(userId);
+    public Subscription purchaseSubscription(final Long userId, final String planId, final Subscription.PaymentMethod paymentMethod) {
+        final Optional<Subscription> existingSubscription = subscriptionRepository.findActiveByUserId(userId);
         if (existingSubscription.isPresent()) {
             throw new RuntimeException("User already has active subscription");
         }
 
-        SubscriptionPlan plan = findPlanById(planId)
+        final SubscriptionPlan plan = findPlanById(planId)
             .orElseThrow(() -> new RuntimeException("Subscription plan not found"));
 
-        String subscriptionId = UUID.randomUUID().toString();
-        Subscription subscription = new Subscription(subscriptionId, userId, plan.getPlanType(), plan.getPrice(), paymentMethod);
+        final String subscriptionId = UUID.randomUUID().toString();
+        final Subscription subscription = new Subscription(subscriptionId, userId, plan.getPlanType(), plan.getPrice(), paymentMethod);
         subscription.setPlanId(plan.getId());
         subscription.setPriceInVotes(plan.getPriceInVotes());
         subscription.setEndDate(LocalDateTime.now().plusDays(plan.getDuration()));
         subscription.setNextBillDate(subscription.getEndDate());
         subscription.setAutoRenew(true);
 
-        Subscription saved = subscriptionRepository.save(subscription);
+        final Subscription saved = subscriptionRepository.save(subscription);
         updateUserSubscriptionState(userId, saved);
         return saved;
     }
 
     public Subscription processChargeableStatus(
-        Long userId,
-        SubscriptionPlan plan,
-        String vkSubscriptionId,
-        LocalDateTime nextBillDate,
-        boolean pendingCancel,
-        String cancelReason,
-        Integer priceInVotes,
-        Integer appOrderId
+        final Long userId,
+        final SubscriptionPlan plan,
+        final String vkSubscriptionId,
+        final LocalDateTime nextBillDate,
+        final boolean pendingCancel,
+        final String cancelReason,
+        final Integer priceInVotes,
+        final Integer appOrderId
     ) {
-        Subscription subscription = subscriptionRepository.findByVkSubscriptionId(vkSubscriptionId)
+        final Subscription subscription = subscriptionRepository.findByVkSubscriptionId(vkSubscriptionId)
             .orElseGet(() -> new Subscription(vkSubscriptionId, userId, plan.getPlanType(), plan.getPrice(), Subscription.PaymentMethod.VOTES));
 
         subscription.setUserId(userId);
@@ -173,18 +173,18 @@ public class SubscriptionService {
         subscription.setPriceInVotes(priceInVotes != null ? priceInVotes : plan.getPriceInVotes());
         subscription.setAppOrderId(appOrderId);
 
-        Subscription saved = subscriptionRepository.save(subscription);
+        final Subscription saved = subscriptionRepository.save(subscription);
         updateUserSubscriptionState(userId, saved);
         return saved;
     }
 
     public Subscription markSubscriptionActive(
-        String vkSubscriptionId,
-        LocalDateTime nextBillDate,
-        boolean pendingCancel,
-        String cancelReason
+        final String vkSubscriptionId,
+        final LocalDateTime nextBillDate,
+        final boolean pendingCancel,
+        final String cancelReason
     ) {
-        Subscription subscription = subscriptionRepository.findByVkSubscriptionId(vkSubscriptionId)
+        final Subscription subscription = subscriptionRepository.findByVkSubscriptionId(vkSubscriptionId)
             .orElseThrow(() -> new RuntimeException("Subscription not found"));
 
         subscription.setStatus(Subscription.SubscriptionStatus.ACTIVE);
@@ -199,12 +199,12 @@ public class SubscriptionService {
             }
         }
 
-        Subscription saved = subscriptionRepository.save(subscription);
+        final Subscription saved = subscriptionRepository.save(subscription);
         updateUserSubscriptionState(saved.getUserId(), saved);
         return saved;
     }
 
-    public void cancelSubscriptionByVkId(String vkSubscriptionId, String cancelReason) {
+    public void cancelSubscriptionByVkId(final String vkSubscriptionId, final String cancelReason) {
         subscriptionRepository.findByVkSubscriptionId(vkSubscriptionId).ifPresent(subscription -> {
             subscription.setCancelReason(cancelReason);
             subscription.cancel();
@@ -213,7 +213,7 @@ public class SubscriptionService {
         });
     }
 
-    public void cancelSubscription(Long userId) {
+    public void cancelSubscription(final Long userId) {
         subscriptionRepository.findActiveByUserId(userId).ifPresent(subscription -> {
             subscription.setCancelReason("app_decision");
             subscription.cancel();
@@ -222,13 +222,13 @@ public class SubscriptionService {
         });
     }
 
-    public boolean hasActiveSubscription(Long userId) {
+    public boolean hasActiveSubscription(final Long userId) {
         return subscriptionRepository.hasActiveSubscription(userId);
     }
 
     public void processExpiredSubscriptions() {
-        List<Subscription> expiring = subscriptionRepository.findExpiring();
-        for (Subscription subscription : expiring) {
+        final List<Subscription> expiring = subscriptionRepository.findExpiring();
+        for (final Subscription subscription : expiring) {
             if (Boolean.TRUE.equals(subscription.getAutoRenew())) {
                 renewSubscription(subscription);
             } else {
@@ -239,11 +239,11 @@ public class SubscriptionService {
         }
     }
 
-    private void renewSubscription(Subscription subscription) {
-        Optional<SubscriptionPlan> planOpt = findPlanById(subscription.getPlanId());
-        int duration = planOpt.map(SubscriptionPlan::getDuration).orElse(30);
-        LocalDateTime newStart = subscription.getEndDate() != null ? subscription.getEndDate() : LocalDateTime.now();
-        LocalDateTime newEnd = newStart.plusDays(duration);
+    private void renewSubscription(final Subscription subscription) {
+        final Optional<SubscriptionPlan> planOpt = findPlanById(subscription.getPlanId());
+        final int duration = planOpt.map(SubscriptionPlan::getDuration).orElse(30);
+        final LocalDateTime newStart = subscription.getEndDate() != null ? subscription.getEndDate() : LocalDateTime.now();
+        final LocalDateTime newEnd = newStart.plusDays(duration);
 
         subscription.setStartDate(newStart);
         subscription.setEndDate(newEnd);
@@ -257,14 +257,14 @@ public class SubscriptionService {
         return subscriptionRepository.countActiveSubscriptions();
     }
 
-    private void updateUserSubscriptionState(Long userId, Subscription subscription) {
+    private void updateUserSubscriptionState(final Long userId, final Subscription subscription) {
         if (userRepository == null || userId == null) {
             return;
         }
 
         try {
             userRepository.findById(userId).ifPresent(user -> {
-                User.UserSubscription userSubscription = Optional.ofNullable(user.getSubscription())
+                final User.UserSubscription userSubscription = Optional.ofNullable(user.getSubscription())
                     .orElseGet(User.UserSubscription::new);
                 userSubscription.setIsActive(subscription.getStatus() == Subscription.SubscriptionStatus.ACTIVE);
                 userSubscription.setExpiresAt(subscription.getEndDate());
@@ -274,7 +274,7 @@ public class SubscriptionService {
                 user.setSubscription(userSubscription);
                 userRepository.save(user);
             });
-        } catch (Exception ex) {
+        } catch (final Exception ex) {
             logger.warn("Failed to update user subscription state for user {}", userId, ex);
         }
     }
@@ -295,22 +295,22 @@ public class SubscriptionService {
         private final String photoUrl;
 
         public SubscriptionPlan(
-            String id,
-            String name,
-            Subscription.SubscriptionType type,
-            Double price,
-            Integer priceInVotes,
-            Integer duration,
-            List<String> features,
-            String description,
-            String periodCode,
-            Integer trialDuration,
-            Integer cacheTtlSeconds,
-            String photoUrl
+            final String id,
+            final String name,
+            final Subscription.SubscriptionType type,
+            final Double price,
+            final Integer priceInVotes,
+            final Integer duration,
+            final List<String> features,
+            final String description,
+            final String periodCode,
+            final Integer trialDuration,
+            final Integer cacheTtlSeconds,
+            final String photoUrl
         ) {
             this.id = id;
             this.name = name;
-            this.subscriptionType = type;
+            subscriptionType = type;
             this.price = price;
             this.priceInVotes = priceInVotes;
             this.duration = duration;
@@ -322,18 +322,56 @@ public class SubscriptionService {
             this.photoUrl = photoUrl;
         }
 
-        public String getId() { return id; }
-        public String getName() { return name; }
-        public Subscription.SubscriptionType getPlanType() { return subscriptionType; }
-        public boolean hasType(Subscription.SubscriptionType type) { return subscriptionType == type; }
-        public Double getPrice() { return price; }
-        public Integer getPriceInVotes() { return priceInVotes; }
-        public Integer getDuration() { return duration; }
-        public List<String> getFeatures() { return features; }
-        public String getDescription() { return description; }
-        public String getPeriodCode() { return periodCode; }
-        public Integer getTrialDuration() { return trialDuration; }
-        public Integer getCacheTtlSeconds() { return cacheTtlSeconds; }
-        public String getPhotoUrl() { return photoUrl; }
+        public String getId() {
+            return id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public Subscription.SubscriptionType getPlanType() {
+            return subscriptionType;
+        }
+
+        public boolean hasType(final Subscription.SubscriptionType type) {
+            return subscriptionType == type;
+        }
+
+        public Double getPrice() {
+            return price;
+        }
+
+        public Integer getPriceInVotes() {
+            return priceInVotes;
+        }
+
+        public Integer getDuration() {
+            return duration;
+        }
+
+        public List<String> getFeatures() {
+            return features;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public String getPeriodCode() {
+            return periodCode;
+        }
+
+        public Integer getTrialDuration() {
+            return trialDuration;
+        }
+
+        public Integer getCacheTtlSeconds() {
+            return cacheTtlSeconds;
+        }
+
+        public String getPhotoUrl() {
+            return photoUrl;
+        }
     }
 }

@@ -18,18 +18,18 @@ public final class JacksonUtils {
         return mapper;
     }
 
-    public static <T> JsonObject toJsonObject(T entity) {
+    public static <T> JsonObject toJsonObject(final T entity) {
         try {
             return new JsonObject(mapper.writeValueAsString(entity));
-        } catch (Exception e) {
+        } catch (final Exception e) {
             throw new RuntimeException("Failed to serialize entity to JSON", e);
         }
     }
 
-    public static <T> T fromJson(JsonObject json, Class<T> type) {
+    public static <T> T fromJson(final JsonObject json, final Class<T> type) {
         try {
             return mapper.readValue(json.encode(), type);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             throw new RuntimeException("Failed to deserialize JSON to " + type.getSimpleName(), e);
         }
     }

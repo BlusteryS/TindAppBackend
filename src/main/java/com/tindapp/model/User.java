@@ -45,26 +45,26 @@ public class User {
     private UserRewards rewards;
 
     public User() {
-        this.isVerified = false;
-        this.wasVerified = false;
-        this.isOnline = false;
-        this.isVisible = true;
-        this.balance = 0;
-        this.subscription = new UserSubscription();
-        this.settings = new UserSettings();
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
-        this.firstName = "";
-        this.lastName = "";
-        this.avatarUrl = "";
-        this.profileCost = AppConfig.ANONYMOUS_CHAT_CREATION_COST;
-        this.isAdmin = false;
-        this.isBanned = false;
-        this.nativeLanguage = LanguageUtils.getDefaultLanguage();
-        this.rewards = new UserRewards();
+        isVerified = false;
+        wasVerified = false;
+        isOnline = false;
+        isVisible = true;
+        balance = 0;
+        subscription = new UserSubscription();
+        settings = new UserSettings();
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+        firstName = "";
+        lastName = "";
+        avatarUrl = "";
+        profileCost = AppConfig.ANONYMOUS_CHAT_CREATION_COST;
+        isAdmin = false;
+        isBanned = false;
+        nativeLanguage = LanguageUtils.getDefaultLanguage();
+        rewards = new UserRewards();
     }
 
-    public User(Long vkId) {
+    public User(final Long vkId) {
         this();
         this.vkId = vkId;
     }
@@ -79,17 +79,32 @@ public class User {
         private SubscriptionType type;
 
         public UserSubscription() {
-            this.isActive = false;
+            isActive = false;
         }
 
-        public Boolean getIsActive() { return isActive; }
-        public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+        public Boolean getIsActive() {
+            return isActive;
+        }
 
-        public LocalDateTime getExpiresAt() { return expiresAt; }
-        public void setExpiresAt(LocalDateTime expiresAt) { this.expiresAt = expiresAt; }
+        public void setIsActive(final Boolean isActive) {
+            this.isActive = isActive;
+        }
 
-        public SubscriptionType getType() { return type; }
-        public void setType(SubscriptionType type) { this.type = type; }
+        public LocalDateTime getExpiresAt() {
+            return expiresAt;
+        }
+
+        public void setExpiresAt(final LocalDateTime expiresAt) {
+            this.expiresAt = expiresAt;
+        }
+
+        public SubscriptionType getType() {
+            return type;
+        }
+
+        public void setType(final SubscriptionType type) {
+            this.type = type;
+        }
     }
 
     public static class UserSettings {
@@ -108,54 +123,98 @@ public class User {
             this(true);
         }
 
-        public UserSettings(boolean applyDefaults) {
+        public UserSettings(final boolean applyDefaults) {
             if (applyDefaults) {
-                this.showAge = true;
-                this.showCity = true;
-                this.allowMessages = true;
-                this.allowCommunityMessages = false;
-                this.notifyAnonMessages = true;
-                this.notifyAnonDialogClosed = true;
-                this.notifyProfileNewChat = true;
-                this.notifyProfileMessages = true;
-                this.notifyProfileDialogClosed = true;
-                this.notifySubscriptionProblems = true;
+                showAge = true;
+                showCity = true;
+                allowMessages = true;
+                allowCommunityMessages = false;
+                notifyAnonMessages = true;
+                notifyAnonDialogClosed = true;
+                notifyProfileNewChat = true;
+                notifyProfileMessages = true;
+                notifyProfileDialogClosed = true;
+                notifySubscriptionProblems = true;
             }
         }
 
-        public Boolean getShowAge() { return showAge; }
-        public void setShowAge(Boolean showAge) { this.showAge = showAge; }
+        public Boolean getShowAge() {
+            return showAge;
+        }
 
-        public Boolean getShowCity() { return showCity; }
-        public void setShowCity(Boolean showCity) { this.showCity = showCity; }
+        public void setShowAge(final Boolean showAge) {
+            this.showAge = showAge;
+        }
 
-        public Boolean getAllowMessages() { return allowMessages; }
-        public void setAllowMessages(Boolean allowMessages) { this.allowMessages = allowMessages; }
+        public Boolean getShowCity() {
+            return showCity;
+        }
 
-        public Boolean getAllowCommunityMessages() { return allowCommunityMessages; }
-        public void setAllowCommunityMessages(Boolean allowCommunityMessages) {
+        public void setShowCity(final Boolean showCity) {
+            this.showCity = showCity;
+        }
+
+        public Boolean getAllowMessages() {
+            return allowMessages;
+        }
+
+        public void setAllowMessages(final Boolean allowMessages) {
+            this.allowMessages = allowMessages;
+        }
+
+        public Boolean getAllowCommunityMessages() {
+            return allowCommunityMessages;
+        }
+
+        public void setAllowCommunityMessages(final Boolean allowCommunityMessages) {
             this.allowCommunityMessages = allowCommunityMessages;
         }
 
-        public Boolean getNotifyAnonMessages() { return notifyAnonMessages; }
-        public void setNotifyAnonMessages(Boolean notifyAnonMessages) { this.notifyAnonMessages = notifyAnonMessages; }
+        public Boolean getNotifyAnonMessages() {
+            return notifyAnonMessages;
+        }
 
-        public Boolean getNotifyAnonDialogClosed() { return notifyAnonDialogClosed; }
-        public void setNotifyAnonDialogClosed(Boolean notifyAnonDialogClosed) { this.notifyAnonDialogClosed = notifyAnonDialogClosed; }
+        public void setNotifyAnonMessages(final Boolean notifyAnonMessages) {
+            this.notifyAnonMessages = notifyAnonMessages;
+        }
 
-        public Boolean getNotifyProfileNewChat() { return notifyProfileNewChat; }
-        public void setNotifyProfileNewChat(Boolean notifyProfileNewChat) { this.notifyProfileNewChat = notifyProfileNewChat; }
+        public Boolean getNotifyAnonDialogClosed() {
+            return notifyAnonDialogClosed;
+        }
 
-        public Boolean getNotifyProfileMessages() { return notifyProfileMessages; }
-        public void setNotifyProfileMessages(Boolean notifyProfileMessages) { this.notifyProfileMessages = notifyProfileMessages; }
+        public void setNotifyAnonDialogClosed(final Boolean notifyAnonDialogClosed) {
+            this.notifyAnonDialogClosed = notifyAnonDialogClosed;
+        }
 
-        public Boolean getNotifyProfileDialogClosed() { return notifyProfileDialogClosed; }
-        public void setNotifyProfileDialogClosed(Boolean notifyProfileDialogClosed) {
+        public Boolean getNotifyProfileNewChat() {
+            return notifyProfileNewChat;
+        }
+
+        public void setNotifyProfileNewChat(final Boolean notifyProfileNewChat) {
+            this.notifyProfileNewChat = notifyProfileNewChat;
+        }
+
+        public Boolean getNotifyProfileMessages() {
+            return notifyProfileMessages;
+        }
+
+        public void setNotifyProfileMessages(final Boolean notifyProfileMessages) {
+            this.notifyProfileMessages = notifyProfileMessages;
+        }
+
+        public Boolean getNotifyProfileDialogClosed() {
+            return notifyProfileDialogClosed;
+        }
+
+        public void setNotifyProfileDialogClosed(final Boolean notifyProfileDialogClosed) {
             this.notifyProfileDialogClosed = notifyProfileDialogClosed;
         }
 
-        public Boolean getNotifySubscriptionProblems() { return notifySubscriptionProblems; }
-        public void setNotifySubscriptionProblems(Boolean notifySubscriptionProblems) {
+        public Boolean getNotifySubscriptionProblems() {
+            return notifySubscriptionProblems;
+        }
+
+        public void setNotifySubscriptionProblems(final Boolean notifySubscriptionProblems) {
             this.notifySubscriptionProblems = notifySubscriptionProblems;
         }
     }
@@ -165,133 +224,308 @@ public class User {
         private LocalDateTime lastAdRewardAt;
 
         public UserRewards() {
-            this.subscriptionBonusClaimed = false;
+            subscriptionBonusClaimed = false;
         }
 
-        public Boolean getSubscriptionBonusClaimed() { return subscriptionBonusClaimed; }
-        public void setSubscriptionBonusClaimed(Boolean subscriptionBonusClaimed) {
+        public Boolean getSubscriptionBonusClaimed() {
+            return subscriptionBonusClaimed;
+        }
+
+        public void setSubscriptionBonusClaimed(final Boolean subscriptionBonusClaimed) {
             this.subscriptionBonusClaimed = subscriptionBonusClaimed;
         }
 
-        public LocalDateTime getLastAdRewardAt() { return lastAdRewardAt; }
-        public void setLastAdRewardAt(LocalDateTime lastAdRewardAt) { this.lastAdRewardAt = lastAdRewardAt; }
+        public LocalDateTime getLastAdRewardAt() {
+            return lastAdRewardAt;
+        }
+
+        public void setLastAdRewardAt(final LocalDateTime lastAdRewardAt) {
+            this.lastAdRewardAt = lastAdRewardAt;
+        }
     }
 
     public enum SubscriptionType {
         BASIC, PREMIUM
     }
 
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
+    public Long getId() {
+        return id;
+    }
 
-    public Long getVkId() { return vkId; }
-    public void setVkId(Long vkId) { this.vkId = vkId; }
+    public void setId(final Long id) {
+        this.id = id;
+    }
 
-    public Integer getAge() { return age; }
-    public void setAge(Integer age) { this.age = age; }
-    public LocalDate getBirthDate() { return birthDate; }
-    public void setBirthDate(LocalDate birthDate) { this.birthDate = birthDate; }
+    public Long getVkId() {
+        return vkId;
+    }
 
-    public String getFirstName() { return firstName; }
-    public void setFirstName(String firstName) { this.firstName = firstName; }
+    public void setVkId(final Long vkId) {
+        this.vkId = vkId;
+    }
 
-    public String getLastName() { return lastName; }
-    public void setLastName(String lastName) { this.lastName = lastName; }
+    public Integer getAge() {
+        return age;
+    }
 
-    public String getAvatarUrl() { return avatarUrl; }
-    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+    public void setAge(final Integer age) {
+        this.age = age;
+    }
 
-    public String getCountry() { return country; }
-    public void setCountry(String country) { this.country = country; }
+    public LocalDate getBirthDate() {
+        return birthDate;
+    }
 
-    public String getCity() { return city; }
-    public void setCity(String city) { this.city = city; }
+    public void setBirthDate(final LocalDate birthDate) {
+        this.birthDate = birthDate;
+    }
 
-    public Boolean getIsVerified() { return isVerified; }
-    public void setIsVerified(Boolean isVerified) { this.isVerified = isVerified; }
+    public String getFirstName() {
+        return firstName;
+    }
 
-    public Boolean getWasVerified() { return wasVerified; }
-    public void setWasVerified(Boolean wasVerified) { this.wasVerified = wasVerified; }
+    public void setFirstName(final String firstName) {
+        this.firstName = firstName;
+    }
 
-    public boolean isVerified() { return isVerified != null ? isVerified : false; }
-    public void setVerified(boolean verified) { this.isVerified = verified; }
+    public String getLastName() {
+        return lastName;
+    }
 
-    public boolean wasVerified() { return wasVerified != null ? wasVerified : false; }
+    public void setLastName(final String lastName) {
+        this.lastName = lastName;
+    }
 
-    public Boolean getIsOnline() { return isOnline; }
-    public void setIsOnline(Boolean isOnline) { this.isOnline = isOnline; }
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
 
-    public boolean isOnline() { return isOnline != null ? isOnline : false; }
-    public void setOnline(boolean online) { this.isOnline = online; }
+    public void setAvatarUrl(final String avatarUrl) {
+        this.avatarUrl = avatarUrl;
+    }
 
-    public LocalDateTime getLastSeenDateTime() { return lastSeen; }
-    public void setLastSeenDateTime(LocalDateTime lastSeen) { this.lastSeen = lastSeen; }
+    public String getCountry() {
+        return country;
+    }
 
-    public String getBio() { return bio; }
-    public void setBio(String bio) { this.bio = bio; }
+    public void setCountry(final String country) {
+        this.country = country;
+    }
 
-    public Gender getGenderEnum() { return gender; }
-    public void setGenderEnum(Gender gender) { this.gender = gender; }
+    public String getCity() {
+        return city;
+    }
 
-    public Boolean getIsVisible() { return isVisible; }
-    public void setIsVisible(Boolean isVisible) { this.isVisible = isVisible; }
+    public void setCity(final String city) {
+        this.city = city;
+    }
 
-    public boolean isVisible() { return isVisible != null ? isVisible : true; }
-    public void setVisible(boolean visible) { this.isVisible = visible; }
+    public Boolean getIsVerified() {
+        return isVerified;
+    }
 
-    public UserSubscription getSubscription() { return subscription; }
-    public void setSubscription(UserSubscription subscription) { this.subscription = subscription; }
+    public void setIsVerified(final Boolean isVerified) {
+        this.isVerified = isVerified;
+    }
 
-    public Integer getBalance() { return balance; }
-    public void setBalance(Integer balance) { this.balance = balance; }
+    public Boolean getWasVerified() {
+        return wasVerified;
+    }
 
-    public UserSettings getSettings() { return settings; }
-    public void setSettings(UserSettings settings) { this.settings = settings; }
+    public void setWasVerified(final Boolean wasVerified) {
+        this.wasVerified = wasVerified;
+    }
 
-    public Integer getProfileCost() { return profileCost; }
-    public void setProfileCost(Integer profileCost) { this.profileCost = profileCost; }
+    public boolean isVerified() {
+        return isVerified != null ? isVerified : false;
+    }
 
-    public Boolean getIsAdmin() { return isAdmin; }
-    public void setIsAdmin(Boolean isAdmin) { this.isAdmin = isAdmin; }
-    public boolean isAdmin() { return isAdmin != null ? isAdmin : false; }
-    public Boolean getIsBanned() { return isBanned; }
-    public void setIsBanned(Boolean isBanned) { this.isBanned = isBanned; }
-    public boolean isBanned() { return isBanned != null ? isBanned : false; }
-    public String getBanReason() { return banReason; }
-    public void setBanReason(String banReason) { this.banReason = banReason; }
-    public LocalDateTime getBannedAt() { return bannedAt; }
-    public void setBannedAt(LocalDateTime bannedAt) { this.bannedAt = bannedAt; }
-    public String getNativeLanguage() { return nativeLanguage; }
-    public void setNativeLanguage(String nativeLanguage) {
+    public void setVerified(final boolean verified) {
+        isVerified = verified;
+    }
+
+    public boolean wasVerified() {
+        return wasVerified != null ? wasVerified : false;
+    }
+
+    public Boolean getIsOnline() {
+        return isOnline;
+    }
+
+    public void setIsOnline(final Boolean isOnline) {
+        this.isOnline = isOnline;
+    }
+
+    public boolean isOnline() {
+        return isOnline != null ? isOnline : false;
+    }
+
+    public void setOnline(final boolean online) {
+        isOnline = online;
+    }
+
+    public LocalDateTime getLastSeenDateTime() {
+        return lastSeen;
+    }
+
+    public void setLastSeenDateTime(final LocalDateTime lastSeen) {
+        this.lastSeen = lastSeen;
+    }
+
+    public String getBio() {
+        return bio;
+    }
+
+    public void setBio(final String bio) {
+        this.bio = bio;
+    }
+
+    public Gender getGenderEnum() {
+        return gender;
+    }
+
+    public void setGenderEnum(final Gender gender) {
+        this.gender = gender;
+    }
+
+    public Boolean getIsVisible() {
+        return isVisible;
+    }
+
+    public void setIsVisible(final Boolean isVisible) {
+        this.isVisible = isVisible;
+    }
+
+    public boolean isVisible() {
+        return isVisible != null ? isVisible : true;
+    }
+
+    public void setVisible(final boolean visible) {
+        isVisible = visible;
+    }
+
+    public UserSubscription getSubscription() {
+        return subscription;
+    }
+
+    public void setSubscription(final UserSubscription subscription) {
+        this.subscription = subscription;
+    }
+
+    public Integer getBalance() {
+        return balance;
+    }
+
+    public void setBalance(final Integer balance) {
+        this.balance = balance;
+    }
+
+    public UserSettings getSettings() {
+        return settings;
+    }
+
+    public void setSettings(final UserSettings settings) {
+        this.settings = settings;
+    }
+
+    public Integer getProfileCost() {
+        return profileCost;
+    }
+
+    public void setProfileCost(final Integer profileCost) {
+        this.profileCost = profileCost;
+    }
+
+    public Boolean getIsAdmin() {
+        return isAdmin;
+    }
+
+    public void setIsAdmin(final Boolean isAdmin) {
+        this.isAdmin = isAdmin;
+    }
+
+    public boolean isAdmin() {
+        return isAdmin != null ? isAdmin : false;
+    }
+
+    public Boolean getIsBanned() {
+        return isBanned;
+    }
+
+    public void setIsBanned(final Boolean isBanned) {
+        this.isBanned = isBanned;
+    }
+
+    public boolean isBanned() {
+        return isBanned != null ? isBanned : false;
+    }
+
+    public String getBanReason() {
+        return banReason;
+    }
+
+    public void setBanReason(final String banReason) {
+        this.banReason = banReason;
+    }
+
+    public LocalDateTime getBannedAt() {
+        return bannedAt;
+    }
+
+    public void setBannedAt(final LocalDateTime bannedAt) {
+        this.bannedAt = bannedAt;
+    }
+
+    public String getNativeLanguage() {
+        return nativeLanguage;
+    }
+
+    public void setNativeLanguage(final String nativeLanguage) {
         this.nativeLanguage = LanguageUtils.normalizeLanguage(nativeLanguage);
     }
-    public UserRewards getRewards() { return rewards; }
-    public void setRewards(UserRewards rewards) { this.rewards = rewards; }
 
-    public LocalDateTime getCreatedAtDateTime() { return createdAt; }
-    public void setCreatedAtDateTime(LocalDateTime createdAt) { this.createdAt = createdAt; }
-
-    public LocalDateTime getUpdatedAtDateTime() { return updatedAt; }
-    public void setUpdatedAtDateTime(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
-
-    public void updateLastSeen() {
-        this.lastSeen = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+    public UserRewards getRewards() {
+        return rewards;
     }
 
-    public void updateOnlineStatus(Boolean isOnline) {
+    public void setRewards(final UserRewards rewards) {
+        this.rewards = rewards;
+    }
+
+    public LocalDateTime getCreatedAtDateTime() {
+        return createdAt;
+    }
+
+    public void setCreatedAtDateTime(final LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAtDateTime() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAtDateTime(final LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public void updateLastSeen() {
+        lastSeen = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    public void updateOnlineStatus(final Boolean isOnline) {
         this.isOnline = isOnline;
         if (!isOnline) {
-            this.lastSeen = LocalDateTime.now();
+            lastSeen = LocalDateTime.now();
         }
-        this.updatedAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
     }
 
     public String getLastSeen() {
         return lastSeen != null ? lastSeen.toString() : null;
     }
 
-    public void setLastSeen(String lastSeen) {
+    public void setLastSeen(final String lastSeen) {
         if (lastSeen != null) {
             this.lastSeen = LocalDateTime.parse(lastSeen);
         }
@@ -301,7 +535,7 @@ public class User {
         return createdAt != null ? createdAt.toString() : null;
     }
 
-    public void setCreatedAt(String createdAt) {
+    public void setCreatedAt(final String createdAt) {
         if (createdAt != null) {
             this.createdAt = LocalDateTime.parse(createdAt);
         }
@@ -311,7 +545,7 @@ public class User {
         return updatedAt != null ? updatedAt.toString() : null;
     }
 
-    public void setUpdatedAt(String updatedAt) {
+    public void setUpdatedAt(final String updatedAt) {
         if (updatedAt != null) {
             this.updatedAt = LocalDateTime.parse(updatedAt);
         }
@@ -321,7 +555,7 @@ public class User {
         return gender != null ? gender.toString().toLowerCase() : "other";
     }
 
-    public void setGender(String gender) {
+    public void setGender(final String gender) {
         if (gender != null) {
             switch (gender.toLowerCase()) {
                 case "male":

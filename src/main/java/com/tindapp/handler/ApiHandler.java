@@ -58,7 +58,7 @@ public class ApiHandler {
 
         private final String code;
 
-        ErrorCodes(String code) {
+        ErrorCodes(final String code) {
             this.code = code;
         }
 
@@ -78,11 +78,11 @@ public class ApiHandler {
     private final LocationService locationService;
     private final ProfileService profileService;
 
-    public ApiHandler(UserService userService, ChatService chatService, MessageService messageService,
-                     NotificationService notificationService, SubscriptionService subscriptionService,
-                     ReportService reportService, BlackListService blackListService,
-                     WebSocketHandler webSocketHandler, LocationService locationService,
-                     ProfileService profileService) {
+    public ApiHandler(final UserService userService, final ChatService chatService, final MessageService messageService,
+                      final NotificationService notificationService, final SubscriptionService subscriptionService,
+                      final ReportService reportService, final BlackListService blackListService,
+                      final WebSocketHandler webSocketHandler, final LocationService locationService,
+                      final ProfileService profileService) {
         this.userService = userService;
         this.chatService = chatService;
         this.messageService = messageService;
@@ -94,124 +94,124 @@ public class ApiHandler {
         this.locationService = locationService;
         this.profileService = profileService;
 
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
-        this.objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
-    public void getCountries(RoutingContext ctx) {
+    public void getCountries(final RoutingContext ctx) {
         try {
-            List<LocationService.Country> countries = locationService.getCountries();
-            JsonArray countriesArray = new JsonArray(
+            final List<LocationService.Country> countries = locationService.getCountries();
+            final JsonArray countriesArray = new JsonArray(
                 countries.stream()
                     .map(country -> new JsonObject()
-                        .put("id", country.getId())
-                        .put("name", country.getName()))
+                        .put("id", country.id())
+                        .put("name", country.name()))
                     .collect(Collectors.toList())
             );
-            JsonObject payload = new JsonObject().put("countries", countriesArray);
+            final JsonObject payload = new JsonObject().put("countries", countriesArray);
             sendSuccess(ctx, payload);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error fetching countries", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getCitiesByCountry(RoutingContext ctx) {
+    public void getCitiesByCountry(final RoutingContext ctx) {
         try {
-            String countryId = ctx.pathParam("countryId");
+            final String countryId = ctx.pathParam("countryId");
 
             if (countryId == null || countryId.isEmpty()) {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "countryId is required");
                 return;
             }
 
-            String query = ctx.request().getParam("query");
+            final String query = ctx.request().getParam("query");
             if (query == null) {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "query parameter is required");
                 return;
             }
 
-            String trimmedQuery = query.trim();
+            final String trimmedQuery = query.trim();
             if (trimmedQuery.length() < 3) {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "query parameter must be at least 3 characters");
                 return;
             }
 
-            List<LocationService.City> cities = locationService.searchCitiesByCountry(countryId, trimmedQuery);
-            JsonArray citiesArray = new JsonArray(
+            final List<LocationService.City> cities = locationService.searchCitiesByCountry(countryId, trimmedQuery);
+            final JsonArray citiesArray = new JsonArray(
                 cities.stream()
                     .map(city -> new JsonObject()
                         .put("id", city.getId())
                         .put("name", city.getName()))
                     .collect(Collectors.toList())
             );
-            JsonObject payload = new JsonObject()
+            final JsonObject payload = new JsonObject()
                 .put("countryId", countryId)
                 .put("query", trimmedQuery)
                 .put("cities", citiesArray);
             sendSuccess(ctx, payload);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error fetching cities for country", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getProfiles(RoutingContext ctx) {
+    public void getProfiles(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            int page = parseIntParam(ctx.request().getParam("page"), 1);
-            int limit = parseIntParam(ctx.request().getParam("limit"), 12);
+            final Long userId = getUserIdFromContext(ctx);
+            final int page = parseIntParam(ctx.request().getParam("page"), 1);
+            final int limit = parseIntParam(ctx.request().getParam("limit"), 12);
 
-            User viewer = userService.getUserById(userId)
+            final User viewer = userService.getUserById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-            ProfileService.ProfileFilters filters = profileService.parseFilters(ctx.request().params(), viewer);
-            ProfileService.ProfileSearchResult result = profileService.searchProfiles(viewer, filters, page, limit);
+            final ProfileService.ProfileFilters filters = profileService.parseFilters(ctx.request().params(), viewer);
+            final ProfileService.ProfileSearchResult result = profileService.searchProfiles(viewer, filters, page, limit);
 
-            sendPaginatedSuccess(ctx, result.getProfiles(), page, limit, result.getTotal());
-        } catch (NumberFormatException e) {
+            sendPaginatedSuccess(ctx, result.profiles(), page, limit, result.total());
+        } catch (final NumberFormatException e) {
             sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Invalid pagination parameters");
-        } catch (RuntimeException e) {
+        } catch (final RuntimeException e) {
             if (e.getMessage().contains("User not found")) {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, e.getMessage());
             } else {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, e.getMessage());
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting profiles", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getCurrentUser(RoutingContext ctx) {
+    public void getCurrentUser(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            Optional<User> user = userService.getUserById(userId);
+            final Long userId = getUserIdFromContext(ctx);
+            final Optional<User> user = userService.getUserById(userId);
 
             if (user.isPresent()) {
-                JsonObject payload = ResponseMapper.toUserResponse(user.get());
+                final JsonObject payload = ResponseMapper.toUserResponse(user.get());
                 payload.put("isAnonymousForViewer", false);
                 sendSuccess(ctx, payload.getMap());
             } else {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting current user", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getUser(RoutingContext ctx) {
+    public void getUser(final RoutingContext ctx) {
         try {
-            Long userId = Long.valueOf(ctx.pathParam("userId"));
-            Long viewerId = getUserIdFromContext(ctx);
-            Optional<User> user = userService.getUserById(userId);
+            final Long userId = Long.valueOf(ctx.pathParam("userId"));
+            final Long viewerId = getUserIdFromContext(ctx);
+            final Optional<User> user = userService.getUserById(userId);
 
             if (user.isPresent()) {
-                User target = user.get();
-                JsonObject payload = ResponseMapper.toUserResponse(target);
-                boolean isAnonymous = shouldMaskUser(viewerId, target);
+                final User target = user.get();
+                final JsonObject payload = ResponseMapper.toUserResponse(target);
+                final boolean isAnonymous = shouldMaskUser(viewerId, target);
                 if (isAnonymous) {
                     payload
                         .put("firstName", "")
@@ -225,32 +225,32 @@ public class ApiHandler {
             } else {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting user", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void updateProfile(RoutingContext ctx) {
+    public void updateProfile(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            JsonObject body = ctx.getBodyAsJson();
+            final Long userId = getUserIdFromContext(ctx);
+            final JsonObject body = ctx.getBodyAsJson();
 
-            String firstName = trimToNull(body.getString("firstName"));
-            String lastName = trimToNull(body.getString("lastName"));
-            String avatarUrl = trimToNull(body.getString("avatarUrl"));
-            String gender = normalizeGender(body.getString("gender"));
-            String bio = trimToNull(body.getString("bio"));
-            String country = trimToNull(body.getString("country"));
-            String city = trimToNull(body.getString("city"));
-            Integer age = body.getInteger("age");
-            String birthDate = trimToNull(body.getString("birthDate"));
-            Boolean isVisible = body.getBoolean("isVisible");
-            Integer profileCost = body.getInteger("profileCost");
-            String nativeLanguage = trimToNull(body.getString("nativeLanguage"));
+            final String firstName = trimToNull(body.getString("firstName"));
+            final String lastName = trimToNull(body.getString("lastName"));
+            final String avatarUrl = trimToNull(body.getString("avatarUrl"));
+            final String gender = normalizeGender(body.getString("gender"));
+            final String bio = trimToNull(body.getString("bio"));
+            final String country = trimToNull(body.getString("country"));
+            final String city = trimToNull(body.getString("city"));
+            final Integer age = body.getInteger("age");
+            final String birthDate = trimToNull(body.getString("birthDate"));
+            final Boolean isVisible = body.getBoolean("isVisible");
+            final Integer profileCost = body.getInteger("profileCost");
+            final String nativeLanguage = trimToNull(body.getString("nativeLanguage"));
 
             User.UserSettings settings = null;
-            JsonObject settingsJson = body.getJsonObject("settings");
+            final JsonObject settingsJson = body.getJsonObject("settings");
             if (settingsJson != null) {
                 settings = new User.UserSettings(false);
                 if (settingsJson.containsKey("showAge")) {
@@ -285,7 +285,7 @@ public class ApiHandler {
                 }
             }
 
-            User updatedUser = userService.updateProfile(
+            final User updatedUser = userService.updateProfile(
                 userId,
                 firstName,
                 lastName,
@@ -303,23 +303,23 @@ public class ApiHandler {
             );
             sendSuccess(ctx, ResponseMapper.toUserResponse(updatedUser).getMap());
             webSocketHandler.notifyProfileUpdated(updatedUser);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error updating profile", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, e.getMessage());
         }
     }
 
-    public void verifyUser(RoutingContext ctx) {
+    public void verifyUser(final RoutingContext ctx) {
         FileUpload upload = null;
         Path selfiePath = null;
         try {
-            Long userId = getUserIdFromContext(ctx);
+            final Long userId = getUserIdFromContext(ctx);
             if (userId == null) {
                 sendError(ctx, 401, ErrorCodes.UNAUTHORIZED, "Not authenticated");
                 return;
             }
 
-            List<FileUpload> uploads = ctx.fileUploads();
+            final List<FileUpload> uploads = ctx.fileUploads();
             if (uploads == null || uploads.isEmpty()) {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Selfie is required");
                 return;
@@ -333,14 +333,14 @@ public class ApiHandler {
                 return;
             }
 
-            String contentType = upload.contentType();
+            final String contentType = upload.contentType();
             if (contentType == null || !contentType.startsWith("image/")) {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Only image uploads are allowed");
                 deleteTempFile(upload);
                 return;
             }
 
-            String originalFileName = upload.fileName();
+            final String originalFileName = upload.fileName();
             String extension = getFileExtension(originalFileName);
             if (extension.isEmpty()) {
                 extension = getExtensionFromContentType(contentType);
@@ -349,25 +349,25 @@ public class ApiHandler {
                 extension = ".jpg";
             }
 
-            String fileName = "selfie-" + UUID.randomUUID() + extension;
+            final String fileName = "selfie-" + UUID.randomUUID() + extension;
             selfiePath = Paths.get(AppConfig.UPLOAD_DIR, fileName);
 
             Files.move(Paths.get(upload.uploadedFileName()), selfiePath, StandardCopyOption.REPLACE_EXISTING);
 
-            UserService.UserVerificationResult result = userService.verifyUserWithSelfie(userId, selfiePath);
+            final UserService.UserVerificationResult result = userService.verifyUserWithSelfie(userId, selfiePath);
 
-            JsonObject response = new JsonObject()
-                .put("isVerified", result.isVerified())
-                .put("similarity", result.getSimilarity())
-                .put("reason", result.getReason());
+            final JsonObject response = new JsonObject()
+                .put("isVerified", result.verified())
+                .put("similarity", result.similarity())
+                .put("reason", result.reason());
             sendSuccess(ctx, response);
-        } catch (IllegalArgumentException e) {
+        } catch (final IllegalArgumentException e) {
             logger.warn("Verification validation error", e);
             sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, e.getMessage());
-        } catch (RuntimeException e) {
+        } catch (final RuntimeException e) {
             logger.error("Error verifying user", e);
-            String message = e.getMessage() != null ? e.getMessage() : "Verification failed";
-            String lower = message.toLowerCase();
+            final String message = e.getMessage() != null ? e.getMessage() : "Verification failed";
+            final String lower = message.toLowerCase();
             if (lower.contains("subscription required")) {
                 sendError(ctx, 403, ErrorCodes.SUBSCRIPTION_REQUIRED, message);
             } else if (lower.contains("not found")) {
@@ -375,14 +375,14 @@ public class ApiHandler {
             } else {
                 sendError(ctx, 500, ErrorCodes.SERVER_ERROR, message);
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Unexpected error verifying user", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         } finally {
             if (selfiePath != null) {
                 try {
                     Files.deleteIfExists(selfiePath);
-                } catch (Exception cleanupError) {
+                } catch (final Exception cleanupError) {
                     logger.warn("Failed to cleanup selfie file {}", selfiePath, cleanupError);
                 }
             }
@@ -392,19 +392,19 @@ public class ApiHandler {
         }
     }
 
-    private String trimToNull(String value) {
+    private String trimToNull(final String value) {
         if (value == null) {
             return null;
         }
-        String trimmed = value.trim();
+        final String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private String normalizeGender(String gender) {
+    private String normalizeGender(final String gender) {
         if (gender == null) {
             return null;
         }
-        String normalized = gender.trim().toLowerCase();
+        final String normalized = gender.trim().toLowerCase();
         switch (normalized) {
             case "male":
             case "female":
@@ -415,26 +415,26 @@ public class ApiHandler {
         }
     }
 
-    private JsonObject toRewardsJson(UserService.RewardStatus status) {
+    private JsonObject toRewardsJson(final UserService.RewardStatus status) {
         if (status == null) {
             return new JsonObject();
         }
-        JsonObject ad = new JsonObject()
-            .put("available", status.isAdAvailable());
-        if (status.getAdCooldownSeconds() != null) {
-            ad.put("cooldownSeconds", status.getAdCooldownSeconds());
+        final JsonObject ad = new JsonObject()
+            .put("available", status.adAvailable());
+        if (status.adCooldownSeconds() != null) {
+            ad.put("cooldownSeconds", status.adCooldownSeconds());
         }
 
-        JsonObject subscription = new JsonObject()
-            .put("available", status.isSubscriptionAvailable())
-            .put("claimed", status.isSubscriptionClaimed());
+        final JsonObject subscription = new JsonObject()
+            .put("available", status.subscriptionAvailable())
+            .put("claimed", status.subscriptionClaimed());
 
         return new JsonObject()
             .put("ad", ad.getMap())
             .put("subscription", subscription.getMap());
     }
 
-    private UserService.RewardType parseRewardType(String type) {
+    private UserService.RewardType parseRewardType(final String type) {
         if (type == null) {
             throw new RuntimeException("Reward type is required");
         }
@@ -449,115 +449,115 @@ public class ApiHandler {
         }
     }
 
-    public void getBalance(RoutingContext ctx) {
+    public void getBalance(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            Integer balance = userService.getUserBalance(userId);
+            final Long userId = getUserIdFromContext(ctx);
+            final Integer balance = userService.getUserBalance(userId);
 
-            JsonObject response = new JsonObject().put("balance", balance);
+            final JsonObject response = new JsonObject().put("balance", balance);
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting user balance", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getRewards(RoutingContext ctx) {
+    public void getRewards(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            UserService.RewardStatus status = userService.getRewardStatus(userId);
+            final Long userId = getUserIdFromContext(ctx);
+            final UserService.RewardStatus status = userService.getRewardStatus(userId);
             sendSuccess(ctx, toRewardsJson(status));
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting rewards status", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void purchaseCoins(RoutingContext ctx) {
+    public void purchaseCoins(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            JsonObject body = ctx.getBodyAsJson();
+            final Long userId = getUserIdFromContext(ctx);
+            final JsonObject body = ctx.getBodyAsJson();
 
-            Integer amount = body.getInteger("amount");
-            String paymentMethod = body.getString("paymentMethod");
+            final Integer amount = body.getInteger("amount");
+            final String paymentMethod = body.getString("paymentMethod");
 
-            User updatedUser = userService.purchaseCoins(userId, amount, paymentMethod);
+            final User updatedUser = userService.purchaseCoins(userId, amount, paymentMethod);
 
-            JsonObject response = new JsonObject().put("balance", updatedUser.getBalance());
+            final JsonObject response = new JsonObject().put("balance", updatedUser.getBalance());
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error purchasing coins", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void claimReward(RoutingContext ctx) {
+    public void claimReward(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
+            final Long userId = getUserIdFromContext(ctx);
             JsonObject body = ctx.getBodyAsJson();
             if (body == null) {
                 body = new JsonObject();
             }
 
-            String type = trimToNull(body.getString("type"));
-            boolean success = body.getBoolean("success", false);
-            UserService.RewardType rewardType = parseRewardType(type);
+            final String type = trimToNull(body.getString("type"));
+            final boolean success = body.getBoolean("success", false);
+            final UserService.RewardType rewardType = parseRewardType(type);
 
-            UserService.RewardClaimResult result = userService.claimReward(userId, rewardType, success);
-            JsonObject response = new JsonObject()
-                .put("balance", result.getBalance())
-                .put("rewarded", result.getRewardedAmount())
-                .put("rewards", toRewardsJson(result.getRewards()));
+            final UserService.RewardClaimResult result = userService.claimReward(userId, rewardType, success);
+            final JsonObject response = new JsonObject()
+                .put("balance", result.balance())
+                .put("rewarded", result.rewardedAmount())
+                .put("rewards", toRewardsJson(result.rewards()));
             sendSuccess(ctx, response);
-        } catch (RuntimeException e) {
+        } catch (final RuntimeException e) {
             logger.error("Error claiming reward", e);
             sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, e.getMessage());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Unexpected error claiming reward", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getUserStats(RoutingContext ctx) {
+    public void getUserStats(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            UserService.UserStats stats = userService.getUserStats(userId);
+            final Long userId = getUserIdFromContext(ctx);
+            final UserService.UserStats stats = userService.getUserStats(userId);
             sendSuccess(ctx, stats);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting user stats", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getChatCost(RoutingContext ctx) {
+    public void getChatCost(final RoutingContext ctx) {
         try {
-            int cost = chatService.getChatCost();
-            JsonObject response = new JsonObject().put("cost", cost);
+            final int cost = chatService.getChatCost();
+            final JsonObject response = new JsonObject().put("cost", cost);
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting chat cost", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void startProfileChat(RoutingContext ctx) {
+    public void startProfileChat(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            Long profileId = Long.valueOf(ctx.pathParam("profileId"));
+            final Long userId = getUserIdFromContext(ctx);
+            final Long profileId = Long.valueOf(ctx.pathParam("profileId"));
 
-            Chat chat = chatService.startProfileChat(userId, profileId);
-            JsonObject response = new JsonObject()
+            final Chat chat = chatService.startProfileChat(userId, profileId);
+            final JsonObject response = new JsonObject()
                 .put("chat", ResponseMapper.toChatResponse(chat).getMap())
                 .put("cost", chat.getSettings() != null ? chat.getSettings().getCost() : 0);
 
             userService.getUserById(userId).ifPresent(user -> response.put("balance", user.getBalance()));
 
             sendSuccess(ctx, response);
-        } catch (NumberFormatException e) {
+        } catch (final NumberFormatException e) {
             sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Invalid profileId");
-        } catch (RuntimeException e) {
-            String message = e.getMessage() != null ? e.getMessage() : "Unable to start chat";
-            String lower = message.toLowerCase();
+        } catch (final RuntimeException e) {
+            final String message = e.getMessage() != null ? e.getMessage() : "Unable to start chat";
+            final String lower = message.toLowerCase();
             if (lower.contains("insufficient")) {
                 sendError(ctx, 402, ErrorCodes.INSUFFICIENT_BALANCE, message);
             } else if (lower.contains("not found")) {
@@ -565,34 +565,34 @@ public class ApiHandler {
             } else {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, message);
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error starting profile chat", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getChats(RoutingContext ctx) {
+    public void getChats(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            int page = Integer.parseInt(ctx.request().getParam("page", "1"));
-            int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
+            final Long userId = getUserIdFromContext(ctx);
+            final int page = Integer.parseInt(ctx.request().getParam("page", "1"));
+            final int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
 
-            List<Chat> chats = chatService.getUserChats(userId, page, limit);
-            List<Map<String, Object>> chatResponses = chats.stream()
+            final List<Chat> chats = chatService.getUserChats(userId, page, limit);
+            final List<Map<String, Object>> chatResponses = chats.stream()
                 .map(chat -> ResponseMapper.toChatResponse(chat).getMap())
                 .collect(Collectors.toList());
 
             sendPaginatedSuccess(ctx, chatResponses, page, limit, chats.size());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting chats", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getChat(RoutingContext ctx) {
+    public void getChat(final RoutingContext ctx) {
         try {
-            String chatId = ctx.pathParam("chatId");
-            Long userId = getUserIdFromContext(ctx);
+            final String chatId = ctx.pathParam("chatId");
+            final Long userId = getUserIdFromContext(ctx);
 
             logger.info("Getting chat: chatId={}, userId={}", chatId, userId);
 
@@ -602,7 +602,7 @@ public class ApiHandler {
                 return;
             }
 
-            Optional<Chat> chat = chatService.getChatById(chatId);
+            final Optional<Chat> chat = chatService.getChatById(chatId);
             if (chat.isPresent()) {
                 logger.info("Chat found and returned: chatId={}", chatId);
                 sendSuccess(ctx, ResponseMapper.toChatResponse(chat.get()).getMap());
@@ -610,49 +610,49 @@ public class ApiHandler {
                 logger.warn("Chat not found: chatId={}", chatId);
                 sendError(ctx, 404, ErrorCodes.CHAT_NOT_FOUND, "Chat not found");
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting chat: chatId={}", ctx.pathParam("chatId"), e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getSearchStatus(RoutingContext ctx) {
+    public void getSearchStatus(final RoutingContext ctx) {
         logger.info("=== getSearchStatus method called ===");
         logger.info("Request path: {}, method: {}", ctx.request().path(), ctx.request().method());
         logger.info("Headers: Authorization={}", ctx.request().getHeader("Authorization"));
         try {
 
-            Long userId = getUserIdFromContext(ctx);
+            final Long userId = getUserIdFromContext(ctx);
 
-            boolean isSearching = chatService.isSearchingCompanion(userId);
-            int queueSize = chatService.getSearchQueueSize();
+            final boolean isSearching = chatService.isSearchingCompanion(userId);
+            final int queueSize = chatService.getSearchQueueSize();
 
-            JsonObject response = new JsonObject()
+            final JsonObject response = new JsonObject()
                 .put("isSearching", isSearching)
                 .put("queueSize", queueSize);
 
             sendSuccess(ctx, response);
-        } catch (RuntimeException e) {
+        } catch (final RuntimeException e) {
             if (e.getMessage().contains("User ID not found in context")) {
                 logger.error("Authentication error in getSearchStatus: context has currentUser={}, userId={}",
-                           ctx.get("currentUser"), ctx.get("userId"), e);
+                    ctx.get("currentUser"), ctx.get("userId"), e);
                 sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
             } else {
                 logger.error("Runtime error in getSearchStatus", e);
                 sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting search status", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void endChat(RoutingContext ctx) {
+    public void endChat(final RoutingContext ctx) {
         try {
-            String chatId = ctx.pathParam("chatId");
-            Long userId = getUserIdFromContext(ctx);
+            final String chatId = ctx.pathParam("chatId");
+            final Long userId = getUserIdFromContext(ctx);
 
-            Chat closedChat = chatService.endChat(chatId, userId);
+            final Chat closedChat = chatService.endChat(chatId, userId);
             if (closedChat != null) {
                 webSocketHandler.notifyChatClosed(
                     closedChat.getId(),
@@ -662,50 +662,50 @@ public class ApiHandler {
                 );
             }
 
-            JsonObject response = new JsonObject()
+            final JsonObject response = new JsonObject()
                 .put("success", true)
                 .put("chat", ResponseMapper.toChatResponse(closedChat).getMap());
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error ending chat", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getMessages(RoutingContext ctx) {
+    public void getMessages(final RoutingContext ctx) {
         try {
-            String chatId = ctx.pathParam("chatId");
-            Long userId = getUserIdFromContext(ctx);
-            int page = Integer.parseInt(ctx.request().getParam("page", "1"));
-            int limit = Integer.parseInt(ctx.request().getParam("limit", "50"));
+            final String chatId = ctx.pathParam("chatId");
+            final Long userId = getUserIdFromContext(ctx);
+            final int page = Integer.parseInt(ctx.request().getParam("page", "1"));
+            final int limit = Integer.parseInt(ctx.request().getParam("limit", "50"));
 
             if (!chatService.isUserInChat(chatId, userId)) {
                 sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
                 return;
             }
 
-            List<Message> messages = messageService.getChatMessages(chatId, page, limit);
-            List<Map<String, Object>> messageResponses = messages.stream()
+            final List<Message> messages = messageService.getChatMessages(chatId, page, limit);
+            final List<Map<String, Object>> messageResponses = messages.stream()
                 .map(message -> ResponseMapper.toMessageResponse(message).getMap())
                 .collect(Collectors.toList());
 
             sendPaginatedSuccess(ctx, messageResponses, page, limit, messages.size());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting messages", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void uploadImage(RoutingContext ctx) {
+    public void uploadImage(final RoutingContext ctx) {
         FileUpload upload = null;
         try {
-            Long userId = getUserIdFromContext(ctx);
+            final Long userId = getUserIdFromContext(ctx);
             if (userId == null) {
                 sendError(ctx, 401, ErrorCodes.UNAUTHORIZED, "Not authenticated");
                 return;
             }
 
-            List<FileUpload> uploads = ctx.fileUploads();
+            final List<FileUpload> uploads = ctx.fileUploads();
             if (uploads == null || uploads.isEmpty()) {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "No files uploaded");
                 return;
@@ -719,14 +719,14 @@ public class ApiHandler {
                 return;
             }
 
-            String contentType = upload.contentType();
+            final String contentType = upload.contentType();
             if (contentType == null || !contentType.startsWith("image/")) {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Only image uploads are allowed");
                 deleteTempFile(upload);
                 return;
             }
 
-            String originalFileName = upload.fileName();
+            final String originalFileName = upload.fileName();
             String extension = getFileExtension(originalFileName);
             if (extension.isEmpty()) {
                 extension = getExtensionFromContentType(contentType);
@@ -736,17 +736,17 @@ public class ApiHandler {
                 extension = ".jpg";
             }
 
-            String fileName = UUID.randomUUID() + extension;
-            Path targetPath = Paths.get(AppConfig.UPLOAD_DIR, fileName);
+            final String fileName = UUID.randomUUID() + extension;
+            final Path targetPath = Paths.get(AppConfig.UPLOAD_DIR, fileName);
 
             Files.move(Paths.get(upload.uploadedFileName()), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
-            JsonObject data = new JsonObject()
+            final JsonObject data = new JsonObject()
                 .put("url", "/uploads/" + fileName)
                 .put("preview", "/uploads/" + fileName);
 
             sendSuccess(ctx, data);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error uploading image", e);
             if (upload != null) {
                 deleteTempFile(upload);
@@ -755,31 +755,31 @@ public class ApiHandler {
         }
     }
 
-    public void sendMessage(RoutingContext ctx) {
+    public void sendMessage(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            JsonObject body = ctx.getBodyAsJson();
+            final Long userId = getUserIdFromContext(ctx);
+            final JsonObject body = ctx.getBodyAsJson();
 
-            String chatId = body.getString("chatId");
-            String text = body.getString("text", "");
-            String replyToMessageId = body.getString("replyToMessageId");
-            JsonArray attachmentsJson = body.getJsonArray("attachments");
-            List<Message.MessageAttachment> attachments = parseAttachments(attachmentsJson);
+            final String chatId = body.getString("chatId");
+            final String text = body.getString("text", "");
+            final String replyToMessageId = body.getString("replyToMessageId");
+            final JsonArray attachmentsJson = body.getJsonArray("attachments");
+            final List<Message.MessageAttachment> attachments = parseAttachments(attachmentsJson);
 
-            Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId, attachments);
-            JsonObject messageJson = ResponseMapper.toMessageResponse(message);
-            String senderName = resolveUserDisplayName(userId);
+            final Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId, attachments);
+            final JsonObject messageJson = ResponseMapper.toMessageResponse(message);
+            final String senderName = resolveUserDisplayName(userId);
 
             logger.info("Broadcasting message via WebSocket: chatId={}, messageId={}", chatId, message.getId());
             webSocketHandler.sendMessageToUser(userId, "message", messageJson.copy());
 
-            Optional<Chat> chatOpt = chatService.getChatById(chatId);
+            final Optional<Chat> chatOpt = chatService.getChatById(chatId);
             if (chatOpt.isPresent()) {
-                Chat chat = chatOpt.get();
-                Long companionId = chat.getCompanionId(userId);
+                final Chat chat = chatOpt.get();
+                final Long companionId = chat.getCompanionId(userId);
                 if (companionId != null) {
                     webSocketHandler.sendMessageToUser(companionId, "message", messageJson.copy());
-                    String senderDisplayName =
+                    final String senderDisplayName =
                         chat.getType() == Chat.ChatType.ANONYMOUS
                             ? "Собеседник"
                             : senderName;
@@ -788,7 +788,7 @@ public class ApiHandler {
             }
 
             sendSuccess(ctx, messageJson.getMap());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error sending message", e);
             if (e.getMessage().contains("Insufficient balance")) {
                 sendError(ctx, 400, ErrorCodes.INSUFFICIENT_BALANCE, "Insufficient balance");
@@ -800,16 +800,16 @@ public class ApiHandler {
         }
     }
 
-    public void editMessage(RoutingContext ctx) {
+    public void editMessage(final RoutingContext ctx) {
         try {
-            String messageId = ctx.pathParam("messageId");
-            Long userId = getUserIdFromContext(ctx);
-            JsonObject body = ctx.getBodyAsJson();
+            final String messageId = ctx.pathParam("messageId");
+            final Long userId = getUserIdFromContext(ctx);
+            final JsonObject body = ctx.getBodyAsJson();
 
-            String text = body.getString("text");
-            Message editedMessage = messageService.editMessage(messageId, userId, text);
+            final String text = body.getString("text");
+            final Message editedMessage = messageService.editMessage(messageId, userId, text);
             sendSuccess(ctx, ResponseMapper.toMessageResponse(editedMessage).getMap());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error editing message", e);
             if (e.getMessage().contains("not found")) {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Message not found");
@@ -821,16 +821,16 @@ public class ApiHandler {
         }
     }
 
-    public void deleteMessage(RoutingContext ctx) {
+    public void deleteMessage(final RoutingContext ctx) {
         try {
-            String messageId = ctx.pathParam("messageId");
-            Long userId = getUserIdFromContext(ctx);
+            final String messageId = ctx.pathParam("messageId");
+            final Long userId = getUserIdFromContext(ctx);
 
             messageService.deleteMessage(messageId, userId);
 
-            JsonObject response = new JsonObject().put("success", true);
+            final JsonObject response = new JsonObject().put("success", true);
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error deleting message", e);
             if (e.getMessage().contains("not found")) {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Message not found");
@@ -842,31 +842,31 @@ public class ApiHandler {
         }
     }
 
-    public void createReport(RoutingContext ctx) {
+    public void createReport(final RoutingContext ctx) {
         try {
-            Long reporterId = getUserIdFromContext(ctx);
-            JsonObject body = ctx.getBodyAsJson();
+            final Long reporterId = getUserIdFromContext(ctx);
+            final JsonObject body = ctx.getBodyAsJson();
 
-            Long targetId = body.getLong("targetId");
-            String chatId = body.getString("chatId");
-            String messageId = body.getString("messageId");
-            String reasonStr = body.getString("reason");
-            String description = body.getString("description");
+            final Long targetId = body.getLong("targetId");
+            final String chatId = body.getString("chatId");
+            final String messageId = body.getString("messageId");
+            final String reasonStr = body.getString("reason");
+            final String description = body.getString("description");
 
             Report.ReportReason reason = Report.ReportReason.OTHER;
             if (reasonStr != null && !reasonStr.trim().isEmpty()) {
                 try {
                     reason = Report.ReportReason.valueOf(reasonStr.trim().toUpperCase());
-                } catch (Exception ignored) {
+                } catch (final Exception ignored) {
                     reason = Report.ReportReason.OTHER;
                 }
             }
 
-            Report report = reportService.createReport(reporterId, targetId, chatId, messageId, reason, description);
+            final Report report = reportService.createReport(reporterId, targetId, chatId, messageId, reason, description);
             sendSuccess(ctx, ResponseMapper.toReportResponse(report).getMap());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error creating report", e);
-            String message = e.getMessage() != null ? e.getMessage() : "";
+            final String message = e.getMessage() != null ? e.getMessage() : "";
             if (message.contains("not found")) {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User or resource not found");
             } else if (message.contains("Report already exists")) {
@@ -877,17 +877,17 @@ public class ApiHandler {
         }
     }
 
-    public void getReports(RoutingContext ctx) {
+    public void getReports(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            int page = Integer.parseInt(ctx.request().getParam("page", "1"));
-            int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
+            final Long userId = getUserIdFromContext(ctx);
+            final int page = Integer.parseInt(ctx.request().getParam("page", "1"));
+            final int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
 
-            User currentUser = userService.getUserById(userId)
+            final User currentUser = userService.getUserById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-            List<Report> reports;
-            int total;
+            final List<Report> reports;
+            final int total;
             if (currentUser.isAdmin()) {
                 reports = reportService.getAllReports(page, limit);
                 total = (int) reportService.countReports();
@@ -896,12 +896,12 @@ public class ApiHandler {
                 total = reports.size();
             }
 
-            List<Map<String, Object>> payload = new ArrayList<>();
-            for (Report report : reports) {
-                JsonObject reportJson = ResponseMapper.toReportResponse(report);
+            final List<Map<String, Object>> payload = new ArrayList<>();
+            for (final Report report : reports) {
+                final JsonObject reportJson = ResponseMapper.toReportResponse(report);
                 if (report.getChatId() != null) {
-                    List<Message> lastMessages = messageService.getRecentMessages(report.getChatId(), 5);
-                    List<Map<String, Object>> mappedMessages = lastMessages.stream()
+                    final List<Message> lastMessages = messageService.getRecentMessages(report.getChatId(), 5);
+                    final List<Map<String, Object>> mappedMessages = lastMessages.stream()
                         .map(message -> ResponseMapper.toMessageResponse(message).getMap())
                         .collect(Collectors.toList());
                     reportJson.put("lastMessages", mappedMessages);
@@ -910,16 +910,16 @@ public class ApiHandler {
             }
 
             sendPaginatedSuccess(ctx, payload, page, limit, total);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting reports", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void updateReportStatus(RoutingContext ctx) {
+    public void updateReportStatus(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            User currentUser = userService.getUserById(userId)
+            final Long userId = getUserIdFromContext(ctx);
+            final User currentUser = userService.getUserById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
             if (!currentUser.isAdmin()) {
@@ -927,29 +927,29 @@ public class ApiHandler {
                 return;
             }
 
-            String reportId = ctx.pathParam("reportId");
-            JsonObject body = ctx.getBodyAsJson();
+            final String reportId = ctx.pathParam("reportId");
+            final JsonObject body = ctx.getBodyAsJson();
             if (body == null || !body.containsKey("status")) {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Status is required");
                 return;
             }
 
-            String statusValue = body.getString("status");
-            Report.ReportStatus status;
+            final String statusValue = body.getString("status");
+            final Report.ReportStatus status;
             try {
                 status = Report.ReportStatus.valueOf(statusValue.toUpperCase());
-            } catch (IllegalArgumentException e) {
+            } catch (final IllegalArgumentException e) {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Invalid status value");
                 return;
             }
 
             reportService.updateReportStatus(reportId, status);
-            Report updatedReport = reportService.getReportById(reportId)
+            final Report updatedReport = reportService.getReportById(reportId)
                 .orElseThrow(() -> new RuntimeException("Report not found"));
 
-            JsonObject payload = ResponseMapper.toReportResponse(updatedReport);
+            final JsonObject payload = ResponseMapper.toReportResponse(updatedReport);
             sendSuccess(ctx, payload.getMap());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error updating report status", e);
             if (e.getMessage() != null && e.getMessage().contains("Report not found")) {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Report not found");
@@ -959,22 +959,22 @@ public class ApiHandler {
         }
     }
 
-    public void blockUser(RoutingContext ctx) {
+    public void blockUser(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            JsonObject body = ctx.getBodyAsJson();
+            final Long userId = getUserIdFromContext(ctx);
+            final JsonObject body = ctx.getBodyAsJson();
 
-            Long blockedUserId = body.getLong("userId");
-            String reason = body.getString("reason");
+            final Long blockedUserId = body.getLong("userId");
+            final String reason = body.getString("reason");
 
-            BlackListItem blackListItem = blackListService.blockUser(userId, blockedUserId, reason);
-            List<Chat> closedChats = chatService.closeChatsBetween(
+            final BlackListItem blackListItem = blackListService.blockUser(userId, blockedUserId, reason);
+            final List<Chat> closedChats = chatService.closeChatsBetween(
                 userId,
                 blockedUserId,
                 Chat.ChatClosureReason.BLOCKED
             );
 
-            for (Chat closedChat : closedChats) {
+            for (final Chat closedChat : closedChats) {
                 webSocketHandler.notifyChatClosed(
                     closedChat.getId(),
                     closedChat.getClosedByUserId(),
@@ -983,7 +983,7 @@ public class ApiHandler {
                 );
             }
 
-            JsonObject response = ResponseMapper.toBlackListItemResponse(blackListItem);
+            final JsonObject response = ResponseMapper.toBlackListItemResponse(blackListItem);
             response.put(
                 "closedChats",
                 closedChats.stream()
@@ -991,7 +991,7 @@ public class ApiHandler {
                     .collect(Collectors.toList())
             );
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error blocking user", e);
             if (e.getMessage().contains("not found")) {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
@@ -1003,19 +1003,19 @@ public class ApiHandler {
         }
     }
 
-    public void unblockUser(RoutingContext ctx) {
+    public void unblockUser(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            Long blockedUserId = Long.valueOf(ctx.pathParam("userId"));
+            final Long userId = getUserIdFromContext(ctx);
+            final Long blockedUserId = Long.valueOf(ctx.pathParam("userId"));
 
             blackListService.unblockUser(userId, blockedUserId);
 
-            List<Chat> reopenedChats = chatService.reopenChatsBetween(userId, blockedUserId);
-            for (Chat reopened : reopenedChats) {
+            final List<Chat> reopenedChats = chatService.reopenChatsBetween(userId, blockedUserId);
+            for (final Chat reopened : reopenedChats) {
                 webSocketHandler.notifyChatReopened(reopened.getId());
             }
 
-            JsonObject response = new JsonObject()
+            final JsonObject response = new JsonObject()
                 .put("success", true)
                 .put(
                     "reopenedChats",
@@ -1024,7 +1024,7 @@ public class ApiHandler {
                         .collect(Collectors.toList())
                 );
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error unblocking user", e);
             if (e.getMessage().contains("not found")) {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found in blacklist");
@@ -1034,40 +1034,40 @@ public class ApiHandler {
         }
     }
 
-    public void getBlacklist(RoutingContext ctx) {
+    public void getBlacklist(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            int page = Integer.parseInt(ctx.request().getParam("page", "1"));
-            int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
+            final Long userId = getUserIdFromContext(ctx);
+            final int page = Integer.parseInt(ctx.request().getParam("page", "1"));
+            final int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
 
-            List<BlackListItem> blackList = blackListService.getUserBlackList(userId, page, limit);
-            List<Map<String, Object>> payload = blackList.stream()
+            final List<BlackListItem> blackList = blackListService.getUserBlackList(userId, page, limit);
+            final List<Map<String, Object>> payload = blackList.stream()
                 .map(item -> ResponseMapper.toBlackListItemResponse(item).getMap())
                 .collect(Collectors.toList());
             sendPaginatedSuccess(ctx, payload, page, limit, blackList.size());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting blacklist", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void banUser(RoutingContext ctx) {
+    public void banUser(final RoutingContext ctx) {
         try {
-            Long adminId = getUserIdFromContext(ctx);
-            User admin = userService.getUserById(adminId)
+            final Long adminId = getUserIdFromContext(ctx);
+            final User admin = userService.getUserById(adminId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
             if (!admin.isAdmin()) {
                 sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
                 return;
             }
 
-            Long targetId = Long.valueOf(ctx.pathParam("userId"));
-            JsonObject body = ctx.getBodyAsJson();
-            String reason = body != null ? body.getString("reason") : null;
+            final Long targetId = Long.valueOf(ctx.pathParam("userId"));
+            final JsonObject body = ctx.getBodyAsJson();
+            final String reason = body != null ? body.getString("reason") : null;
 
-            User bannedUser = userService.banUser(targetId, reason);
-            List<Chat> closedChats = chatService.closeAllChatsForUser(targetId, Chat.ChatClosureReason.SYSTEM);
-            for (Chat chat : closedChats) {
+            final User bannedUser = userService.banUser(targetId, reason);
+            final List<Chat> closedChats = chatService.closeAllChatsForUser(targetId, Chat.ChatClosureReason.SYSTEM);
+            for (final Chat chat : closedChats) {
                 webSocketHandler.notifyChatClosed(
                     chat.getId(),
                     chat.getClosedByUserId(),
@@ -1077,7 +1077,7 @@ public class ApiHandler {
             }
 
             sendSuccess(ctx, ResponseMapper.toUserResponse(bannedUser).getMap());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error banning user", e);
             if (e.getMessage() != null && e.getMessage().contains("User not found")) {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
@@ -1087,20 +1087,20 @@ public class ApiHandler {
         }
     }
 
-    public void unbanUser(RoutingContext ctx) {
+    public void unbanUser(final RoutingContext ctx) {
         try {
-            Long adminId = getUserIdFromContext(ctx);
-            User admin = userService.getUserById(adminId)
+            final Long adminId = getUserIdFromContext(ctx);
+            final User admin = userService.getUserById(adminId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
             if (!admin.isAdmin()) {
                 sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
                 return;
             }
 
-            Long targetId = Long.valueOf(ctx.pathParam("userId"));
-            User unbannedUser = userService.unbanUser(targetId);
+            final Long targetId = Long.valueOf(ctx.pathParam("userId"));
+            final User unbannedUser = userService.unbanUser(targetId);
             sendSuccess(ctx, ResponseMapper.toUserResponse(unbannedUser).getMap());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error unbanning user", e);
             if (e.getMessage() != null && e.getMessage().contains("User not found")) {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
@@ -1110,44 +1110,44 @@ public class ApiHandler {
         }
     }
 
-    public void getSubscriptionPlans(RoutingContext ctx) {
+    public void getSubscriptionPlans(final RoutingContext ctx) {
         try {
-            List<SubscriptionService.SubscriptionPlan> plans = subscriptionService.getAvailablePlans();
+            final List<SubscriptionService.SubscriptionPlan> plans = subscriptionService.getAvailablePlans();
             sendSuccess(ctx, plans);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting subscription plans", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getActiveSubscription(RoutingContext ctx) {
+    public void getActiveSubscription(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            Optional<Subscription> subscription = subscriptionService.getActiveSubscription(userId);
+            final Long userId = getUserIdFromContext(ctx);
+            final Optional<Subscription> subscription = subscriptionService.getActiveSubscription(userId);
 
             if (subscription.isPresent()) {
                 sendSuccess(ctx, subscription.get());
             } else {
                 sendSuccess(ctx, null);
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting active subscription", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void purchaseSubscription(RoutingContext ctx) {
+    public void purchaseSubscription(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            JsonObject body = ctx.getBodyAsJson();
+            final Long userId = getUserIdFromContext(ctx);
+            final JsonObject body = ctx.getBodyAsJson();
 
-            String planId = body.getString("planId");
-            String paymentMethodStr = body.getString("paymentMethod");
-            Subscription.PaymentMethod paymentMethod = Subscription.PaymentMethod.valueOf(paymentMethodStr.toUpperCase());
+            final String planId = body.getString("planId");
+            final String paymentMethodStr = body.getString("paymentMethod");
+            final Subscription.PaymentMethod paymentMethod = Subscription.PaymentMethod.valueOf(paymentMethodStr.toUpperCase());
 
-            Subscription subscription = subscriptionService.purchaseSubscription(userId, planId, paymentMethod);
+            final Subscription subscription = subscriptionService.purchaseSubscription(userId, planId, paymentMethod);
             sendSuccess(ctx, subscription);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error purchasing subscription", e);
             if (e.getMessage().contains("Insufficient balance")) {
                 sendError(ctx, 400, ErrorCodes.INSUFFICIENT_BALANCE, "Insufficient balance");
@@ -1159,14 +1159,14 @@ public class ApiHandler {
         }
     }
 
-    public void cancelSubscription(RoutingContext ctx) {
+    public void cancelSubscription(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
+            final Long userId = getUserIdFromContext(ctx);
             subscriptionService.cancelSubscription(userId);
 
-            JsonObject response = new JsonObject().put("success", true);
+            final JsonObject response = new JsonObject().put("success", true);
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error cancelling subscription", e);
             if (e.getMessage().contains("no active subscription")) {
                 sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "No active subscription to cancel");
@@ -1176,48 +1176,48 @@ public class ApiHandler {
         }
     }
 
-    public void getNotifications(RoutingContext ctx) {
+    public void getNotifications(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            int page = Integer.parseInt(ctx.request().getParam("page", "1"));
-            int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
+            final Long userId = getUserIdFromContext(ctx);
+            final int page = Integer.parseInt(ctx.request().getParam("page", "1"));
+            final int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
 
-            List<Notification> notifications = notificationService.getUserNotifications(userId, page, limit);
+            final List<Notification> notifications = notificationService.getUserNotifications(userId, page, limit);
             sendPaginatedSuccess(ctx, notifications, page, limit, notifications.size());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting notifications", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void markNotificationsAsRead(RoutingContext ctx) {
+    public void markNotificationsAsRead(final RoutingContext ctx) {
         try {
-            JsonObject body = ctx.getBodyAsJson();
-            List<String> notificationIds = body.getJsonArray("notificationIds")
+            final JsonObject body = ctx.getBodyAsJson();
+            final List<String> notificationIds = body.getJsonArray("notificationIds")
                 .stream()
                 .map(Object::toString)
                 .collect(Collectors.toList());
 
             notificationService.markNotificationsAsRead(notificationIds);
 
-            JsonObject response = new JsonObject().put("success", true);
+            final JsonObject response = new JsonObject().put("success", true);
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error marking notifications as read", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void deleteNotification(RoutingContext ctx) {
+    public void deleteNotification(final RoutingContext ctx) {
         try {
-            String notificationId = ctx.pathParam("notificationId");
-            Long userId = getUserIdFromContext(ctx);
+            final String notificationId = ctx.pathParam("notificationId");
+            final Long userId = getUserIdFromContext(ctx);
 
             notificationService.deleteNotification(notificationId, userId);
 
-            JsonObject response = new JsonObject().put("success", true);
+            final JsonObject response = new JsonObject().put("success", true);
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error deleting notification", e);
             if (e.getMessage().contains("not found")) {
                 sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Notification not found");
@@ -1227,11 +1227,11 @@ public class ApiHandler {
         }
     }
 
-    public void updateCommunityNotifications(RoutingContext ctx) {
+    public void updateCommunityNotifications(final RoutingContext ctx) {
         try {
-            Long userId = getUserIdFromContext(ctx);
-            JsonObject body = ctx.getBodyAsJson();
-            boolean enabled = body == null || body.getBoolean("enabled", true);
+            final Long userId = getUserIdFromContext(ctx);
+            final JsonObject body = ctx.getBodyAsJson();
+            final boolean enabled = body == null || body.getBoolean("enabled", true);
 
             userService.updateCommunityNotifications(userId, enabled);
             boolean testSent = false;
@@ -1240,91 +1240,91 @@ public class ApiHandler {
                 testSent = notificationService.sendCommunityTestNotification(userId);
                 try {
                     rewardResult = userService.claimReward(userId, UserService.RewardType.COMMUNITY, true);
-                } catch (RuntimeException rewardException) {
+                } catch (final RuntimeException rewardException) {
                     logger.info("Community reward not issued for user {}: {}", userId, rewardException.getMessage());
-                } catch (Exception rewardException) {
+                } catch (final Exception rewardException) {
                     logger.warn("Failed to issue community reward for user {}", userId, rewardException);
                 }
             }
 
-            JsonObject response = new JsonObject()
+            final JsonObject response = new JsonObject()
                 .put("enabled", enabled)
                 .put("testSent", testSent);
             if (rewardResult != null) {
                 response
-                    .put("rewarded", rewardResult.getRewardedAmount())
-                    .put("balance", rewardResult.getBalance())
-                    .put("rewards", toRewardsJson(rewardResult.getRewards()));
+                    .put("rewarded", rewardResult.rewardedAmount())
+                    .put("balance", rewardResult.balance())
+                    .put("rewards", toRewardsJson(rewardResult.rewards()));
             }
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error updating community notifications", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Failed to update community notifications");
         }
     }
 
-    public void getOnlineStats(RoutingContext ctx) {
+    public void getOnlineStats(final RoutingContext ctx) {
         try {
-            UserService.OnlineStats stats = userService.getOnlineStats();
-            JsonObject response = new JsonObject()
+            final UserService.OnlineStats stats = userService.getOnlineStats();
+            final JsonObject response = new JsonObject()
                 .put("anonymousChats", chatService.getActiveAnonymousChatsCount())
-                .put("totalUsers", stats.getTotalUsers())
-                .put("activeUsers", stats.getActiveUsers());
+                .put("totalUsers", stats.totalUsers())
+                .put("activeUsers", stats.activeUsers());
             sendSuccess(ctx, response);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting online stats", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    public void getAppConfig(RoutingContext ctx) {
+    public void getAppConfig(final RoutingContext ctx) {
         try {
-            JsonObject config = AppConfig.getClientConfig();
+            final JsonObject config = AppConfig.getClientConfig();
             sendSuccess(ctx, config);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error getting app config", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    private Long getUserIdFromContext(RoutingContext ctx) {
-        Long userId = ctx.get("userId");
+    private Long getUserIdFromContext(final RoutingContext ctx) {
+        final Long userId = ctx.get("userId");
         if (userId == null) {
             throw new RuntimeException("User ID not found in context");
         }
         return userId;
     }
 
-    private int parseIntParam(String value, int defaultValue) {
+    private int parseIntParam(final String value, final int defaultValue) {
         if (value == null) {
             return defaultValue;
         }
         try {
             return Integer.parseInt(value);
-        } catch (NumberFormatException e) {
+        } catch (final NumberFormatException e) {
             throw e;
         }
     }
 
-    private void deleteTempFile(FileUpload upload) {
+    private void deleteTempFile(final FileUpload upload) {
         try {
             Files.deleteIfExists(Paths.get(upload.uploadedFileName()));
-        } catch (Exception ignored) {
+        } catch (final Exception ignored) {
         }
     }
 
-    private String getFileExtension(String fileName) {
+    private String getFileExtension(final String fileName) {
         if (fileName == null) {
             return "";
         }
-        int dotIndex = fileName.lastIndexOf('.');
+        final int dotIndex = fileName.lastIndexOf('.');
         if (dotIndex == -1 || dotIndex == fileName.length() - 1) {
             return "";
         }
         return fileName.substring(dotIndex).toLowerCase();
     }
 
-    private String getExtensionFromContentType(String contentType) {
+    private String getExtensionFromContentType(final String contentType) {
         if (contentType == null) {
             return "";
         }
@@ -1342,32 +1342,31 @@ public class ApiHandler {
         }
     }
 
-    private List<Message.MessageAttachment> parseAttachments(JsonArray attachmentsJson) {
-        List<Message.MessageAttachment> attachments = new ArrayList<>();
+    private List<Message.MessageAttachment> parseAttachments(final JsonArray attachmentsJson) {
+        final List<Message.MessageAttachment> attachments = new ArrayList<>();
         if (attachmentsJson == null || attachmentsJson.isEmpty()) {
             return attachments;
         }
 
         for (int i = 0; i < attachmentsJson.size(); i++) {
-            Object raw = attachmentsJson.getValue(i);
-            if (!(raw instanceof JsonObject)) {
+            final Object raw = attachmentsJson.getValue(i);
+            if (!(raw instanceof JsonObject attachmentJson)) {
                 continue;
             }
-            JsonObject attachmentJson = (JsonObject) raw;
-            String typeString = attachmentJson.getString("type", "image");
-            Message.MessageAttachment.AttachmentType type = parseAttachmentType(typeString);
-            String url = attachmentJson.getString("url");
+            final String typeString = attachmentJson.getString("type", "image");
+            final Message.MessageAttachment.AttachmentType type = parseAttachmentType(typeString);
+            final String url = attachmentJson.getString("url");
             if (url == null || url.isEmpty()) {
                 continue;
             }
-            String preview = attachmentJson.getString("preview", url);
-            Message.MessageAttachment attachment = new Message.MessageAttachment(type, url, preview);
+            final String preview = attachmentJson.getString("preview", url);
+            final Message.MessageAttachment attachment = new Message.MessageAttachment(type, url, preview);
             attachments.add(attachment);
         }
         return attachments;
     }
 
-    private Message.MessageAttachment.AttachmentType parseAttachmentType(String typeString) {
+    private Message.MessageAttachment.AttachmentType parseAttachmentType(final String typeString) {
         if (typeString == null) {
             return Message.MessageAttachment.AttachmentType.IMAGE;
         }
@@ -1380,15 +1379,15 @@ public class ApiHandler {
         }
     }
 
-    private String resolveUserDisplayName(Long userId) {
+    private String resolveUserDisplayName(final Long userId) {
         if (userId == null) {
             return "Пользователь";
         }
         return userService.getUserById(userId)
             .map(user -> {
-                String first = user.getFirstName() != null ? user.getFirstName().trim() : "";
-                String last = user.getLastName() != null ? user.getLastName().trim() : "";
-                String full = (first + " " + last).trim();
+                final String first = user.getFirstName() != null ? user.getFirstName().trim() : "";
+                final String last = user.getLastName() != null ? user.getLastName().trim() : "";
+                final String full = (first + ' ' + last).trim();
                 if (!full.isEmpty()) {
                     return full;
                 }
@@ -1403,52 +1402,50 @@ public class ApiHandler {
             .orElse("Пользователь #" + userId);
     }
 
-    private boolean shouldMaskUser(Long viewerId, User target) {
+    private boolean shouldMaskUser(final Long viewerId, final User target) {
         if (target == null || target.getId() == null) {
             return true;
         }
 
-        if (viewerId != null && target.getId().equals(viewerId)) {
+        if (target.getId().equals(viewerId)) {
             return false;
         }
 
         if (viewerId != null) {
-            Optional<User> viewer = userService.getUserById(viewerId);
-            if (viewer.isPresent() && Boolean.TRUE.equals(viewer.get().isAdmin())) {
+            final Optional<User> viewer = userService.getUserById(viewerId);
+            if (viewer.isPresent() && viewer.get().isAdmin()) {
                 return false;
             }
-            if (chatService.hasRegularChatBetween(viewerId, target.getId())) {
-                return false;
-            }
+            return !chatService.hasRegularChatBetween(viewerId, target.getId());
         }
 
         return true;
     }
 
-    private void sendSuccess(RoutingContext ctx, Object data) {
+    private void sendSuccess(final RoutingContext ctx, final Object data) {
         try {
-            JsonObject response;
+            final JsonObject response;
             if (data != null) {
-                Object parsedData;
+                final Object parsedData;
 
                 if (data instanceof JsonObject || data instanceof JsonArray) {
                     parsedData = data;
                 } else if (data instanceof Iterable) {
-                    JsonArray array = new JsonArray();
-                    for (Object item : (Iterable<?>) data) {
+                    final JsonArray array = new JsonArray();
+                    for (final Object item : (Iterable<?>) data) {
                         array.add(item);
                     }
                     parsedData = array;
                 } else if (data.getClass().isArray()) {
-                    JsonArray array = new JsonArray();
-                    int length = java.lang.reflect.Array.getLength(data);
+                    final JsonArray array = new JsonArray();
+                    final int length = java.lang.reflect.Array.getLength(data);
                     for (int i = 0; i < length; i++) {
                         array.add(java.lang.reflect.Array.get(data, i));
                     }
                     parsedData = array;
                 } else {
-                    String dataJson = objectMapper.writeValueAsString(data);
-                    String trimmed = dataJson.trim();
+                    final String dataJson = objectMapper.writeValueAsString(data);
+                    final String trimmed = dataJson.trim();
                     if (trimmed.startsWith("[")) {
                         parsedData = new JsonArray(trimmed);
                     } else if (trimmed.startsWith("{")) {
@@ -1471,24 +1468,24 @@ public class ApiHandler {
                 .setStatusCode(200)
                 .putHeader("Content-Type", "application/json")
                 .end(response.encode());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error sending success response", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    private void sendPaginatedSuccess(RoutingContext ctx, List<?> data, int page, int limit, int total) {
+    private void sendPaginatedSuccess(final RoutingContext ctx, final List<?> data, final int page, final int limit, final int total) {
         try {
-            JsonObject pagination = new JsonObject()
+            final JsonObject pagination = new JsonObject()
                 .put("page", page)
                 .put("limit", limit)
                 .put("total", total)
                 .put("totalPages", (int) Math.ceil((double) total / limit));
 
-            String dataJson = objectMapper.writeValueAsString(data);
-            io.vertx.core.json.JsonArray parsedData = new io.vertx.core.json.JsonArray(dataJson);
+            final String dataJson = objectMapper.writeValueAsString(data);
+            final io.vertx.core.json.JsonArray parsedData = new io.vertx.core.json.JsonArray(dataJson);
 
-            JsonObject response = new JsonObject()
+            final JsonObject response = new JsonObject()
                 .put("success", true)
                 .put("data", parsedData)
                 .put("pagination", pagination);
@@ -1496,14 +1493,14 @@ public class ApiHandler {
             ctx.response()
                 .putHeader("Content-Type", "application/json")
                 .end(response.encode());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error sending paginated response", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Error serializing response");
         }
     }
 
-    private void sendError(RoutingContext ctx, int statusCode, ErrorCodes errorCode, String message) {
-        JsonObject error = new JsonObject()
+    private void sendError(final RoutingContext ctx, final int statusCode, final ErrorCodes errorCode, final String message) {
+        final JsonObject error = new JsonObject()
             .put("success", false)
             .put("error", message)
             .put("code", errorCode.getCode());

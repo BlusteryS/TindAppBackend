@@ -161,7 +161,7 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
                 }
 
                 try {
-                    Subscription subscription = subscriptionService.processChargeableStatus(
+                    final Subscription subscription = subscriptionService.processChargeableStatus(
                         user.getId(),
                         planOpt.get(),
                         subscriptionId,
@@ -181,7 +181,7 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
             }
             case "active": {
                 try {
-                    Subscription subscription = subscriptionService.markSubscriptionActive(
+                    final Subscription subscription = subscriptionService.markSubscriptionActive(
                         subscriptionId,
                         nextBillDate,
                         pendingCancel,

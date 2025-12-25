@@ -36,7 +36,7 @@ public class AuthHandler implements Handler<RoutingContext> {
 
         private final String code;
 
-        ErrorCodes(String code) {
+        ErrorCodes(final String code) {
             this.code = code;
         }
 
@@ -49,23 +49,23 @@ public class AuthHandler implements Handler<RoutingContext> {
     private final UserService userService;
     private final TokenService tokenService;
 
-    public AuthHandler(String clientSecret, UserService userService, TokenService tokenService) {
+    public AuthHandler(final String clientSecret, final UserService userService, final TokenService tokenService) {
         this.clientSecret = clientSecret;
         this.userService = userService;
         this.tokenService = tokenService;
     }
 
     @Override
-    public void handle(RoutingContext context) {
+    public void handle(final RoutingContext context) {
         try {
-            String query = context.request().query();
+            final String query = context.request().query();
 
             if (query == null || query.isEmpty()) {
                 sendError(context, 400, ErrorCodes.VALIDATION_ERROR, "Missing VK parameters");
                 return;
             }
 
-            Map<String, String> params = parseQueryString(query);
+            final Map<String, String> params = parseQueryString(query);
 
             if (!params.containsKey(VK_USER_ID_PARAM) || !params.containsKey(SIGN_PARAM)) {
                 sendError(context, 400, ErrorCodes.VALIDATION_ERROR, "Missing required VK parameters");
@@ -77,82 +77,82 @@ public class AuthHandler implements Handler<RoutingContext> {
                 return;
             }
 
-            JsonObject vkUserData = extractUserData(params);
-            Long vkUserId = vkUserData.getLong("vk_user_id");
+            final JsonObject vkUserData = extractUserData(params);
+            final Long vkUserId = vkUserData.getLong("vk_user_id");
 
-            User user = findOrCreateUser(vkUserData);
+            final User user = findOrCreateUser(vkUserData);
 
             if (user.getId() == null) {
                 throw new RuntimeException("User ID is null after creation");
             }
 
-            String token = tokenService.createToken(user);
+            final String token = tokenService.createToken(user);
 
-            JsonObject response = new JsonObject()
-                    .put("success", true)
-                    .put("token", token)
-                    .put("userId", user.getId())
-                    .put("user", createUserResponse(user))
-                    .put("expiresIn", 24 * 60 * 60); // 24 часа в секундах
+            final JsonObject response = new JsonObject()
+                .put("success", true)
+                .put("token", token)
+                .put("userId", user.getId())
+                .put("user", createUserResponse(user))
+                .put("expiresIn", 24 * 60 * 60); // 24 часа в секундах
 
             logger.info("User authenticated successfully: vkId={}, token created", vkUserId);
 
             context.response()
-                    .setStatusCode(200)
-                    .putHeader("Content-Type", "application/json")
-                    .end(response.encode());
+                .setStatusCode(200)
+                .putHeader("Content-Type", "application/json")
+                .end(response.encode());
 
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Authentication error", e);
             sendError(context, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
-    private Map<String, String> parseQueryString(String query) {
-        Map<String, String> result = new LinkedHashMap<>();
+    private Map<String, String> parseQueryString(final String query) {
+        final Map<String, String> result = new LinkedHashMap<>();
         if (query == null || query.isEmpty()) {
             return result;
         }
 
-        String[] pairs = query.split("&");
-        for (String pair : pairs) {
-            int idx = pair.indexOf("=");
-            String key = idx > 0 ? decode(pair.substring(0, idx)) : pair;
-            String value = idx > 0 && pair.length() > idx + 1 ? decode(pair.substring(idx + 1)) : null;
+        final String[] pairs = query.split("&");
+        for (final String pair : pairs) {
+            final int idx = pair.indexOf('=');
+            final String key = idx > 0 ? decode(pair.substring(0, idx)) : pair;
+            final String value = idx > 0 && pair.length() > idx + 1 ? decode(pair.substring(idx + 1)) : null;
             result.put(key, value);
         }
 
         return result;
     }
 
-    private boolean validateSignature(Map<String, String> params) {
+    private boolean validateSignature(final Map<String, String> params) {
         try {
-            String checkString = params.entrySet().stream()
-                    .filter(entry -> entry.getKey().startsWith("vk_"))
-                    .sorted(Map.Entry.comparingByKey())
-                    .map(entry -> encode(entry.getKey()) + "=" + (entry.getValue() == null ? "" : encode(entry.getValue())))
-                    .collect(Collectors.joining("&"));
+            final String checkString = params.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("vk_"))
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> encode(entry.getKey()) + '=' + (entry.getValue() == null ? "" : encode(entry.getValue())))
+                .collect(Collectors.joining("&"));
 
-            String expectedSign = getHashCode(checkString, clientSecret);
-            String actualSign = params.get(SIGN_PARAM);
+            final String expectedSign = getHashCode(checkString, clientSecret);
+            final String actualSign = params.get(SIGN_PARAM);
 
             return expectedSign.equals(actualSign);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Error validating VK signature", e);
             return false;
         }
     }
 
-    private String getHashCode(String data, String key) throws Exception {
-        SecretKeySpec secretKey = new SecretKeySpec(key.getBytes(ENCODING), "HmacSHA256");
-        Mac mac = Mac.getInstance("HmacSHA256");
+    private String getHashCode(final String data, final String key) throws Exception {
+        final SecretKeySpec secretKey = new SecretKeySpec(key.getBytes(ENCODING), "HmacSHA256");
+        final Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(secretKey);
-        byte[] hmacData = mac.doFinal(data.getBytes(ENCODING));
+        final byte[] hmacData = mac.doFinal(data.getBytes(ENCODING));
         return new String(Base64.getUrlEncoder().withoutPadding().encode(hmacData));
     }
 
-    private JsonObject extractUserData(Map<String, String> params) {
-        JsonObject userData = new JsonObject();
+    private JsonObject extractUserData(final Map<String, String> params) {
+        final JsonObject userData = new JsonObject();
 
         putIfPresent(userData, "vk_user_id", params.get("vk_user_id"), Long::parseLong);
         putIfPresent(userData, "vk_app_id", params.get("vk_app_id"), Long::parseLong);
@@ -174,19 +174,19 @@ public class AuthHandler implements Handler<RoutingContext> {
         return userData;
     }
 
-    private User findOrCreateUser(JsonObject vkUserData) {
-        Long vkUserId = vkUserData.getLong("vk_user_id");
+    private User findOrCreateUser(final JsonObject vkUserData) {
+        final Long vkUserId = vkUserData.getLong("vk_user_id");
 
-        Optional<User> existingUser = userService.getUserByVkId(vkUserId);
+        final Optional<User> existingUser = userService.getUserByVkId(vkUserId);
 
         if (existingUser.isPresent()) {
-            User user = existingUser.get();
+            final User user = existingUser.get();
             user.setLastSeenDateTime(java.time.LocalDateTime.now());
             user.setOnline(true);
             userService.updateUser(user);
             return user;
         } else {
-            User newUser = new User();
+            final User newUser = new User();
             newUser.setVkId(vkUserId);
             newUser.setAge(18); // По умолчанию, нужно будет обновить из профиля VK
             newUser.setFirstName("");
@@ -205,70 +205,70 @@ public class AuthHandler implements Handler<RoutingContext> {
             newUser.setNativeLanguage(LanguageUtils.normalizeLanguage(vkUserData.getString("vk_language")));
             applyVkProfileData(newUser, vkUserData);
 
-            User createdUser = userService.createUser(newUser);
+            final User createdUser = userService.createUser(newUser);
             logger.info("New user created: vkId={}", vkUserId);
             return createdUser;
         }
     }
 
-    private JsonObject createUserResponse(User user) {
-        JsonObject response = new JsonObject()
-                .put("id", user.getId())
-                .put("vkId", user.getVkId())
-                .put("age", user.getAge())
-                .put("firstName", user.getFirstName())
-                .put("lastName", user.getLastName())
-                .put("avatarUrl", user.getAvatarUrl())
-                .put("country", user.getCountry())
-                .put("city", user.getCity())
-                .put("isVerified", user.isVerified())
-                .put("wasVerified", user.wasVerified())
-                .put("isOnline", user.isOnline())
-                .put("lastSeen", user.getLastSeen())
-                .put("bio", user.getBio())
-                .put("gender", user.getGender())
-                .put("isVisible", user.isVisible())
-                .put("balance", user.getBalance())
-                .put("createdAt", user.getCreatedAt())
-                .put("updatedAt", user.getUpdatedAt());
+    private JsonObject createUserResponse(final User user) {
+        final JsonObject response = new JsonObject()
+            .put("id", user.getId())
+            .put("vkId", user.getVkId())
+            .put("age", user.getAge())
+            .put("firstName", user.getFirstName())
+            .put("lastName", user.getLastName())
+            .put("avatarUrl", user.getAvatarUrl())
+            .put("country", user.getCountry())
+            .put("city", user.getCity())
+            .put("isVerified", user.isVerified())
+            .put("wasVerified", user.wasVerified())
+            .put("isOnline", user.isOnline())
+            .put("lastSeen", user.getLastSeen())
+            .put("bio", user.getBio())
+            .put("gender", user.getGender())
+            .put("isVisible", user.isVisible())
+            .put("balance", user.getBalance())
+            .put("createdAt", user.getCreatedAt())
+            .put("updatedAt", user.getUpdatedAt());
 
-        JsonObject subscription = new JsonObject()
-                .put("isActive", false): получить из subscription service
-                .put("type", "basic");
+        final JsonObject subscription = new JsonObject()
+            .put("isActive", false): получить из subscription service
+            .put("type", "basic");
         response.put("subscription", subscription);
 
-        JsonObject settings = new JsonObject()
-                .put("showAge", true)
-                .put("showCity", true)
-                .put("allowMessages", true)
-                .put("allowCommunityMessages", false)
-                .put("notifyAnonMessages", true)
-                .put("notifyAnonDialogClosed", true)
-                .put("notifyProfileNewChat", true)
-                .put("notifyProfileMessages", true)
-                .put("notifyProfileDialogClosed", true)
-                .put("notifySubscriptionProblems", true);
+        final JsonObject settings = new JsonObject()
+            .put("showAge", true)
+            .put("showCity", true)
+            .put("allowMessages", true)
+            .put("allowCommunityMessages", false)
+            .put("notifyAnonMessages", true)
+            .put("notifyAnonDialogClosed", true)
+            .put("notifyProfileNewChat", true)
+            .put("notifyProfileMessages", true)
+            .put("notifyProfileDialogClosed", true)
+            .put("notifySubscriptionProblems", true);
         response.put("settings", settings);
 
         return response;
     }
 
-    private <T> void putIfPresent(JsonObject json, String key, String value, java.util.function.Function<String, T> converter) {
+    private <T> void putIfPresent(final JsonObject json, final String key, final String value, final java.util.function.Function<String, T> converter) {
         if (value != null && !value.isEmpty()) {
             try {
                 json.put(key, converter.apply(value));
-            } catch (Exception e) {
+            } catch (final Exception e) {
                 logger.warn("Failed to convert parameter {}: {}", key, value, e);
             }
         }
     }
 
-    private void applyVkProfileData(User user, JsonObject vkUserData) {
+    private void applyVkProfileData(final User user, final JsonObject vkUserData) {
         if (vkUserData == null) {
             return;
         }
 
-        String firstName = firstNonEmpty(
+        final String firstName = firstNonEmpty(
             vkUserData.getString("first_name"),
             vkUserData.getString("vk_first_name")
         );
@@ -276,7 +276,7 @@ public class AuthHandler implements Handler<RoutingContext> {
             user.setFirstName(firstName.trim());
         }
 
-        String lastName = firstNonEmpty(
+        final String lastName = firstNonEmpty(
             vkUserData.getString("last_name"),
             vkUserData.getString("vk_last_name")
         );
@@ -284,13 +284,13 @@ public class AuthHandler implements Handler<RoutingContext> {
             user.setLastName(lastName.trim());
         }
 
-        String avatarUrl = firstNonEmpty(
+        final String avatarUrl = firstNonEmpty(
             vkUserData.getString("photo_200"),
             vkUserData.getString("photo_100"),
             vkUserData.getString("vk_profile_photo")
         );
         if (avatarUrl != null && isBlank(user.getAvatarUrl())) {
-            String mirrored = userService.mirrorExternalAvatar(avatarUrl.trim());
+            final String mirrored = userService.mirrorExternalAvatar(avatarUrl.trim());
             if (mirrored != null) {
                 user.setAvatarUrl(mirrored);
             }
@@ -315,13 +315,13 @@ public class AuthHandler implements Handler<RoutingContext> {
         }
     }
 
-    private String firstNonEmpty(String... values) {
+    private String firstNonEmpty(final String... values) {
         if (values == null) {
             return null;
         }
-        for (String value : values) {
+        for (final String value : values) {
             if (value != null) {
-                String trimmed = value.trim();
+                final String trimmed = value.trim();
                 if (!trimmed.isEmpty()) {
                     return trimmed;
                 }
@@ -330,37 +330,37 @@ public class AuthHandler implements Handler<RoutingContext> {
         return null;
     }
 
-    private boolean isBlank(String value) {
+    private boolean isBlank(final String value) {
         return value == null || value.trim().isEmpty();
     }
 
-    private String decode(String value) {
+    private String decode(final String value) {
         try {
             return URLDecoder.decode(value, ENCODING);
-        } catch (UnsupportedEncodingException e) {
+        } catch (final UnsupportedEncodingException e) {
             logger.error("Failed to decode value: " + value, e);
             return value;
         }
     }
 
-    private String encode(String value) {
+    private String encode(final String value) {
         try {
             return URLEncoder.encode(value, ENCODING);
-        } catch (UnsupportedEncodingException e) {
+        } catch (final UnsupportedEncodingException e) {
             logger.error("Failed to encode value: " + value, e);
             return value;
         }
     }
 
-    private void sendError(RoutingContext context, int statusCode, ErrorCodes errorCode, String message) {
-        JsonObject error = new JsonObject()
-                .put("success", false)
-                .put("error", message)
-                .put("code", errorCode.getCode());
+    private void sendError(final RoutingContext context, final int statusCode, final ErrorCodes errorCode, final String message) {
+        final JsonObject error = new JsonObject()
+            .put("success", false)
+            .put("error", message)
+            .put("code", errorCode.getCode());
 
         context.response()
-                .setStatusCode(statusCode)
-                .putHeader("Content-Type", "application/json")
-                .end(error.encode());
+            .setStatusCode(statusCode)
+            .putHeader("Content-Type", "application/json")
+            .end(error.encode());
     }
 }

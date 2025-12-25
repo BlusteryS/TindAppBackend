@@ -26,17 +26,17 @@ public class Chat {
     private ChatSettings settings;
 
     public Chat() {
-        this.unreadCount = 0;
-        this.isActive = true;
-        this.settings = new ChatSettings();
-        this.closedByUserId = null;
-        this.closureReason = null;
-        this.closedAt = null;
-        this.createdAt = DateTimeUtils.nowAsIso();
-        this.updatedAt = DateTimeUtils.nowAsIso();
+        unreadCount = 0;
+        isActive = true;
+        settings = new ChatSettings();
+        closedByUserId = null;
+        closureReason = null;
+        closedAt = null;
+        createdAt = DateTimeUtils.nowAsIso();
+        updatedAt = DateTimeUtils.nowAsIso();
     }
 
-    public Chat(String id, ChatType type, Long user1Id, Long user2Id) {
+    public Chat(final String id, final ChatType type, final Long user1Id, final Long user2Id) {
         this();
         this.id = id;
         this.type = type;
@@ -59,60 +59,135 @@ public class Chat {
         private Integer anonymousId; // Порядковый номер для анонимного чата
 
         public ChatSettings() {
-            this.cost = 0;
+            cost = 0;
         }
 
-        public Integer getCost() { return cost; }
-        public void setCost(Integer cost) { this.cost = cost; }
+        public Integer getCost() {
+            return cost;
+        }
 
-        public Integer getAnonymousId() { return anonymousId; }
-        public void setAnonymousId(Integer anonymousId) { this.anonymousId = anonymousId; }
+        public void setCost(final Integer cost) {
+            this.cost = cost;
+        }
+
+        public Integer getAnonymousId() {
+            return anonymousId;
+        }
+
+        public void setAnonymousId(final Integer anonymousId) {
+            this.anonymousId = anonymousId;
+        }
     }
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public String getId() {
+        return id;
+    }
 
-    public ChatType getType() { return type; }
-    public void setType(ChatType type) { this.type = type; }
+    public void setId(final String id) {
+        this.id = id;
+    }
 
-    public Long getUser1Id() { return user1Id; }
-    public void setUser1Id(Long user1Id) { this.user1Id = user1Id; }
+    public ChatType getType() {
+        return type;
+    }
 
-    public Long getUser2Id() { return user2Id; }
-    public void setUser2Id(Long user2Id) { this.user2Id = user2Id; }
+    public void setType(final ChatType type) {
+        this.type = type;
+    }
 
-    public Message getLastMessage() { return lastMessage; }
-    public void setLastMessage(Message lastMessage) { this.lastMessage = lastMessage; }
+    public Long getUser1Id() {
+        return user1Id;
+    }
 
-    public Integer getUnreadCount() { return unreadCount; }
-    public void setUnreadCount(Integer unreadCount) { this.unreadCount = unreadCount; }
+    public void setUser1Id(final Long user1Id) {
+        this.user1Id = user1Id;
+    }
 
-    public String getCreatedAt() { return createdAt; }
-    public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+    public Long getUser2Id() {
+        return user2Id;
+    }
 
-    public String getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
+    public void setUser2Id(final Long user2Id) {
+        this.user2Id = user2Id;
+    }
 
-    public Boolean getIsActive() { return isActive; }
-    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+    public Message getLastMessage() {
+        return lastMessage;
+    }
 
-    public Long getClosedByUserId() { return closedByUserId; }
-    public void setClosedByUserId(Long closedByUserId) { this.closedByUserId = closedByUserId; }
+    public void setLastMessage(final Message lastMessage) {
+        this.lastMessage = lastMessage;
+    }
 
-    public ChatClosureReason getClosureReason() { return closureReason; }
-    public void setClosureReason(ChatClosureReason closureReason) { this.closureReason = closureReason; }
+    public Integer getUnreadCount() {
+        return unreadCount;
+    }
 
-    public String getClosedAt() { return closedAt; }
-    public void setClosedAt(String closedAt) { this.closedAt = closedAt; }
+    public void setUnreadCount(final Integer unreadCount) {
+        this.unreadCount = unreadCount;
+    }
 
-    public ChatSettings getSettings() { return settings; }
-    public void setSettings(ChatSettings settings) { this.settings = settings; }
+    public String getCreatedAt() {
+        return createdAt;
+    }
 
-    public boolean hasParticipant(Long userId) {
+    public void setCreatedAt(final String createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public String getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(final String updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public Boolean getIsActive() {
+        return isActive;
+    }
+
+    public void setIsActive(final Boolean isActive) {
+        this.isActive = isActive;
+    }
+
+    public Long getClosedByUserId() {
+        return closedByUserId;
+    }
+
+    public void setClosedByUserId(final Long closedByUserId) {
+        this.closedByUserId = closedByUserId;
+    }
+
+    public ChatClosureReason getClosureReason() {
+        return closureReason;
+    }
+
+    public void setClosureReason(final ChatClosureReason closureReason) {
+        this.closureReason = closureReason;
+    }
+
+    public String getClosedAt() {
+        return closedAt;
+    }
+
+    public void setClosedAt(final String closedAt) {
+        this.closedAt = closedAt;
+    }
+
+    public ChatSettings getSettings() {
+        return settings;
+    }
+
+    public void setSettings(final ChatSettings settings) {
+        this.settings = settings;
+    }
+
+    public boolean hasParticipant(final Long userId) {
         return userId.equals(user1Id) || userId.equals(user2Id);
     }
 
-    public Long getCompanionId(Long userId) {
+    public Long getCompanionId(final Long userId) {
         if (userId.equals(user1Id)) {
             return user2Id;
         } else if (userId.equals(user2Id)) {
@@ -122,10 +197,10 @@ public class Chat {
     }
 
     public void updateActivity() {
-        this.updatedAt = DateTimeUtils.nowAsIso();
+        updatedAt = DateTimeUtils.nowAsIso();
     }
 
     public void resetUnreadCount() {
-        this.unreadCount = 0;
+        unreadCount = 0;
     }
 }

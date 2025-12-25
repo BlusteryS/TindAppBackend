@@ -23,11 +23,11 @@ public class MessageService {
     private final TranslationService translationService;
 
     public MessageService(
-        MessageRepository messageRepository,
-        ChatRepository chatRepository,
-        BlackListService blackListService,
-        UserService userService,
-        TranslationService translationService
+        final MessageRepository messageRepository,
+        final ChatRepository chatRepository,
+        final BlackListService blackListService,
+        final UserService userService,
+        final TranslationService translationService
     ) {
         this.messageRepository = messageRepository;
         this.chatRepository = chatRepository;
@@ -36,19 +36,19 @@ public class MessageService {
         this.translationService = translationService;
     }
 
-    public List<Message> getChatMessages(String chatId, int page, int limit) {
+    public List<Message> getChatMessages(final String chatId, final int page, final int limit) {
         return messageRepository.findByChatId(chatId, page, limit);
     }
 
-    public Message sendMessage(Long senderId, String chatId, String text, String replyToMessageId, List<Message.MessageAttachment> attachments) {
-        Chat chat = chatRepository.findById(chatId)
+    public Message sendMessage(final Long senderId, final String chatId, final String text, final String replyToMessageId, final List<Message.MessageAttachment> attachments) {
+        final Chat chat = chatRepository.findById(chatId)
             .orElseThrow(() -> new RuntimeException("Chat not found"));
 
         if (!chat.hasParticipant(senderId)) {
             throw new RuntimeException("User is not a participant of this chat");
         }
 
-        Long companionId = chat.getCompanionId(senderId);
+        final Long companionId = chat.getCompanionId(senderId);
         if (companionId != null && !blackListService.canUsersInteract(senderId, companionId)) {
             throw new RuntimeException("User is blocked");
         }
@@ -57,17 +57,17 @@ public class MessageService {
             throw new RuntimeException("Chat is not active");
         }
 
-        String messageId = UUID.randomUUID().toString();
-        Message message = new Message(messageId, chatId, senderId, text != null ? text : "");
+        final String messageId = UUID.randomUUID().toString();
+        final Message message = new Message(messageId, chatId, senderId, text != null ? text : "");
 
         if (attachments != null && !attachments.isEmpty()) {
             message.setAttachments(attachments);
         }
 
         if (replyToMessageId != null) {
-            Optional<Message> replyMessage = messageRepository.findById(replyToMessageId);
+            final Optional<Message> replyMessage = messageRepository.findById(replyToMessageId);
             if (replyMessage.isPresent()) {
-                Message.ReplyInfo replyInfo = new Message.ReplyInfo(
+                final Message.ReplyInfo replyInfo = new Message.ReplyInfo(
                     replyToMessageId,
                     replyMessage.get().getText(),
                     "Собеседник" // В анонимном чате не показываем реальные имена
@@ -76,15 +76,15 @@ public class MessageService {
             }
         }
 
-        User sender = userService.getUserById(senderId)
+        final User sender = userService.getUserById(senderId)
             .orElseThrow(() -> new RuntimeException("User not found"));
-        List<User> recipients = new ArrayList<>();
+        final List<User> recipients = new ArrayList<>();
         if (companionId != null) {
             userService.getUserById(companionId).ifPresent(recipients::add);
         }
         applyTranslations(message, sender, recipients);
 
-        Message savedMessage = messageRepository.save(message);
+        final Message savedMessage = messageRepository.save(message);
 
         chat.setLastMessage(savedMessage);
         chat.setUnreadCount(chat.getUnreadCount() + 1);
@@ -93,8 +93,8 @@ public class MessageService {
         return savedMessage;
     }
 
-    public Message editMessage(String messageId, Long userId, String newText) {
-        Message message = messageRepository.findById(messageId)
+    public Message editMessage(final String messageId, final Long userId, final String newText) {
+        final Message message = messageRepository.findById(messageId)
             .orElseThrow(() -> new RuntimeException("Message not found"));
 
         if (!message.getSenderId().equals(userId)) {
@@ -103,13 +103,13 @@ public class MessageService {
 
         message.updateText(newText);
 
-        Chat chat = chatRepository.findById(message.getChatId())
+        final Chat chat = chatRepository.findById(message.getChatId())
             .orElseThrow(() -> new RuntimeException("Chat not found"));
-        User sender = userService.getUserById(userId)
+        final User sender = userService.getUserById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
-        List<User> recipients = new ArrayList<>();
-        Long companionId = chat.getCompanionId(userId);
+        final List<User> recipients = new ArrayList<>();
+        final Long companionId = chat.getCompanionId(userId);
         if (companionId != null) {
             userService.getUserById(companionId).ifPresent(recipients::add);
         }
@@ -118,8 +118,8 @@ public class MessageService {
         return messageRepository.save(message);
     }
 
-    public void deleteMessage(String messageId, Long userId) {
-        Message message = messageRepository.findById(messageId)
+    public void deleteMessage(final String messageId, final Long userId) {
+        final Message message = messageRepository.findById(messageId)
             .orElseThrow(() -> new RuntimeException("Message not found"));
 
         if (!message.getSenderId().equals(userId)) {
@@ -129,8 +129,8 @@ public class MessageService {
         messageRepository.deleteById(messageId);
     }
 
-    public void markMessagesAsRead(String chatId, Long userId, List<String> messageIds) {
-        Chat chat = chatRepository.findById(chatId)
+    public void markMessagesAsRead(final String chatId, final Long userId, final List<String> messageIds) {
+        final Chat chat = chatRepository.findById(chatId)
             .orElseThrow(() -> new RuntimeException("Chat not found"));
 
         if (!chat.hasParticipant(userId)) {
@@ -142,40 +142,40 @@ public class MessageService {
         chatRepository.save(chat);
     }
 
-    public long getUnreadMessagesCount(String chatId) {
+    public long getUnreadMessagesCount(final String chatId) {
         return messageRepository.countUnreadMessagesByChatId(chatId);
     }
 
-    public List<Message> getRecentMessages(String chatId, int limit) {
+    public List<Message> getRecentMessages(final String chatId, final int limit) {
         if (chatId == null || limit <= 0) {
             return List.of();
         }
         return messageRepository.findRecentByChatId(chatId, limit);
     }
 
-    public Optional<Message> getMessageById(String messageId) {
+    public Optional<Message> getMessageById(final String messageId) {
         return messageRepository.findById(messageId);
     }
 
-    private void applyTranslations(Message message, User sender, List<User> recipients) {
+    private void applyTranslations(final Message message, final User sender, final List<User> recipients) {
         if (translationService == null || message == null) {
             return;
         }
 
-        String text = message.getText() != null ? message.getText().trim() : "";
+        final String text = message.getText() != null ? message.getText().trim() : "";
         if (text.isEmpty() || recipients == null || recipients.isEmpty()) {
             message.setTranslations(null);
             return;
         }
 
-        String sourceLanguage = sender != null ? sender.getNativeLanguage() : LanguageUtils.getDefaultLanguage();
-        Map<String, Message.MessageTranslation> translationMap = new HashMap<>();
+        final String sourceLanguage = sender != null ? sender.getNativeLanguage() : LanguageUtils.getDefaultLanguage();
+        final Map<String, Message.MessageTranslation> translationMap = new HashMap<>();
 
-        for (User recipient : recipients) {
-            if (recipient == null || !hasActiveSubscription(recipient)) {
+        for (final User recipient : recipients) {
+            if (!hasActiveSubscription(recipient)) {
                 continue;
             }
-            String targetLanguage = recipient.getNativeLanguage();
+            final String targetLanguage = recipient.getNativeLanguage();
             if (!LanguageUtils.canTranslate(sourceLanguage, targetLanguage)) {
                 continue;
             }
@@ -190,7 +190,7 @@ public class MessageService {
         }
     }
 
-    private boolean hasActiveSubscription(User user) {
+    private boolean hasActiveSubscription(final User user) {
         if (user == null || user.getSubscription() == null) {
             return false;
         }

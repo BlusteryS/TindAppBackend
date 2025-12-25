@@ -19,7 +19,7 @@ public class TokenAuthHandler implements Handler<RoutingContext> {
 
         private final String code;
 
-        ErrorCodes(String code) {
+        ErrorCodes(final String code) {
             this.code = code;
         }
 
@@ -30,14 +30,14 @@ public class TokenAuthHandler implements Handler<RoutingContext> {
 
     private final TokenService tokenService;
 
-    public TokenAuthHandler(TokenService tokenService) {
+    public TokenAuthHandler(final TokenService tokenService) {
         this.tokenService = tokenService;
     }
 
     @Override
-    public void handle(RoutingContext context) {
+    public void handle(final RoutingContext context) {
         try {
-            String token = extractToken(context);
+            final String token = extractToken(context);
 
             if (token == null) {
                 logger.warn("Missing authorization token for request: {}", context.request().path());
@@ -45,7 +45,7 @@ public class TokenAuthHandler implements Handler<RoutingContext> {
                 return;
             }
 
-            User user = tokenService.validateToken(token);
+            final User user = tokenService.validateToken(token);
 
             if (user == null) {
                 logger.warn("Invalid or expired token for request: {}", context.request().path());
@@ -61,14 +61,14 @@ public class TokenAuthHandler implements Handler<RoutingContext> {
             context.next();
             logger.info("TokenAuthHandler returned from context.next() for path: {}", context.request().path());
 
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Token authentication error for request: " + context.request().path(), e);
             sendUnauthorized(context, ErrorCodes.UNAUTHORIZED, "Authentication error");
         }
     }
 
-    private String extractToken(RoutingContext context) {
-        String authHeader = context.request().getHeader(AUTH_HEADER);
+    private String extractToken(final RoutingContext context) {
+        final String authHeader = context.request().getHeader(AUTH_HEADER);
 
         if (authHeader == null || authHeader.isEmpty()) {
             return null;
@@ -85,15 +85,15 @@ public class TokenAuthHandler implements Handler<RoutingContext> {
         return authHeader.trim();
     }
 
-    private void sendUnauthorized(RoutingContext context, ErrorCodes errorCode, String message) {
-        JsonObject error = new JsonObject()
-                .put("success", false)
-                .put("error", message)
-                .put("code", errorCode.getCode());
+    private void sendUnauthorized(final RoutingContext context, final ErrorCodes errorCode, final String message) {
+        final JsonObject error = new JsonObject()
+            .put("success", false)
+            .put("error", message)
+            .put("code", errorCode.getCode());
 
         context.response()
-                .setStatusCode(401)
-                .putHeader("Content-Type", "application/json")
-                .end(error.encode());
+            .setStatusCode(401)
+            .putHeader("Content-Type", "application/json")
+            .end(error.encode());
     }
 }

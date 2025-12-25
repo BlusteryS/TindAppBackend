@@ -30,13 +30,13 @@ public class Subscription {
     private Integer appOrderId;
 
     public Subscription() {
-        this.status = SubscriptionStatus.ACTIVE;
-        this.autoRenew = false;
-        this.startDate = LocalDateTime.now();
-        this.pendingCancel = false;
+        status = SubscriptionStatus.ACTIVE;
+        autoRenew = false;
+        startDate = LocalDateTime.now();
+        pendingCancel = false;
     }
 
-    public Subscription(String id, Long userId, SubscriptionType type, Double price, PaymentMethod paymentMethod) {
+    public Subscription(final String id, final Long userId, final SubscriptionType type, final Double price, final PaymentMethod paymentMethod) {
         this();
         this.id = id;
         this.userId = userId;
@@ -57,71 +57,151 @@ public class Subscription {
         VK_PAY, CARD, VOTES
     }
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public String getId() {
+        return id;
+    }
 
-    public Long getUserId() { return userId; }
-    public void setUserId(Long userId) { this.userId = userId; }
+    public void setId(final String id) {
+        this.id = id;
+    }
 
-    public SubscriptionType getType() { return type; }
-    public void setType(SubscriptionType type) { this.type = type; }
+    public Long getUserId() {
+        return userId;
+    }
 
-    public SubscriptionStatus getStatus() { return status; }
-    public void setStatus(SubscriptionStatus status) { this.status = status; }
+    public void setUserId(final Long userId) {
+        this.userId = userId;
+    }
 
-    public LocalDateTime getStartDate() { return startDate; }
-    public void setStartDate(LocalDateTime startDate) { this.startDate = startDate; }
+    public SubscriptionType getType() {
+        return type;
+    }
 
-    public LocalDateTime getEndDate() { return endDate; }
-    public void setEndDate(LocalDateTime endDate) { this.endDate = endDate; }
+    public void setType(final SubscriptionType type) {
+        this.type = type;
+    }
 
-    public Double getPrice() { return price; }
-    public void setPrice(Double price) { this.price = price; }
+    public SubscriptionStatus getStatus() {
+        return status;
+    }
 
-    public PaymentMethod getPaymentMethod() { return paymentMethod; }
-    public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
+    public void setStatus(final SubscriptionStatus status) {
+        this.status = status;
+    }
 
-    public String getPlanId() { return planId; }
-    public void setPlanId(String planId) { this.planId = planId; }
+    public LocalDateTime getStartDate() {
+        return startDate;
+    }
 
-    public String getVkSubscriptionId() { return vkSubscriptionId; }
-    public void setVkSubscriptionId(String vkSubscriptionId) { this.vkSubscriptionId = vkSubscriptionId; }
+    public void setStartDate(final LocalDateTime startDate) {
+        this.startDate = startDate;
+    }
 
-    public Integer getPriceInVotes() { return priceInVotes; }
-    public void setPriceInVotes(Integer priceInVotes) { this.priceInVotes = priceInVotes; }
+    public LocalDateTime getEndDate() {
+        return endDate;
+    }
 
-    public LocalDateTime getNextBillDate() { return nextBillDate; }
-    public void setNextBillDate(LocalDateTime nextBillDate) { this.nextBillDate = nextBillDate; }
+    public void setEndDate(final LocalDateTime endDate) {
+        this.endDate = endDate;
+    }
 
-    public Boolean getPendingCancel() { return pendingCancel; }
-    public void setPendingCancel(Boolean pendingCancel) { this.pendingCancel = pendingCancel; }
+    public Double getPrice() {
+        return price;
+    }
 
-    public String getCancelReason() { return cancelReason; }
-    public void setCancelReason(String cancelReason) { this.cancelReason = cancelReason; }
+    public void setPrice(final Double price) {
+        this.price = price;
+    }
 
-    public Integer getAppOrderId() { return appOrderId; }
-    public void setAppOrderId(Integer appOrderId) { this.appOrderId = appOrderId; }
+    public PaymentMethod getPaymentMethod() {
+        return paymentMethod;
+    }
 
-    public Boolean getAutoRenew() { return autoRenew; }
-    public void setAutoRenew(Boolean autoRenew) { this.autoRenew = autoRenew; }
+    public void setPaymentMethod(final PaymentMethod paymentMethod) {
+        this.paymentMethod = paymentMethod;
+    }
+
+    public String getPlanId() {
+        return planId;
+    }
+
+    public void setPlanId(final String planId) {
+        this.planId = planId;
+    }
+
+    public String getVkSubscriptionId() {
+        return vkSubscriptionId;
+    }
+
+    public void setVkSubscriptionId(final String vkSubscriptionId) {
+        this.vkSubscriptionId = vkSubscriptionId;
+    }
+
+    public Integer getPriceInVotes() {
+        return priceInVotes;
+    }
+
+    public void setPriceInVotes(final Integer priceInVotes) {
+        this.priceInVotes = priceInVotes;
+    }
+
+    public LocalDateTime getNextBillDate() {
+        return nextBillDate;
+    }
+
+    public void setNextBillDate(final LocalDateTime nextBillDate) {
+        this.nextBillDate = nextBillDate;
+    }
+
+    public Boolean getPendingCancel() {
+        return pendingCancel;
+    }
+
+    public void setPendingCancel(final Boolean pendingCancel) {
+        this.pendingCancel = pendingCancel;
+    }
+
+    public String getCancelReason() {
+        return cancelReason;
+    }
+
+    public void setCancelReason(final String cancelReason) {
+        this.cancelReason = cancelReason;
+    }
+
+    public Integer getAppOrderId() {
+        return appOrderId;
+    }
+
+    public void setAppOrderId(final Integer appOrderId) {
+        this.appOrderId = appOrderId;
+    }
+
+    public Boolean getAutoRenew() {
+        return autoRenew;
+    }
+
+    public void setAutoRenew(final Boolean autoRenew) {
+        this.autoRenew = autoRenew;
+    }
 
     public boolean isActive() {
-        LocalDateTime now = LocalDateTime.now();
-        boolean notExpired = endDate == null || endDate.isAfter(now);
+        final LocalDateTime now = LocalDateTime.now();
+        final boolean notExpired = endDate == null || endDate.isAfter(now);
         return status == SubscriptionStatus.ACTIVE && notExpired;
     }
 
     public void cancel() {
-        this.status = SubscriptionStatus.CANCELLED;
-        this.autoRenew = false;
-        this.pendingCancel = false;
-        this.endDate = LocalDateTime.now();
-        this.nextBillDate = null;
+        status = SubscriptionStatus.CANCELLED;
+        autoRenew = false;
+        pendingCancel = false;
+        endDate = LocalDateTime.now();
+        nextBillDate = null;
     }
 
     public void expire() {
-        this.status = SubscriptionStatus.EXPIRED;
-        this.autoRenew = false;
-        this.pendingCancel = false;
+        status = SubscriptionStatus.EXPIRED;
+        autoRenew = false;
+        pendingCancel = false;
     }
 }

@@ -25,17 +25,17 @@ public class ProfileService {
 
     private final UserRepository userRepository;
 
-    public ProfileService(UserRepository userRepository) {
+    public ProfileService(final UserRepository userRepository) {
         this.userRepository = userRepository;
     }
 
-    public ProfileSearchResult searchProfiles(Long viewerId, ProfileFilters rawFilters, int page, int limit) {
-        User viewer = userRepository.findById(viewerId)
+    public ProfileSearchResult searchProfiles(final Long viewerId, final ProfileFilters rawFilters, final int page, final int limit) {
+        final User viewer = userRepository.findById(viewerId)
             .orElseThrow(() -> new RuntimeException("Viewer not found"));
         return searchProfiles(viewer, rawFilters, page, limit);
     }
 
-    public ProfileSearchResult searchProfiles(User viewer, ProfileFilters rawFilters, int page, int limit) {
+    public ProfileSearchResult searchProfiles(final User viewer, final ProfileFilters rawFilters, int page, int limit) {
         if (page < 1) {
             page = 1;
         }
@@ -43,34 +43,34 @@ public class ProfileService {
             limit = 12;
         }
 
-        ProfileFilters filters = normalizeFilters(rawFilters, viewer);
+        final ProfileFilters filters = normalizeFilters(rawFilters, viewer);
 
-        User.Gender genderEnum = toGenderEnum(filters.getGender());
-        List<User> candidates = userRepository.findForMatching(genderEnum, filters.getMinAge(), filters.getMaxAge(), filters.getCity(), filters.isVerifiedOnly(), page, limit * 2).stream()
+        final User.Gender genderEnum = toGenderEnum(filters.getGender());
+        final List<User> candidates = userRepository.findForMatching(genderEnum, filters.getMinAge(), filters.getMaxAge(), filters.getCity(), filters.isVerifiedOnly(), page, limit * 2).stream()
             .filter(user -> !Objects.equals(user.getId(), viewer.getId()))
             .filter(user -> matchesFilters(viewer, user, filters))
             .collect(Collectors.toList());
 
-        Comparator<User> comparator = Comparator
+        final Comparator<User> comparator = Comparator
             .comparingInt((User candidate) -> filters.isPrioritizeCity() && isSameCity(viewer, candidate) ? 0 : 1)
             .thenComparingLong(this::lastSeenRank)
             .thenComparingDouble(candidate -> deterministicOrder(viewer.getId(), candidate.getId()));
 
         candidates.sort(comparator);
 
-        int total = candidates.size();
-        int fromIndex = Math.min((page - 1) * limit, total);
-        int toIndex = Math.min(fromIndex + limit, total);
+        final int total = candidates.size();
+        final int fromIndex = Math.min((page - 1) * limit, total);
+        final int toIndex = Math.min(fromIndex + limit, total);
 
-        List<ProfileCard> cards = candidates.subList(fromIndex, toIndex).stream()
+        final List<ProfileCard> cards = candidates.subList(fromIndex, toIndex).stream()
             .map(candidate -> toProfileCard(viewer, candidate))
             .collect(Collectors.toList());
 
         return new ProfileSearchResult(cards, total);
     }
 
-    public ProfileFilters parseFilters(MultiMap params, User viewer) {
-        ProfileFilters filters = defaultFilters(viewer);
+    public ProfileFilters parseFilters(final MultiMap params, final User viewer) {
+        final ProfileFilters filters = defaultFilters(viewer);
         if (params == null) {
             return filters;
         }
@@ -85,8 +85,8 @@ public class ProfileService {
         return normalizeFilters(filters, viewer);
     }
 
-    public ProfileFilters parseFilters(JsonObject json, User viewer) {
-        ProfileFilters filters = defaultFilters(viewer);
+    public ProfileFilters parseFilters(final JsonObject json, final User viewer) {
+        final ProfileFilters filters = defaultFilters(viewer);
         if (json == null) {
             return filters;
         }
@@ -96,7 +96,7 @@ public class ProfileService {
         filters.setVerifiedOnly(json.getBoolean("verifiedOnly", filters.isVerifiedOnly()));
         filters.setPrioritizeCity(json.getBoolean("prioritizeCity", filters.isPrioritizeCity()));
 
-        JsonArray ageRange = json.getJsonArray("ageRange");
+        final JsonArray ageRange = json.getJsonArray("ageRange");
         if (ageRange != null && ageRange.size() == 2) {
             filters.setMinAge(parseInt(String.valueOf(ageRange.getValue(0)), filters.getMinAge()));
             filters.setMaxAge(parseInt(String.valueOf(ageRange.getValue(1)), filters.getMaxAge()));
@@ -105,7 +105,7 @@ public class ProfileService {
         return normalizeFilters(filters, viewer);
     }
 
-    private User.Gender toGenderEnum(String gender) {
+    private User.Gender toGenderEnum(final String gender) {
         if (gender == null) {
             return null;
         }
@@ -122,21 +122,21 @@ public class ProfileService {
         }
     }
 
-    public ProfileCard toProfileCard(User viewer, User candidate) {
-        boolean sameCity = isSameCity(viewer, candidate);
-        String lastSeen = candidate.getLastSeenDateTime() != null ?
+    public ProfileCard toProfileCard(final User viewer, final User candidate) {
+        final boolean sameCity = isSameCity(viewer, candidate);
+        final String lastSeen = candidate.getLastSeenDateTime() != null ?
             DateTimeUtils.formatToIso(candidate.getLastSeenDateTime()) :
             null;
 
-        boolean viewerHasSubscription = viewer != null
+        final boolean viewerHasSubscription = viewer != null
             && viewer.getSubscription() != null
             && Boolean.TRUE.equals(viewer.getSubscription().getIsActive());
-        boolean hasActiveSubscription = candidate.getSubscription() != null
+        final boolean hasActiveSubscription = candidate.getSubscription() != null
             && Boolean.TRUE.equals(candidate.getSubscription().getIsActive());
-        int baseCost = candidate.getProfileCost() != null
+        final int baseCost = candidate.getProfileCost() != null
             ? candidate.getProfileCost()
             : AppConfig.ANONYMOUS_CHAT_CREATION_COST;
-        int cost = viewerHasSubscription ? 0 : baseCost;
+        final int cost = viewerHasSubscription ? 0 : baseCost;
 
         return new ProfileCard(
             candidate.getId(),
@@ -157,7 +157,7 @@ public class ProfileService {
         );
     }
 
-    public boolean matchesFilters(User viewer, User candidate, ProfileFilters filters) {
+    public boolean matchesFilters(final User viewer, final User candidate, final ProfileFilters filters) {
         if (filters == null) {
             return true;
         }
@@ -172,18 +172,16 @@ public class ProfileService {
             return false;
         }
 
-        Integer age = resolveAge(candidate);
+        final Integer age = resolveAge(candidate);
         if (age != null) {
-            if (age < filters.getMinAge() || age > filters.getMaxAge()) {
-                return false;
-            }
+            return age >= filters.getMinAge() && age <= filters.getMaxAge();
         }
 
         return true;
     }
 
-    public ProfileFilters normalizeFilters(ProfileFilters filters, User viewer) {
-        ProfileFilters result = filters != null ? filters : defaultFilters(viewer);
+    public ProfileFilters normalizeFilters(final ProfileFilters filters, final User viewer) {
+        final ProfileFilters result = filters != null ? filters : defaultFilters(viewer);
 
         int minAge = Math.max(MIN_AGE, result.getMinAge());
         int maxAge = Math.min(MAX_AGE, result.getMaxAge());
@@ -209,7 +207,7 @@ public class ProfileService {
         return result;
     }
 
-    private Integer resolveAge(User user) {
+    private Integer resolveAge(final User user) {
         if (user == null) {
             return null;
         }
@@ -217,7 +215,7 @@ public class ProfileService {
             return user.getAge();
         }
         if (user.getBirthDate() != null) {
-            LocalDate today = LocalDate.now();
+            final LocalDate today = LocalDate.now();
             int age = today.getYear() - user.getBirthDate().getYear();
             if (user.getBirthDate().plusYears(age).isAfter(today)) {
                 age -= 1;
@@ -227,8 +225,8 @@ public class ProfileService {
         return null;
     }
 
-    private ProfileFilters defaultFilters(User viewer) {
-        ProfileFilters filters = new ProfileFilters();
+    private ProfileFilters defaultFilters(final User viewer) {
+        final ProfileFilters filters = new ProfileFilters();
         filters.setGender("any");
         filters.setMinAge(MIN_AGE);
         filters.setMaxAge(MAX_AGE);
@@ -238,44 +236,44 @@ public class ProfileService {
         return filters;
     }
 
-    private boolean isSameCity(User viewer, User candidate) {
+    private boolean isSameCity(final User viewer, final User candidate) {
         if (viewer == null || viewer.getCity() == null || candidate.getCity() == null) {
             return false;
         }
         return viewer.getCity().equalsIgnoreCase(candidate.getCity());
     }
 
-    private long lastSeenRank(User user) {
-        LocalDateTime reference = user.isOnline() ? LocalDateTime.now() : user.getLastSeenDateTime();
+    private long lastSeenRank(final User user) {
+        final LocalDateTime reference = user.isOnline() ? LocalDateTime.now() : user.getLastSeenDateTime();
         if (reference == null) {
             return Long.MAX_VALUE;
         }
         return Long.MAX_VALUE - reference.toEpochSecond(ZoneOffset.UTC);
     }
 
-    private double deterministicOrder(Long viewerId, Long candidateId) {
-        long seed = Objects.hash(viewerId, candidateId, LocalDate.now().getDayOfYear());
-        Random random = new Random(seed);
+    private double deterministicOrder(final Long viewerId, final Long candidateId) {
+        final long seed = Objects.hash(viewerId, candidateId, LocalDate.now().getDayOfYear());
+        final Random random = new Random(seed);
         return random.nextDouble();
     }
 
-    private int parseInt(String value, int defaultValue) {
+    private int parseInt(final String value, final int defaultValue) {
         try {
             return Integer.parseInt(value);
-        } catch (NumberFormatException e) {
+        } catch (final NumberFormatException e) {
             return defaultValue;
         }
     }
 
-    private String trimToNull(String value) {
+    private String trimToNull(final String value) {
         if (value == null) {
             return null;
         }
-        String trimmed = value.trim();
+        final String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private String safeLower(String value) {
+    private String safeLower(final String value) {
         return value != null ? value.toLowerCase() : null;
     }
 
@@ -287,23 +285,53 @@ public class ProfileService {
         private boolean verifiedOnly;
         private boolean prioritizeCity;
 
-        public String getGender() { return gender; }
-        public void setGender(String gender) { this.gender = gender; }
+        public String getGender() {
+            return gender;
+        }
 
-        public int getMinAge() { return minAge; }
-        public void setMinAge(int minAge) { this.minAge = minAge; }
+        public void setGender(final String gender) {
+            this.gender = gender;
+        }
 
-        public int getMaxAge() { return maxAge; }
-        public void setMaxAge(int maxAge) { this.maxAge = maxAge; }
+        public int getMinAge() {
+            return minAge;
+        }
 
-        public String getCity() { return city; }
-        public void setCity(String city) { this.city = city; }
+        public void setMinAge(final int minAge) {
+            this.minAge = minAge;
+        }
 
-        public boolean isVerifiedOnly() { return verifiedOnly; }
-        public void setVerifiedOnly(boolean verifiedOnly) { this.verifiedOnly = verifiedOnly; }
+        public int getMaxAge() {
+            return maxAge;
+        }
 
-        public boolean isPrioritizeCity() { return prioritizeCity; }
-        public void setPrioritizeCity(boolean prioritizeCity) { this.prioritizeCity = prioritizeCity; }
+        public void setMaxAge(final int maxAge) {
+            this.maxAge = maxAge;
+        }
+
+        public String getCity() {
+            return city;
+        }
+
+        public void setCity(final String city) {
+            this.city = city;
+        }
+
+        public boolean isVerifiedOnly() {
+            return verifiedOnly;
+        }
+
+        public void setVerifiedOnly(final boolean verifiedOnly) {
+            this.verifiedOnly = verifiedOnly;
+        }
+
+        public boolean isPrioritizeCity() {
+            return prioritizeCity;
+        }
+
+        public void setPrioritizeCity(final boolean prioritizeCity) {
+            this.prioritizeCity = prioritizeCity;
+        }
 
         @Override
         public String toString() {
@@ -318,70 +346,9 @@ public class ProfileService {
         }
     }
 
-    public static class ProfileCard {
-        private final Long id;
-        private final String firstName;
-        private final String lastName;
-        private final Integer age;
-        private final String city;
-        private final String country;
-        private final String avatarUrl;
-        private final boolean isVerified;
-        private final boolean isOnline;
-        private final String lastSeen;
-        private final String bio;
-        private final String gender;
-        private final int cost;
-        private final boolean sameCity;
-        private final boolean hasActiveSubscription;
-
-        public ProfileCard(Long id, String firstName, String lastName, Integer age, String city, String country,
-                           String avatarUrl, boolean isVerified, boolean isOnline, String lastSeen,
-                           String bio, String gender, int cost, boolean sameCity, boolean hasActiveSubscription) {
-            this.id = id;
-            this.firstName = firstName;
-            this.lastName = lastName;
-            this.age = age;
-            this.city = city;
-            this.country = country;
-            this.avatarUrl = avatarUrl;
-            this.isVerified = isVerified;
-            this.isOnline = isOnline;
-            this.lastSeen = lastSeen;
-            this.bio = bio;
-            this.gender = gender;
-            this.cost = cost;
-            this.sameCity = sameCity;
-            this.hasActiveSubscription = hasActiveSubscription;
-        }
-
-        public Long getId() { return id; }
-        public String getFirstName() { return firstName; }
-        public String getLastName() { return lastName; }
-        public Integer getAge() { return age; }
-        public String getCity() { return city; }
-        public String getCountry() { return country; }
-        public String getAvatarUrl() { return avatarUrl; }
-        public boolean getIsVerified() { return isVerified; }
-        public boolean getIsOnline() { return isOnline; }
-        public String getLastSeen() { return lastSeen; }
-        public String getBio() { return bio; }
-        public String getGender() { return gender; }
-        public int getCost() { return cost; }
-        public boolean getSameCity() { return sameCity; }
-        public boolean getHasActiveSubscription() { return hasActiveSubscription; }
+    public record ProfileCard(Long id, String firstName, String lastName, Integer age, String city, String country, String avatarUrl, boolean isVerified, boolean isOnline, String lastSeen, String bio, String gender, int cost, boolean sameCity, boolean hasActiveSubscription) {
     }
 
-    public static class ProfileSearchResult {
-        private final List<ProfileCard> profiles;
-        private final int total;
-
-        public ProfileSearchResult(List<ProfileCard> profiles, int total) {
-            this.profiles = profiles;
-            this.total = total;
-        }
-
-        public List<ProfileCard> getProfiles() { return profiles; }
-        public int getTotal() { return total; }
+    public record ProfileSearchResult(List<ProfileCard> profiles, int total) {
     }
 }

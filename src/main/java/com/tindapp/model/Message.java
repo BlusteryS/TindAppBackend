@@ -29,15 +29,15 @@ public class Message {
     private Map<String, MessageTranslation> translations;
 
     public Message() {
-        this.isRead = false;
-        this.isEdited = false;
-        this.type = MessageType.TEXT;
-        this.createdAt = DateTimeUtils.nowAsIso();
-        this.updatedAt = DateTimeUtils.nowAsIso();
-        this.translations = new HashMap<>();
+        isRead = false;
+        isEdited = false;
+        type = MessageType.TEXT;
+        createdAt = DateTimeUtils.nowAsIso();
+        updatedAt = DateTimeUtils.nowAsIso();
+        translations = new HashMap<>();
     }
 
-    public Message(String id, String chatId, Long senderId, String text) {
+    public Message(final String id, final String chatId, final Long senderId, final String text) {
         this();
         this.id = id;
         this.chatId = chatId;
@@ -54,22 +54,38 @@ public class Message {
         private String text;
         private String senderName;
 
-        public ReplyInfo() {}
+        public ReplyInfo() {
+        }
 
-        public ReplyInfo(String messageId, String text, String senderName) {
+        public ReplyInfo(final String messageId, final String text, final String senderName) {
             this.messageId = messageId;
             this.text = text;
             this.senderName = senderName;
         }
 
-        public String getMessageId() { return messageId; }
-        public void setMessageId(String messageId) { this.messageId = messageId; }
+        public String getMessageId() {
+            return messageId;
+        }
 
-        public String getText() { return text; }
-        public void setText(String text) { this.text = text; }
+        public void setMessageId(final String messageId) {
+            this.messageId = messageId;
+        }
 
-        public String getSenderName() { return senderName; }
-        public void setSenderName(String senderName) { this.senderName = senderName; }
+        public String getText() {
+            return text;
+        }
+
+        public void setText(final String text) {
+            this.text = text;
+        }
+
+        public String getSenderName() {
+            return senderName;
+        }
+
+        public void setSenderName(final String senderName) {
+            this.senderName = senderName;
+        }
     }
 
     public static class MessageAttachment {
@@ -77,14 +93,15 @@ public class Message {
         private String url;
         private String preview;
 
-        public MessageAttachment() {}
+        public MessageAttachment() {
+        }
 
-        public MessageAttachment(AttachmentType type, String url) {
+        public MessageAttachment(final AttachmentType type, final String url) {
             this.type = type;
             this.url = url;
         }
 
-        public MessageAttachment(AttachmentType type, String url, String preview) {
+        public MessageAttachment(final AttachmentType type, final String url, final String preview) {
             this(type, url);
             this.preview = preview;
         }
@@ -93,14 +110,29 @@ public class Message {
             IMAGE, STICKER
         }
 
-        public AttachmentType getType() { return type; }
-        public void setType(AttachmentType type) { this.type = type; }
+        public AttachmentType getType() {
+            return type;
+        }
 
-        public String getUrl() { return url; }
-        public void setUrl(String url) { this.url = url; }
+        public void setType(final AttachmentType type) {
+            this.type = type;
+        }
 
-        public String getPreview() { return preview; }
-        public void setPreview(String preview) { this.preview = preview; }
+        public String getUrl() {
+            return url;
+        }
+
+        public void setUrl(final String url) {
+            this.url = url;
+        }
+
+        public String getPreview() {
+            return preview;
+        }
+
+        public void setPreview(final String preview) {
+            this.preview = preview;
+        }
     }
 
     public static class MessageTranslation {
@@ -108,87 +140,164 @@ public class Message {
         private String from;
         private String text;
 
-        public MessageTranslation() {}
+        public MessageTranslation() {
+        }
 
-        public MessageTranslation(String to, String from, String text) {
+        public MessageTranslation(final String to, final String from, final String text) {
             this.to = to;
             this.from = from;
             this.text = text;
         }
 
-        public String getTo() { return to; }
-        public void setTo(String to) { this.to = to; }
+        public String getTo() {
+            return to;
+        }
 
-        public String getFrom() { return from; }
-        public void setFrom(String from) { this.from = from; }
+        public void setTo(final String to) {
+            this.to = to;
+        }
 
-        public String getText() { return text; }
-        public void setText(String text) { this.text = text; }
+        public String getFrom() {
+            return from;
+        }
+
+        public void setFrom(final String from) {
+            this.from = from;
+        }
+
+        public String getText() {
+            return text;
+        }
+
+        public void setText(final String text) {
+            this.text = text;
+        }
     }
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public String getId() {
+        return id;
+    }
 
-    public String getChatId() { return chatId; }
-    public void setChatId(String chatId) { this.chatId = chatId; }
+    public void setId(final String id) {
+        this.id = id;
+    }
 
-    public Long getSenderId() { return senderId; }
-    public void setSenderId(Long senderId) { this.senderId = senderId; }
+    public String getChatId() {
+        return chatId;
+    }
 
-    public String getText() { return text; }
-    public void setText(String text) { this.text = text; }
+    public void setChatId(final String chatId) {
+        this.chatId = chatId;
+    }
 
-    public MessageType getType() { return type; }
-    public void setType(MessageType type) { this.type = type; }
+    public Long getSenderId() {
+        return senderId;
+    }
 
-    public ReplyInfo getReplyTo() { return replyTo; }
-    public void setReplyTo(ReplyInfo replyTo) { this.replyTo = replyTo; }
+    public void setSenderId(final Long senderId) {
+        this.senderId = senderId;
+    }
 
-    public List<MessageAttachment> getAttachments() { return attachments; }
-    public void setAttachments(List<MessageAttachment> attachments) { this.attachments = attachments; }
+    public String getText() {
+        return text;
+    }
 
-    public Boolean getIsRead() { return isRead; }
-    public void setIsRead(Boolean isRead) { this.isRead = isRead; }
+    public void setText(final String text) {
+        this.text = text;
+    }
 
-    public Boolean getIsEdited() { return isEdited; }
-    public void setIsEdited(Boolean isEdited) { this.isEdited = isEdited; }
+    public MessageType getType() {
+        return type;
+    }
 
-    public String getCreatedAt() { return createdAt; }
-    public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+    public void setType(final MessageType type) {
+        this.type = type;
+    }
 
-    public String getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
-    public Map<String, MessageTranslation> getTranslations() { return translations; }
-    public void setTranslations(Map<String, MessageTranslation> translations) { this.translations = translations; }
+    public ReplyInfo getReplyTo() {
+        return replyTo;
+    }
 
-    public void addTranslation(MessageTranslation translation) {
+    public void setReplyTo(final ReplyInfo replyTo) {
+        this.replyTo = replyTo;
+    }
+
+    public List<MessageAttachment> getAttachments() {
+        return attachments;
+    }
+
+    public void setAttachments(final List<MessageAttachment> attachments) {
+        this.attachments = attachments;
+    }
+
+    public Boolean getIsRead() {
+        return isRead;
+    }
+
+    public void setIsRead(final Boolean isRead) {
+        this.isRead = isRead;
+    }
+
+    public Boolean getIsEdited() {
+        return isEdited;
+    }
+
+    public void setIsEdited(final Boolean isEdited) {
+        this.isEdited = isEdited;
+    }
+
+    public String getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(final String createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public String getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(final String updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public Map<String, MessageTranslation> getTranslations() {
+        return translations;
+    }
+
+    public void setTranslations(final Map<String, MessageTranslation> translations) {
+        this.translations = translations;
+    }
+
+    public void addTranslation(final MessageTranslation translation) {
         if (translation == null || translation.getTo() == null) {
             return;
         }
-        if (this.translations == null) {
-            this.translations = new HashMap<>();
+        if (translations == null) {
+            translations = new HashMap<>();
         }
-        this.translations.put(translation.getTo().toLowerCase(), translation);
+        translations.put(translation.getTo().toLowerCase(), translation);
     }
 
     public void clearTranslations() {
-        if (this.translations != null) {
-            this.translations.clear();
+        if (translations != null) {
+            translations.clear();
         }
     }
 
     public void markAsRead() {
-        this.isRead = true;
-        this.updatedAt = DateTimeUtils.nowAsIso();
+        isRead = true;
+        updatedAt = DateTimeUtils.nowAsIso();
     }
 
     public void markAsEdited() {
-        this.isEdited = true;
-        this.updatedAt = DateTimeUtils.nowAsIso();
+        isEdited = true;
+        updatedAt = DateTimeUtils.nowAsIso();
     }
 
-    public void updateText(String newText) {
-        this.text = newText;
-        this.markAsEdited();
+    public void updateText(final String newText) {
+        text = newText;
+        markAsEdited();
     }
 }

@@ -17,13 +17,13 @@ public class ReportService {
     private final ReportRepository reportRepository;
     private final UserRepository userRepository;
 
-    public ReportService(ReportRepository reportRepository, UserRepository userRepository) {
+    public ReportService(final ReportRepository reportRepository, final UserRepository userRepository) {
         this.reportRepository = reportRepository;
         this.userRepository = userRepository;
     }
 
-    public Report createReport(Long reporterId, Long targetId, String chatId, String messageId,
-                              Report.ReportReason reason, String description) {
+    public Report createReport(final Long reporterId, final Long targetId, final String chatId, final String messageId,
+                               final Report.ReportReason reason, final String description) {
         userRepository.findById(reporterId)
             .orElseThrow(() -> new RuntimeException("Reporter not found"));
         userRepository.findById(targetId)
@@ -33,8 +33,8 @@ public class ReportService {
             throw new RuntimeException("Report already exists for this user");
         }
 
-        String reportId = UUID.randomUUID().toString();
-        Report report = new Report(reportId, reporterId, targetId, reason);
+        final String reportId = UUID.randomUUID().toString();
+        final Report report = new Report(reportId, reporterId, targetId, reason);
         report.setChatId(chatId);
         report.setMessageId(messageId);
         report.setDescription(description);
@@ -42,11 +42,11 @@ public class ReportService {
         return reportRepository.save(report);
     }
 
-    public List<Report> getUserReports(Long userId, int page, int limit) {
+    public List<Report> getUserReports(final Long userId, final int page, final int limit) {
         return reportRepository.findByReporterId(userId);
     }
 
-    public List<Report> getAllReports(int page, int limit) {
+    public List<Report> getAllReports(final int page, final int limit) {
         return reportRepository.findAll(page, limit);
     }
 
@@ -54,7 +54,7 @@ public class ReportService {
         return reportRepository.count();
     }
 
-    public List<Report> getReportsAgainstUser(Long userId) {
+    public List<Report> getReportsAgainstUser(final Long userId) {
         return reportRepository.findByTargetId(userId);
     }
 
@@ -62,44 +62,44 @@ public class ReportService {
         return reportRepository.findPendingReports();
     }
 
-    public List<Report> getReportsByStatus(Report.ReportStatus status) {
+    public List<Report> getReportsByStatus(final Report.ReportStatus status) {
         return reportRepository.findByStatus(status);
     }
 
-    public void updateReportStatus(String reportId, Report.ReportStatus status) {
-        Report report = reportRepository.findById(reportId)
+    public void updateReportStatus(final String reportId, final Report.ReportStatus status) {
+        final Report report = reportRepository.findById(reportId)
             .orElseThrow(() -> new RuntimeException("Report not found"));
 
         report.setStatus(status);
         reportRepository.save(report);
     }
 
-    public void resolveReport(String reportId) {
+    public void resolveReport(final String reportId) {
         updateReportStatus(reportId, Report.ReportStatus.RESOLVED);
     }
 
-    public void dismissReport(String reportId) {
+    public void dismissReport(final String reportId) {
         updateReportStatus(reportId, Report.ReportStatus.DISMISSED);
     }
 
-    public long getReportCountForUser(Long userId) {
+    public long getReportCountForUser(final Long userId) {
         return reportRepository.countByTargetId(userId);
     }
 
-    public boolean shouldBlockUser(Long userId) {
-        long reportCount = getReportCountForUser(userId);
+    public boolean shouldBlockUser(final Long userId) {
+        final long reportCount = getReportCountForUser(userId);
         return reportCount >= 5; // Блокируем после 5 жалоб
     }
 
-    public Optional<Report> getReportById(String reportId) {
+    public Optional<Report> getReportById(final String reportId) {
         return reportRepository.findById(reportId);
     }
 
-    public List<Report> getReportsByReason(Report.ReportReason reason) {
+    public List<Report> getReportsByReason(final Report.ReportReason reason) {
         return reportRepository.findByReason(reason);
     }
 
-    public void deleteReport(String reportId) {
+    public void deleteReport(final String reportId) {
         reportRepository.deleteById(reportId);
     }
 }

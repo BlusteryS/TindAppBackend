@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 
 public class PostgresNotificationRepository extends AbstractPostgresRepository implements NotificationRepository {
 
-    public PostgresNotificationRepository(PgPool client) {
+    public PostgresNotificationRepository(final PgPool client) {
         super(client);
         ensureTable("""
             CREATE TABLE IF NOT EXISTS notifications (
@@ -28,14 +28,14 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public Notification save(Notification notification) {
+    public Notification save(final Notification notification) {
         if (notification == null) {
             throw new IllegalArgumentException("Notification is null");
         }
         if (notification.getId() == null) {
             notification.setId(UUID.randomUUID().toString());
         }
-        JsonObject payload = toJson(notification);
+        final JsonObject payload = toJson(notification);
         execute(
             "INSERT INTO notifications (id, data) VALUES ($1, $2::jsonb) " +
                 "ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
@@ -45,11 +45,11 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public Optional<Notification> findById(String id) {
+    public Optional<Notification> findById(final String id) {
         if (id == null) {
             return Optional.empty();
         }
-        RowSet<Row> rows = execute("SELECT data FROM notifications WHERE id = $1 LIMIT 1", Tuple.of(id));
+        final RowSet<Row> rows = execute("SELECT data FROM notifications WHERE id = $1 LIMIT 1", Tuple.of(id));
         if (!rows.iterator().hasNext()) {
             return Optional.empty();
         }
@@ -58,10 +58,10 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
 
     @Override
     public List<Notification> findAll() {
-        RowSet<Row> rows = execute("SELECT data FROM notifications");
-        List<Notification> result = new ArrayList<>();
-        for (Row row : rows) {
-            Notification notification = mapRow(row, Notification.class);
+        final RowSet<Row> rows = execute("SELECT data FROM notifications");
+        final List<Notification> result = new ArrayList<>();
+        for (final Row row : rows) {
+            final Notification notification = mapRow(row, Notification.class);
             if (notification != null) {
                 result.add(notification);
             }
@@ -70,12 +70,12 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public List<Notification> findAll(int page, int limit) {
-        List<Notification> all = findAll().stream()
+    public List<Notification> findAll(final int page, final int limit) {
+        final List<Notification> all = findAll().stream()
             .sorted(Comparator.comparing(Notification::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
             .collect(Collectors.toList());
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, all.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, all.size());
         if (start >= all.size()) {
             return new ArrayList<>();
         }
@@ -83,7 +83,7 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public List<Notification> findByUserId(Long userId) {
+    public List<Notification> findByUserId(final Long userId) {
         return findAll().stream()
             .filter(notification -> userId.equals(notification.getUserId()))
             .sorted(Comparator.comparing(Notification::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
@@ -91,10 +91,10 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public List<Notification> findByUserId(Long userId, int page, int limit) {
-        List<Notification> userNotifications = findByUserId(userId);
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, userNotifications.size());
+    public List<Notification> findByUserId(final Long userId, final int page, final int limit) {
+        final List<Notification> userNotifications = findByUserId(userId);
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, userNotifications.size());
         if (start >= userNotifications.size()) {
             return new ArrayList<>();
         }
@@ -102,7 +102,7 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public List<Notification> findUnreadByUserId(Long userId) {
+    public List<Notification> findUnreadByUserId(final Long userId) {
         return findAll().stream()
             .filter(notification -> userId.equals(notification.getUserId()))
             .filter(notification -> Boolean.FALSE.equals(notification.getIsRead()))
@@ -111,7 +111,7 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public void markAsRead(String notificationId) {
+    public void markAsRead(final String notificationId) {
         findById(notificationId).ifPresent(notification -> {
             notification.markAsRead();
             save(notification);
@@ -119,7 +119,7 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public void markAllAsReadByUserId(Long userId) {
+    public void markAllAsReadByUserId(final Long userId) {
         findByUserId(userId).forEach(notification -> {
             notification.markAsRead();
             save(notification);
@@ -127,7 +127,7 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public void markAsReadByIds(List<String> notificationIds) {
+    public void markAsReadByIds(final List<String> notificationIds) {
         if (notificationIds == null || notificationIds.isEmpty()) {
             return;
         }
@@ -135,7 +135,7 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public long countUnreadByUserId(Long userId) {
+    public long countUnreadByUserId(final Long userId) {
         return findAll().stream()
             .filter(notification -> userId.equals(notification.getUserId()))
             .filter(notification -> Boolean.FALSE.equals(notification.getIsRead()))
@@ -143,7 +143,7 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public List<Notification> findByType(Notification.NotificationType type) {
+    public List<Notification> findByType(final Notification.NotificationType type) {
         return findAll().stream()
             .filter(notification -> type.equals(notification.getType()))
             .sorted(Comparator.comparing(Notification::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
@@ -151,25 +151,25 @@ public class PostgresNotificationRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public void deleteByUserId(Long userId) {
+    public void deleteByUserId(final Long userId) {
         findByUserId(userId).forEach(notification -> deleteById(notification.getId()));
     }
 
     @Override
-    public void deleteById(String id) {
+    public void deleteById(final String id) {
         execute("DELETE FROM notifications WHERE id = $1", Tuple.of(id));
     }
 
     @Override
-    public boolean existsById(String id) {
-        RowSet<Row> rows = execute("SELECT 1 FROM notifications WHERE id = $1 LIMIT 1", Tuple.of(id));
+    public boolean existsById(final String id) {
+        final RowSet<Row> rows = execute("SELECT 1 FROM notifications WHERE id = $1 LIMIT 1", Tuple.of(id));
         return rows.iterator().hasNext();
     }
 
     @Override
     public long count() {
-        RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM notifications");
-        Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
+        final RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM notifications");
+        final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
         return row != null ? row.getLong("cnt") : 0L;
     }
 }

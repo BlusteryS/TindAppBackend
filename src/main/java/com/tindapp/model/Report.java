@@ -23,11 +23,11 @@ public class Report {
     private LocalDateTime createdAt;
 
     public Report() {
-        this.status = ReportStatus.PENDING;
-        this.createdAt = LocalDateTime.now();
+        status = ReportStatus.PENDING;
+        createdAt = LocalDateTime.now();
     }
 
-    public Report(String id, Long reporterId, Long targetId, ReportReason reason) {
+    public Report(final String id, final Long reporterId, final Long targetId, final ReportReason reason) {
         this();
         this.id = id;
         this.reporterId = reporterId;
@@ -52,42 +52,87 @@ public class Report {
         PENDING, REVIEWED, RESOLVED, DISMISSED
     }
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public String getId() {
+        return id;
+    }
 
-    public Long getReporterId() { return reporterId; }
-    public void setReporterId(Long reporterId) { this.reporterId = reporterId; }
+    public void setId(final String id) {
+        this.id = id;
+    }
 
-    public Long getTargetId() { return targetId; }
-    public void setTargetId(Long targetId) { this.targetId = targetId; }
+    public Long getReporterId() {
+        return reporterId;
+    }
 
-    public String getChatId() { return chatId; }
-    public void setChatId(String chatId) { this.chatId = chatId; }
+    public void setReporterId(final Long reporterId) {
+        this.reporterId = reporterId;
+    }
 
-    public String getMessageId() { return messageId; }
-    public void setMessageId(String messageId) { this.messageId = messageId; }
+    public Long getTargetId() {
+        return targetId;
+    }
 
-    public ReportReason getReason() { return reason; }
-    public void setReason(ReportReason reason) { this.reason = reason; }
+    public void setTargetId(final Long targetId) {
+        this.targetId = targetId;
+    }
 
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
+    public String getChatId() {
+        return chatId;
+    }
 
-    public ReportStatus getStatus() { return status; }
-    public void setStatus(ReportStatus status) { this.status = status; }
+    public void setChatId(final String chatId) {
+        this.chatId = chatId;
+    }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public String getMessageId() {
+        return messageId;
+    }
+
+    public void setMessageId(final String messageId) {
+        this.messageId = messageId;
+    }
+
+    public ReportReason getReason() {
+        return reason;
+    }
+
+    public void setReason(final ReportReason reason) {
+        this.reason = reason;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(final String description) {
+        this.description = description;
+    }
+
+    public ReportStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(final ReportStatus status) {
+        this.status = status;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(final LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 
     public void resolve() {
-        this.status = ReportStatus.RESOLVED;
+        status = ReportStatus.RESOLVED;
     }
 
     public void dismiss() {
-        this.status = ReportStatus.DISMISSED;
+        status = ReportStatus.DISMISSED;
     }
 
     public void review() {
-        this.status = ReportStatus.REVIEWED;
+        status = ReportStatus.REVIEWED;
     }
 }

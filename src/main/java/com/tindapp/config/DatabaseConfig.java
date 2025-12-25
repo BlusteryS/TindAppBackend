@@ -15,14 +15,14 @@ public class DatabaseConfig {
     private final int maxPoolSize;
 
     private DatabaseConfig(
-        boolean enabled,
-        String host,
-        int port,
-        String database,
-        String user,
-        String password,
-        boolean ssl,
-        int maxPoolSize
+        final boolean enabled,
+        final String host,
+        final int port,
+        final String database,
+        final String user,
+        final String password,
+        final boolean ssl,
+        final int maxPoolSize
     ) {
         this.enabled = enabled;
         this.host = host;
@@ -35,14 +35,14 @@ public class DatabaseConfig {
     }
 
     public static DatabaseConfig fromEnvironment() {
-        boolean enabled = getEnvBool("DB_ENABLED", true);
-        String host = System.getenv("DB_HOST");
-        int port = getEnvInt("DB_PORT", 5432);
-        String database = System.getenv("DB_NAME");
-        String user = System.getenv("DB_USER");
-        String password = System.getenv("DB_PASSWORD");
-        boolean ssl = getEnvBool("DB_SSL", false);
-        int maxPoolSize = getEnvInt("DB_POOL_SIZE", 8);
+        final boolean enabled = getEnvBool("DB_ENABLED", true);
+        final String host = System.getenv("DB_HOST");
+        final int port = getEnvInt("DB_PORT", 5432);
+        final String database = System.getenv("DB_NAME");
+        final String user = System.getenv("DB_USER");
+        final String password = System.getenv("DB_PASSWORD");
+        final boolean ssl = getEnvBool("DB_SSL", false);
+        final int maxPoolSize = getEnvInt("DB_POOL_SIZE", 8);
 
         return new DatabaseConfig(enabled, host, port, database, user, password, ssl, maxPoolSize);
     }
@@ -71,27 +71,27 @@ public class DatabaseConfig {
             host, port, database, user, ssl);
     }
 
-    private static String getEnv(String key, String defaultValue) {
-        String value = System.getenv(key);
+    private static String getEnv(final String key, final String defaultValue) {
+        final String value = System.getenv(key);
         return (value == null || value.isBlank()) ? defaultValue : value;
     }
 
-    private static boolean getEnvBool(String key, boolean defaultValue) {
-        String value = System.getenv(key);
+    private static boolean getEnvBool(final String key, final boolean defaultValue) {
+        final String value = System.getenv(key);
         if (value == null || value.isBlank()) {
             return defaultValue;
         }
         return Boolean.parseBoolean(value);
     }
 
-    private static int getEnvInt(String key, int defaultValue) {
-        String value = System.getenv(key);
+    private static int getEnvInt(final String key, final int defaultValue) {
+        final String value = System.getenv(key);
         if (value == null || value.isBlank()) {
             return defaultValue;
         }
         try {
             return Integer.parseInt(value);
-        } catch (NumberFormatException e) {
+        } catch (final NumberFormatException e) {
             return defaultValue;
         }
     }

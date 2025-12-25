@@ -46,13 +46,13 @@ public class VkGroupNotificationService {
     private final String accessToken;
     private final long groupId;
 
-    public VkGroupNotificationService(String accessToken, long groupId) {
-        this.httpClient = HttpClient.newHttpClient();
+    public VkGroupNotificationService(final String accessToken, final long groupId) {
+        httpClient = HttpClient.newHttpClient();
         this.accessToken = accessToken;
         this.groupId = groupId;
     }
 
-    public VkSendResult sendMessage(Long vkUserId, String message) {
+    public VkSendResult sendMessage(final Long vkUserId, final String message) {
         if (vkUserId == null) {
             logger.warn("Cannot send VK notification: vkUserId is null");
             return VkSendResult.FAILED;
@@ -63,27 +63,27 @@ public class VkGroupNotificationService {
         }
 
         try {
-            long randomId = ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
-            String payload = buildPayload(vkUserId, message, randomId);
+            final long randomId = ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
+            final String payload = buildPayload(vkUserId, message, randomId);
 
-            HttpRequest request = HttpRequest.newBuilder()
+            final HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(API_URL))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(payload))
                 .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            String body = response.body();
+            final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            final String body = response.body();
             if (body == null || body.isBlank()) {
                 logger.warn("Empty response from VK API when sending message");
                 return VkSendResult.FAILED;
             }
 
-            JsonObject json = new JsonObject(body);
+            final JsonObject json = new JsonObject(body);
             if (json.containsKey("error")) {
-                JsonObject error = json.getJsonObject("error");
-                int errorCode = error.getInteger("error_code", -1);
-                String errorMessage = error.getString("error_msg", "Unknown error");
+                final JsonObject error = json.getJsonObject("error");
+                final int errorCode = error.getInteger("error_code", -1);
+                final String errorMessage = error.getString("error_msg", "Unknown error");
                 logger.warn("VK API error (code={}): {}", errorCode, errorMessage);
 
                 if (PERMISSION_ERRORS.contains(errorCode)) {
@@ -98,14 +98,14 @@ public class VkGroupNotificationService {
 
             logger.warn("Unexpected VK API response: {}", body);
             return VkSendResult.FAILED;
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.error("Failed to send VK community notification", e);
             return VkSendResult.FAILED;
         }
     }
 
-    private String buildPayload(Long vkUserId, String message, long randomId) {
-        StringBuilder sb = new StringBuilder();
+    private String buildPayload(final Long vkUserId, final String message, final long randomId) {
+        final StringBuilder sb = new StringBuilder();
         appendParam(sb, "user_id", vkUserId.toString());
         appendParam(sb, "random_id", String.valueOf(randomId));
         appendParam(sb, "message", message);
@@ -116,7 +116,7 @@ public class VkGroupNotificationService {
         return sb.toString();
     }
 
-    private void appendParam(StringBuilder sb, String key, String value) {
+    private void appendParam(final StringBuilder sb, final String key, final String value) {
         if (sb.length() > 0) {
             sb.append('&');
         }

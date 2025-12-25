@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 
 public class PostgresMessageRepository extends AbstractPostgresRepository implements MessageRepository {
 
-    public PostgresMessageRepository(PgPool client) {
+    public PostgresMessageRepository(final PgPool client) {
         super(client);
         ensureTable("""
             CREATE TABLE IF NOT EXISTS messages (
@@ -30,7 +30,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public Message save(Message message) {
+    public Message save(final Message message) {
         if (message == null) {
             throw new IllegalArgumentException("Message is null");
         }
@@ -42,7 +42,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
         }
         message.setUpdatedAt(DateTimeUtils.nowAsIso());
 
-        JsonObject payload = toJson(message);
+        final JsonObject payload = toJson(message);
         execute(
             "INSERT INTO messages (id, data) VALUES ($1, $2::jsonb) " +
                 "ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
@@ -52,11 +52,11 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public Optional<Message> findById(String id) {
+    public Optional<Message> findById(final String id) {
         if (id == null) {
             return Optional.empty();
         }
-        RowSet<Row> rows = execute("SELECT data FROM messages WHERE id = $1 LIMIT 1", Tuple.of(id));
+        final RowSet<Row> rows = execute("SELECT data FROM messages WHERE id = $1 LIMIT 1", Tuple.of(id));
         if (!rows.iterator().hasNext()) {
             return Optional.empty();
         }
@@ -65,10 +65,10 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
 
     @Override
     public List<Message> findAll() {
-        RowSet<Row> rows = execute("SELECT data FROM messages");
-        List<Message> result = new ArrayList<>();
-        for (Row row : rows) {
-            Message message = mapRow(row, Message.class);
+        final RowSet<Row> rows = execute("SELECT data FROM messages");
+        final List<Message> result = new ArrayList<>();
+        for (final Row row : rows) {
+            final Message message = mapRow(row, Message.class);
             if (message != null) {
                 result.add(message);
             }
@@ -77,11 +77,11 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public List<Message> findAll(int page, int limit) {
-        List<Message> allMessages = findAll().stream()
+    public List<Message> findAll(final int page, final int limit) {
+        final List<Message> allMessages = findAll().stream()
             .sorted((m1, m2) -> {
-                LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
+                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
+                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
                 if (date1 == null && date2 == null) return 0;
                 if (date1 == null) return 1;
                 if (date2 == null) return -1;
@@ -89,8 +89,8 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
             })
             .collect(Collectors.toList());
 
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, allMessages.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, allMessages.size());
         if (start >= allMessages.size()) {
             return new ArrayList<>();
         }
@@ -98,7 +98,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public List<Message> findByChatId(String chatId) {
+    public List<Message> findByChatId(final String chatId) {
         return findAll().stream()
             .filter(message -> chatId.equals(message.getChatId()))
             .sorted(Comparator.comparing(m -> DateTimeUtils.parseFromIso(m.getCreatedAt()), Comparator.nullsLast(Comparator.naturalOrder())))
@@ -106,11 +106,11 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public List<Message> findByChatId(String chatId, int page, int limit) {
-        List<Message> chatMessages = findByChatId(chatId).stream()
+    public List<Message> findByChatId(final String chatId, final int page, final int limit) {
+        final List<Message> chatMessages = findByChatId(chatId).stream()
             .sorted((m1, m2) -> {
-                LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
+                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
+                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
                 if (date1 == null && date2 == null) return 0;
                 if (date1 == null) return 1;
                 if (date2 == null) return -1;
@@ -118,8 +118,8 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
             })
             .collect(Collectors.toList());
 
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, chatMessages.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, chatMessages.size());
         if (start >= chatMessages.size()) {
             return new ArrayList<>();
         }
@@ -127,7 +127,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public List<Message> findBySenderId(Long senderId) {
+    public List<Message> findBySenderId(final Long senderId) {
         return findAll().stream()
             .filter(message -> senderId.equals(message.getSenderId()))
             .sorted(Comparator.comparing(m -> DateTimeUtils.parseFromIso(m.getCreatedAt()), Comparator.nullsLast(Comparator.naturalOrder())))
@@ -135,7 +135,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public List<Message> findUnreadMessagesByChatId(String chatId) {
+    public List<Message> findUnreadMessagesByChatId(final String chatId) {
         return findAll().stream()
             .filter(message -> chatId.equals(message.getChatId()))
             .filter(message -> Boolean.FALSE.equals(message.getIsRead()))
@@ -144,7 +144,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public void markAsRead(String messageId) {
+    public void markAsRead(final String messageId) {
         findById(messageId).ifPresent(message -> {
             message.markAsRead();
             save(message);
@@ -152,7 +152,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public void markMessagesAsRead(String chatId, List<String> messageIds) {
+    public void markMessagesAsRead(final String chatId, final List<String> messageIds) {
         if (messageIds == null || messageIds.isEmpty()) {
             return;
         }
@@ -160,7 +160,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public long countUnreadMessagesByChatId(String chatId) {
+    public long countUnreadMessagesByChatId(final String chatId) {
         return findAll().stream()
             .filter(message -> chatId.equals(message.getChatId()))
             .filter(message -> Boolean.FALSE.equals(message.getIsRead()))
@@ -168,21 +168,21 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public long countMessagesByChatId(String chatId) {
+    public long countMessagesByChatId(final String chatId) {
         return findAll().stream()
             .filter(message -> chatId.equals(message.getChatId()))
             .count();
     }
 
     @Override
-    public List<Message> findRecentByChatId(String chatId, int limit) {
+    public List<Message> findRecentByChatId(final String chatId, final int limit) {
         if (limit <= 0) {
             return new ArrayList<>();
         }
         return findByChatId(chatId).stream()
             .sorted((m1, m2) -> {
-                LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
+                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
+                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
                 if (date1 == null && date2 == null) return 0;
                 if (date1 == null) return 1;
                 if (date2 == null) return -1;
@@ -193,20 +193,20 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public void deleteById(String id) {
+    public void deleteById(final String id) {
         execute("DELETE FROM messages WHERE id = $1", Tuple.of(id));
     }
 
     @Override
-    public boolean existsById(String id) {
-        RowSet<Row> rows = execute("SELECT 1 FROM messages WHERE id = $1 LIMIT 1", Tuple.of(id));
+    public boolean existsById(final String id) {
+        final RowSet<Row> rows = execute("SELECT 1 FROM messages WHERE id = $1 LIMIT 1", Tuple.of(id));
         return rows.iterator().hasNext();
     }
 
     @Override
     public long count() {
-        RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM messages");
-        Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
+        final RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM messages");
+        final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
         return row != null ? row.getLong("cnt") : 0L;
     }
 }

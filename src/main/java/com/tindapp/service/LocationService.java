@@ -34,14 +34,14 @@ public class LocationService {
     private final Map<String, List<City>> citiesByCountry;
 
     private LocationService() {
-        long totalStart = System.currentTimeMillis();
+        final long totalStart = System.currentTimeMillis();
         logger.info("Starting LocationService initialization...");
 
-        this.countries = loadCountries();
+        countries = loadCountries();
         logger.info("Countries loaded: {} items", countries.size());
 
-        this.citiesByCountry = loadCities();
-        int totalCities = citiesByCountry.values().stream().mapToInt(List::size).sum();
+        citiesByCountry = loadCities();
+        final int totalCities = citiesByCountry.values().stream().mapToInt(List::size).sum();
         logger.info("Cities loaded: {} items across {} countries", totalCities, citiesByCountry.size());
 
         logger.info("LocationService initialized in {}ms", System.currentTimeMillis() - totalStart);
@@ -62,35 +62,35 @@ public class LocationService {
         return countries;
     }
 
-    public List<City> getCitiesByCountry(String countryId) {
+    public List<City> getCitiesByCountry(final String countryId) {
         if (countryId == null) return Collections.emptyList();
-        List<City> cities = citiesByCountry.get(countryId);
+        final List<City> cities = citiesByCountry.get(countryId);
         return cities != null ? cities : Collections.emptyList();
     }
 
-    public List<City> searchCitiesByCountry(String countryId, String query) {
+    public List<City> searchCitiesByCountry(final String countryId, final String query) {
         return searchCitiesByCountry(countryId, query, DEFAULT_CITY_SEARCH_LIMIT);
     }
 
-    public List<City> searchCitiesByCountry(String countryId, String query, int limit) {
+    public List<City> searchCitiesByCountry(final String countryId, final String query, final int limit) {
         if (countryId == null || query == null || query.length() < 3) {
             return Collections.emptyList();
         }
 
-        List<City> cities = citiesByCountry.get(countryId);
+        final List<City> cities = citiesByCountry.get(countryId);
         if (cities == null || cities.isEmpty()) {
             return Collections.emptyList();
         }
 
-        String normalizedQuery = normalize(query);
+        final String normalizedQuery = normalize(query);
         if (normalizedQuery.length() < 3) {
             return Collections.emptyList();
         }
 
-        List<City> matches = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+        final List<City> matches = new ArrayList<>();
+        final Set<String> seen = new HashSet<>();
 
-        for (City city : cities) {
+        for (final City city : cities) {
             if (city.matchesQuery(normalizedQuery) && seen.add(city.normalizedName)) {
                 matches.add(city);
                 if (limit > 0 && matches.size() >= limit) {
@@ -103,42 +103,42 @@ public class LocationService {
     }
 
     private List<Country> loadCountries() {
-        long start = System.currentTimeMillis();
-        List<Country> loaded = new ArrayList<>();
-        Collator collator = Collator.getInstance(SEARCH_LOCALE);
+        final long start = System.currentTimeMillis();
+        final List<Country> loaded = new ArrayList<>();
+        final Collator collator = Collator.getInstance(SEARCH_LOCALE);
 
-        try (InputStream is = getResourceAsStream(COUNTRIES_RESOURCE);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8), 8192)) {
+        try (final InputStream is = getResourceAsStream(COUNTRIES_RESOURCE);
+             final BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8), 8192)) {
 
             reader.readLine();            String line;
 
             while ((line = reader.readLine()) != null) {
-                int idx = line.indexOf(';');
+                final int idx = line.indexOf(';');
                 if (idx == -1) continue;
 
-                String id = unquote(line, 0, idx);
-                String name = unquote(line, idx + 1, line.length());
+                final String id = unquote(line, 0, idx);
+                final String name = unquote(line, idx + 1, line.length());
 
                 if (!id.isEmpty() && !name.isEmpty()) {
                     loaded.add(new Country(id, name));
                 }
             }
-        } catch (IOException e) {
+        } catch (final IOException e) {
             logger.error("Failed to load countries", e);
         }
 
-        loaded.sort(Comparator.comparing(Country::getName, collator));
+        loaded.sort(Comparator.comparing(Country::name, collator));
 
         return Collections.unmodifiableList(loaded);
     }
 
     private Map<String, List<City>> loadCities() {
-        long start = System.currentTimeMillis();
-        Map<String, List<City>> tempMap = new HashMap<>();
-        Collator collator = Collator.getInstance(SEARCH_LOCALE);
+        final long start = System.currentTimeMillis();
+        final Map<String, List<City>> tempMap = new HashMap<>();
+        final Collator collator = Collator.getInstance(SEARCH_LOCALE);
 
-        try (InputStream is = getResourceAsStream(CITIES_RESOURCE);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8), 32768)) {
+        try (final InputStream is = getResourceAsStream(CITIES_RESOURCE);
+             final BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8), 32768)) {
 
             reader.readLine();            String line;
             int count = 0;
@@ -146,15 +146,15 @@ public class LocationService {
             while ((line = reader.readLine()) != null) {
                 count++;
 
-                int idx1 = line.indexOf(';');
+                final int idx1 = line.indexOf(';');
                 if (idx1 == -1) continue;
 
-                int idx2 = line.indexOf(';', idx1 + 1);
+                final int idx2 = line.indexOf(';', idx1 + 1);
                 if (idx2 == -1) continue;
 
-                String cityId = unquote(line, 0, idx1);
-                String countryId = unquote(line, idx1 + 1, idx2);
-                String name = unquote(line, idx2 + 1, line.length());
+                final String cityId = unquote(line, 0, idx1);
+                final String countryId = unquote(line, idx1 + 1, idx2);
+                final String name = unquote(line, idx2 + 1, line.length());
 
                 if (!cityId.isEmpty() && !countryId.isEmpty() && !name.isEmpty()) {
                     tempMap.computeIfAbsent(countryId, k -> new ArrayList<>())
@@ -162,15 +162,15 @@ public class LocationService {
                 }
             }
 
-        } catch (IOException e) {
+        } catch (final IOException e) {
             logger.error("Failed to load cities", e);
         }
 
-        long sortStart = System.currentTimeMillis();
+        final long sortStart = System.currentTimeMillis();
 
-        Map<String, List<City>> result = new HashMap<>(tempMap.size());
-        for (Map.Entry<String, List<City>> entry : tempMap.entrySet()) {
-            List<City> cities = entry.getValue();
+        final Map<String, List<City>> result = new HashMap<>(tempMap.size());
+        for (final Map.Entry<String, List<City>> entry : tempMap.entrySet()) {
+            final List<City> cities = entry.getValue();
             cities.sort(Comparator.comparing(City::getName, collator));
             result.put(entry.getKey(), Collections.unmodifiableList(cities));
         }
@@ -178,13 +178,13 @@ public class LocationService {
         return Collections.unmodifiableMap(result);
     }
 
-    private InputStream getResourceAsStream(String resourceName) throws IOException {
-        InputStream is = getClass().getClassLoader().getResourceAsStream(resourceName);
+    private InputStream getResourceAsStream(final String resourceName) throws IOException {
+        final InputStream is = getClass().getClassLoader().getResourceAsStream(resourceName);
         if (is == null) throw new IOException("Resource not found: " + resourceName);
         return is;
     }
 
-    private String unquote(String line, int start, int end) {
+    private String unquote(final String line, int start, int end) {
         while (start < end && line.charAt(start) <= ' ') start++;
         while (end > start && line.charAt(end - 1) <= ' ') end--;
 
@@ -196,21 +196,11 @@ public class LocationService {
         return start >= end ? "" : line.substring(start, end);
     }
 
-    private String normalize(String value) {
+    private String normalize(final String value) {
         return value == null ? "" : value.trim().toLowerCase(SEARCH_LOCALE);
     }
 
-    public static class Country {
-        private final String id;
-        private final String name;
-
-        public Country(String id, String name) {
-            this.id = id;
-            this.name = name;
-        }
-
-        public String getId() { return id; }
-        public String getName() { return name; }
+    public record Country(String id, String name) {
     }
 
     public static class City {
@@ -221,39 +211,39 @@ public class LocationService {
         final String normalizedName;
         private final String[] normalizedSegments;
 
-        public City(String id, String countryId, String name) {
+        public City(final String id, final String countryId, final String name) {
             this.id = id;
             this.countryId = countryId;
             this.name = name;
 
-            this.normalizedName = name.trim().toLowerCase(SEARCH_LOCALE);
+            normalizedName = name.trim().toLowerCase(SEARCH_LOCALE);
 
             if (name.contains("-") || name.contains("—") || name.contains("–")) {
-                String[] parts = name.split("\\s*[-—–]\\s*");
+                final String[] parts = name.split("\\s*[-—–]\\s*");
                 if (parts.length > 1) {
-                    List<String> segments = new ArrayList<>();
-                    for (String part : parts) {
-                        String norm = part.trim().toLowerCase(SEARCH_LOCALE);
+                    final List<String> segments = new ArrayList<>();
+                    for (final String part : parts) {
+                        final String norm = part.trim().toLowerCase(SEARCH_LOCALE);
                         if (!norm.isEmpty() && !norm.equals(normalizedName)) {
                             segments.add(norm);
                         }
                     }
-                    this.normalizedSegments = segments.isEmpty() ? null : segments.toArray(new String[0]);
+                    normalizedSegments = segments.isEmpty() ? null : segments.toArray(new String[0]);
                 } else {
-                    this.normalizedSegments = null;
+                    normalizedSegments = null;
                 }
             } else {
-                this.normalizedSegments = null;
+                normalizedSegments = null;
             }
         }
 
-        boolean matchesQuery(String normalizedQuery) {
+        boolean matchesQuery(final String normalizedQuery) {
             if (normalizedName.startsWith(normalizedQuery)) {
                 return true;
             }
 
             if (normalizedSegments != null) {
-                for (String segment : normalizedSegments) {
+                for (final String segment : normalizedSegments) {
                     if (segment.startsWith(normalizedQuery)) {
                         return true;
                     }
@@ -263,8 +253,16 @@ public class LocationService {
             return false;
         }
 
-        public String getId() { return id; }
-        public String getCountryId() { return countryId; }
-        public String getName() { return name; }
+        public String getId() {
+            return id;
+        }
+
+        public String getCountryId() {
+            return countryId;
+        }
+
+        public String getName() {
+            return name;
+        }
     }
 }

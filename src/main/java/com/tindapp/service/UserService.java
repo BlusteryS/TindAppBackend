@@ -40,22 +40,22 @@ public class UserService {
     private static final double MAX_SKIN_COVERAGE = 0.65;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    public UserService(UserRepository userRepository) {
+    public UserService(final UserRepository userRepository) {
         this.userRepository = userRepository;
     }
 
-    public User createOrUpdateUser(Long vkId) {
-        Optional<User> existingUser = userRepository.findByVkId(vkId);
+    public User createOrUpdateUser(final Long vkId) {
+        final Optional<User> existingUser = userRepository.findByVkId(vkId);
 
         if (existingUser.isPresent()) {
-            User user = existingUser.get();
+            final User user = existingUser.get();
             user.updateLastSeen();
             ensureProfileCost(user);
             ensureRewards(user);
             applySpecialPrivileges(user);
             return userRepository.save(user);
         } else {
-            User newUser = new User(vkId);
+            final User newUser = new User(vkId);
             newUser.setBalance(AppConfig.INITIAL_USER_BALANCE); // начальный баланс
             ensureProfileCost(newUser);
             ensureRewards(newUser);
@@ -64,18 +64,18 @@ public class UserService {
         }
     }
 
-    public User getOrCreateUser(Long vkId) {
-        Optional<User> existingUser = userRepository.findByVkId(vkId);
+    public User getOrCreateUser(final Long vkId) {
+        final Optional<User> existingUser = userRepository.findByVkId(vkId);
 
         if (existingUser.isPresent()) {
-            User user = existingUser.get();
+            final User user = existingUser.get();
             user.updateLastSeen();
             ensureProfileCost(user);
             ensureRewards(user);
             applySpecialPrivileges(user);
             return userRepository.save(user);
         } else {
-            User newUser = new User(vkId);
+            final User newUser = new User(vkId);
             ensureProfileCost(newUser);
             ensureRewards(newUser);
             applySpecialPrivileges(newUser);
@@ -83,15 +83,15 @@ public class UserService {
         }
     }
 
-    public Optional<User> getUserById(Long userId) {
+    public Optional<User> getUserById(final Long userId) {
         return userRepository.findById(userId);
     }
 
-    public Optional<User> getUserByVkId(Long vkId) {
+    public Optional<User> getUserByVkId(final Long vkId) {
         return userRepository.findByVkId(vkId);
     }
 
-    public User createUser(User user) {
+    public User createUser(final User user) {
         user.setCreatedAtDateTime(LocalDateTime.now());
         user.setUpdatedAtDateTime(LocalDateTime.now());
         ensureProfileCost(user);
@@ -100,7 +100,7 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public User updateUser(User user) {
+    public User updateUser(final User user) {
         user.setUpdatedAtDateTime(LocalDateTime.now());
         ensureRewards(user);
         applySpecialPrivileges(user);
@@ -108,26 +108,26 @@ public class UserService {
     }
 
     public User updateProfile(
-        Long userId,
-        String firstName,
-        String lastName,
-        String avatarUrl,
-        String gender,
-        String bio,
-        String country,
-        String city,
-        Integer age,
-        String birthDate,
-        Boolean isVisible,
-        User.UserSettings settings,
-        Integer profileCost,
-        String nativeLanguage
+        final Long userId,
+        final String firstName,
+        final String lastName,
+        final String avatarUrl,
+        final String gender,
+        final String bio,
+        final String country,
+        final String city,
+        final Integer age,
+        final String birthDate,
+        final Boolean isVisible,
+        final User.UserSettings settings,
+        final Integer profileCost,
+        final String nativeLanguage
     ) {
-        User user = userRepository.findById(userId)
+        final User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
         ensureRewards(user);
 
-        String previousAvatar = user.getAvatarUrl();
+        final String previousAvatar = user.getAvatarUrl();
 
         if (firstName != null) {
             user.setFirstName(firstName);
@@ -154,7 +154,7 @@ public class UserService {
         if (city != null) {
             user.setCity(city);
         }
-        LocalDate parsedBirthDate = parseBirthDate(birthDate);
+        final LocalDate parsedBirthDate = parseBirthDate(birthDate);
         if (parsedBirthDate != null) {
             user.setBirthDate(parsedBirthDate);
             user.setAge(calculateAge(parsedBirthDate));
@@ -204,7 +204,7 @@ public class UserService {
             user.setSettings(currentSettings);
         }
         if (profileCost != null) {
-            int normalized = Math.max(0, profileCost);
+            final int normalized = Math.max(0, profileCost);
             user.setProfileCost(normalized);
         } else {
             ensureProfileCost(user);
@@ -217,12 +217,12 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public UserVerificationResult verifyUserWithSelfie(Long userId, Path selfiePath) {
+    public UserVerificationResult verifyUserWithSelfie(final Long userId, final Path selfiePath) {
         if (selfiePath == null || !Files.exists(selfiePath)) {
             throw new IllegalArgumentException("Selfie file not found");
         }
 
-        User user = userRepository.findById(userId)
+        final User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (!hasActiveSubscription(user)) {
@@ -238,8 +238,8 @@ public class UserService {
         }
 
         try {
-            BufferedImage avatarImage = loadImageFromSource(user.getAvatarUrl());
-            BufferedImage selfieImage = ImageIO.read(selfiePath.toFile());
+            final BufferedImage avatarImage = loadImageFromSource(user.getAvatarUrl());
+            final BufferedImage selfieImage = ImageIO.read(selfiePath.toFile());
 
             if (avatarImage == null || selfieImage == null) {
                 throw new IllegalArgumentException("Failed to read images for verification");
@@ -255,7 +255,7 @@ public class UserService {
                 return new UserVerificationResult(false, 0.0, validationError);
             }
 
-            double similarity = calculateSimilarity(avatarImage, selfieImage);
+            final double similarity = calculateSimilarity(avatarImage, selfieImage);
             if (similarity < VERIFICATION_THRESHOLD) {
                 return new UserVerificationResult(false, 0.0, "Вы не похожи на того человека");
             }
@@ -265,36 +265,36 @@ public class UserService {
             userRepository.save(user);
 
             return new UserVerificationResult(true, 1, null);
-        } catch (IllegalArgumentException ex) {
+        } catch (final IllegalArgumentException ex) {
             throw ex;
-        } catch (Exception ex) {
+        } catch (final Exception ex) {
             logger.error("Failed to verify user {} using selfie {}", userId, selfiePath, ex);
             throw new RuntimeException("Unable to verify user at this time");
         }
     }
 
-    public Integer getUserBalance(Long userId) {
-        User user = userRepository.findById(userId)
+    public Integer getUserBalance(final Long userId) {
+        final User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
         return user.getBalance();
     }
 
-    public User purchaseCoins(Long userId, Integer amount, String paymentMethod) {
-        User user = userRepository.findById(userId)
+    public User purchaseCoins(final Long userId, final Integer amount, final String paymentMethod) {
+        final User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
-        int coinsToAdd = calculateCoinsForPayment(amount, paymentMethod);
+        final int coinsToAdd = calculateCoinsForPayment(amount, paymentMethod);
         user.setBalance(user.getBalance() + coinsToAdd);
 
         return userRepository.save(user);
     }
 
-    public void updateUserBalance(Long userId, Integer newBalance) {
+    public void updateUserBalance(final Long userId, final Integer newBalance) {
         userRepository.updateBalance(userId, newBalance);
     }
 
-    public User updateCommunityNotifications(Long userId, boolean enabled) {
-        User user = userRepository.findById(userId)
+    public User updateCommunityNotifications(final Long userId, final boolean enabled) {
+        final User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (user.getSettings() == null) {
@@ -304,8 +304,8 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public void deductCoins(Long userId, Integer amount) {
-        User user = userRepository.findById(userId)
+    public void deductCoins(final Long userId, final Integer amount) {
+        final User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (user.getBalance() < amount) {
@@ -316,12 +316,12 @@ public class UserService {
         userRepository.save(user);
     }
 
-    public void updateOnlineStatus(Long userId, Boolean isOnline) {
+    public void updateOnlineStatus(final Long userId, final Boolean isOnline) {
         userRepository.updateOnlineStatus(userId, isOnline);
     }
 
-    public User banUser(Long targetUserId, String reason) {
-        User user = userRepository.findById(targetUserId)
+    public User banUser(final Long targetUserId, final String reason) {
+        final User user = userRepository.findById(targetUserId)
             .orElseThrow(() -> new RuntimeException("User not found"));
         user.setIsBanned(true);
         user.setBanReason(reason != null ? reason : "Блокировка администрацией");
@@ -329,8 +329,8 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public User unbanUser(Long targetUserId) {
-        User user = userRepository.findById(targetUserId)
+    public User unbanUser(final Long targetUserId) {
+        final User user = userRepository.findById(targetUserId)
             .orElseThrow(() -> new RuntimeException("User not found"));
         user.setIsBanned(false);
         user.setBanReason(null);
@@ -338,7 +338,7 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    private User.UserRewards ensureRewards(User user) {
+    private User.UserRewards ensureRewards(final User user) {
         if (user == null) {
             return null;
         }
@@ -348,11 +348,11 @@ public class UserService {
         return user.getRewards();
     }
 
-    private Integer calculateAge(LocalDate birthDate) {
+    private Integer calculateAge(final LocalDate birthDate) {
         if (birthDate == null) {
             return null;
         }
-        LocalDate today = LocalDate.now();
+        final LocalDate today = LocalDate.now();
         int age = today.getYear() - birthDate.getYear();
         if (birthDate.plusYears(age).isAfter(today)) {
             age -= 1;
@@ -360,153 +360,153 @@ public class UserService {
         return Math.max(age, 0);
     }
 
-    private LocalDate parseBirthDate(String birthDate) {
+    private LocalDate parseBirthDate(final String birthDate) {
         if (birthDate == null || birthDate.trim().isEmpty()) {
             return null;
         }
 
         try {
             return LocalDate.parse(birthDate.trim());
-        } catch (Exception ex) {
+        } catch (final Exception ex) {
             logger.warn("Invalid birthDate provided: {}", birthDate);
             return null;
         }
     }
 
-    private BufferedImage loadImageFromSource(String source) {
+    private BufferedImage loadImageFromSource(final String source) {
         if (source == null || source.trim().isEmpty()) {
             return null;
         }
 
         try {
             if (source.startsWith("http://") || source.startsWith("https://")) {
-                try (InputStream stream = new URL(source).openStream()) {
+                try (final InputStream stream = new URL(source).openStream()) {
                     return ImageIO.read(stream);
                 }
             }
 
-            String normalized = source.startsWith("/") ? source.substring(1) : source;
-            List<Path> candidates = new ArrayList<>();
+            final String normalized = source.startsWith("/") ? source.substring(1) : source;
+            final List<Path> candidates = new ArrayList<>();
             candidates.add(Paths.get(normalized));
             candidates.add(Paths.get(AppConfig.UPLOAD_DIR, normalized));
 
             if (normalized.startsWith("uploads/")) {
-                String withoutPrefix = normalized.substring("uploads/".length());
+                final String withoutPrefix = normalized.substring("uploads/".length());
                 candidates.add(Paths.get(AppConfig.UPLOAD_DIR, withoutPrefix));
             }
 
-            Path fileName = Paths.get(normalized).getFileName();
+            final Path fileName = Paths.get(normalized).getFileName();
             if (fileName != null) {
                 candidates.add(Paths.get(AppConfig.UPLOAD_DIR, fileName.toString()));
             }
 
-            for (Path candidate : candidates) {
+            for (final Path candidate : candidates) {
                 if (candidate != null && Files.exists(candidate)) {
                     return ImageIO.read(candidate.toFile());
                 }
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.warn("Failed to load image from {}", source, e);
         }
 
         return null;
     }
 
-    public String mirrorExternalAvatar(String source) {
+    public String mirrorExternalAvatar(final String source) {
         if (source == null || source.trim().isEmpty()) {
             return null;
         }
 
-        String trimmed = source.trim();
+        final String trimmed = source.trim();
         if (trimmed.contains(AppConfig.UPLOAD_DIR)) {
             return trimmed;
         }
 
-        try (InputStream in = new URL(trimmed).openStream()) {
+        try (final InputStream in = new URL(trimmed).openStream()) {
             String extension = ".jpg";
-            String lower = trimmed.toLowerCase();
+            final String lower = trimmed.toLowerCase();
             if (lower.contains(".png")) {
                 extension = ".png";
             } else if (lower.contains(".webp")) {
                 extension = ".webp";
             }
 
-            String fileName = "vk-avatar-" + System.currentTimeMillis() + "-" + Math.abs(trimmed.hashCode()) + extension;
-            Path target = Paths.get(AppConfig.UPLOAD_DIR, fileName);
+            final String fileName = "vk-avatar-" + System.currentTimeMillis() + '-' + Math.abs(trimmed.hashCode()) + extension;
+            final Path target = Paths.get(AppConfig.UPLOAD_DIR, fileName);
             Files.copy(in, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             return "/uploads/" + fileName;
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.warn("Failed to mirror external avatar {}", source, e);
             return null;
         }
     }
 
-    private double calculateSimilarity(BufferedImage first, BufferedImage second) {
+    private double calculateSimilarity(final BufferedImage first, final BufferedImage second) {
         final int size = 64;
-        BufferedImage normalizedFirst = resizeImage(first, size, size);
-        BufferedImage normalizedSecond = resizeImage(second, size, size);
+        final BufferedImage normalizedFirst = resizeImage(first, size, size);
+        final BufferedImage normalizedSecond = resizeImage(second, size, size);
 
         if (isTooBlurry(normalizedSecond)) {
             throw new IllegalArgumentException("Selfie too blurry for verification");
         }
 
-        double pixelSimilarity = pixelSimilarity(normalizedFirst, normalizedSecond);
-        double hashSimilarity = dhashSimilarity(normalizedFirst, normalizedSecond);
-        double histogramSimilarity = histogramCosineSimilarity(normalizedFirst, normalizedSecond);
+        final double pixelSimilarity = pixelSimilarity(normalizedFirst, normalizedSecond);
+        final double hashSimilarity = dhashSimilarity(normalizedFirst, normalizedSecond);
+        final double histogramSimilarity = histogramCosineSimilarity(normalizedFirst, normalizedSecond);
 
-        double combined = (hashSimilarity * 0.5) + (histogramSimilarity * 0.3) + (pixelSimilarity * 0.2);
+        final double combined = (hashSimilarity * 0.5) + (histogramSimilarity * 0.3) + (pixelSimilarity * 0.2);
         return Math.max(0.0, Math.min(1.0, combined));
     }
 
-    private BufferedImage resizeImage(BufferedImage source, int width, int height) {
-        BufferedImage output = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        Graphics2D graphics = output.createGraphics();
+    private BufferedImage resizeImage(final BufferedImage source, final int width, final int height) {
+        final BufferedImage output = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        final Graphics2D graphics = output.createGraphics();
         graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
         graphics.drawImage(source, 0, 0, width, height, null);
         graphics.dispose();
         return output;
     }
 
-    private double pixelSimilarity(BufferedImage first, BufferedImage second) {
+    private double pixelSimilarity(final BufferedImage first, final BufferedImage second) {
         final int width = first.getWidth();
         final int height = first.getHeight();
         double diff = 0.0;
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                int grayA = rgbToGray(first.getRGB(x, y));
-                int grayB = rgbToGray(second.getRGB(x, y));
+                final int grayA = rgbToGray(first.getRGB(x, y));
+                final int grayB = rgbToGray(second.getRGB(x, y));
                 diff += Math.abs(grayA - grayB) / 255.0;
             }
         }
-        double similarity = 1.0 - (diff / (width * height));
+        final double similarity = 1.0 - (diff / (width * height));
         return Math.max(0.0, Math.min(1.0, similarity));
     }
 
-    private double dhashSimilarity(BufferedImage first, BufferedImage second) {
-        long hashA = calculateDHash(first);
-        long hashB = calculateDHash(second);
-        int distance = Long.bitCount(hashA ^ hashB);
-        double similarity = 1.0 - (distance / 64.0);
+    private double dhashSimilarity(final BufferedImage first, final BufferedImage second) {
+        final long hashA = calculateDHash(first);
+        final long hashB = calculateDHash(second);
+        final int distance = Long.bitCount(hashA ^ hashB);
+        final double similarity = 1.0 - (distance / 64.0);
         return Math.max(0.0, Math.min(1.0, similarity));
     }
 
-    private long calculateDHash(BufferedImage image) {
-        BufferedImage resized = resizeImage(image, 9, 8);
+    private long calculateDHash(final BufferedImage image) {
+        final BufferedImage resized = resizeImage(image, 9, 8);
         long hash = 0L;
         for (int y = 0; y < 8; y++) {
             for (int x = 0; x < 8; x++) {
-                int left = rgbToGray(resized.getRGB(x, y));
-                int right = rgbToGray(resized.getRGB(x + 1, y));
-                boolean bit = left > right;
+                final int left = rgbToGray(resized.getRGB(x, y));
+                final int right = rgbToGray(resized.getRGB(x + 1, y));
+                final boolean bit = left > right;
                 hash = (hash << 1) | (bit ? 1L : 0L);
             }
         }
         return hash;
     }
 
-    private double histogramCosineSimilarity(BufferedImage first, BufferedImage second) {
-        double[] histA = grayscaleHistogram(first);
-        double[] histB = grayscaleHistogram(second);
+    private double histogramCosineSimilarity(final BufferedImage first, final BufferedImage second) {
+        final double[] histA = grayscaleHistogram(first);
+        final double[] histB = grayscaleHistogram(second);
 
         double dot = 0.0;
         double normA = 0.0;
@@ -519,29 +519,29 @@ public class UserService {
         if (normA == 0 || normB == 0) {
             return 0.0;
         }
-        double similarity = dot / (Math.sqrt(normA) * Math.sqrt(normB));
+        final double similarity = dot / (Math.sqrt(normA) * Math.sqrt(normB));
         return Math.max(0.0, Math.min(1.0, similarity));
     }
 
-    private boolean hasActiveSubscription(User user) {
+    private boolean hasActiveSubscription(final User user) {
         if (user == null || user.getSubscription() == null) {
             return false;
         }
-        Boolean active = user.getSubscription().getIsActive();
+        final Boolean active = user.getSubscription().getIsActive();
         return Boolean.TRUE.equals(active);
     }
 
-    private double[] grayscaleHistogram(BufferedImage image) {
-        double[] hist = new double[256];
-        int width = image.getWidth();
-        int height = image.getHeight();
+    private double[] grayscaleHistogram(final BufferedImage image) {
+        final double[] hist = new double[256];
+        final int width = image.getWidth();
+        final int height = image.getHeight();
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                int gray = rgbToGray(image.getRGB(x, y));
+                final int gray = rgbToGray(image.getRGB(x, y));
                 hist[gray] += 1.0;
             }
         }
-        double total = width * height;
+        final double total = width * height;
         if (total > 0) {
             for (int i = 0; i < hist.length; i++) {
                 hist[i] /= total;
@@ -550,14 +550,14 @@ public class UserService {
         return hist;
     }
 
-    private boolean isTooBlurry(BufferedImage image) {
-        double variance = laplacianVariance(image);
+    private boolean isTooBlurry(final BufferedImage image) {
+        final double variance = laplacianVariance(image);
         return variance < 35.0;
     }
 
-    private String validateHumanPresence(BufferedImage image, boolean isAvatar) {
-        BufferedImage normalized = resizeImage(image, 160, 160);
-        SkinStats stats = calculateSkinStats(normalized);
+    private String validateHumanPresence(final BufferedImage image, final boolean isAvatar) {
+        final BufferedImage normalized = resizeImage(image, 160, 160);
+        final SkinStats stats = calculateSkinStats(normalized);
 
         if (stats.coverage < MIN_SKIN_COVERAGE || stats.coverage > MAX_SKIN_COVERAGE) {
             return isAvatar ? "Аватар не похож на лицо" : "На селфи не найдено лицо";
@@ -598,10 +598,10 @@ public class UserService {
         return null;
     }
 
-    private SkinStats calculateSkinStats(BufferedImage image) {
-        int width = image.getWidth();
-        int height = image.getHeight();
-        int total = width * height;
+    private SkinStats calculateSkinStats(final BufferedImage image) {
+        final int width = image.getWidth();
+        final int height = image.getHeight();
+        final int total = width * height;
         int skinPixels = 0;
         int darkOnSkin = 0;
         int centerSkin = 0;
@@ -609,22 +609,22 @@ public class UserService {
 
         int minX = width, minY = height, maxX = -1, maxY = -1;
 
-        int centerStartX = (int) (width * 0.25);
-        int centerEndX = (int) (width * 0.75);
-        int centerStartY = (int) (height * 0.25);
-        int centerEndY = (int) (height * 0.75);
+        final int centerStartX = (int) (width * 0.25);
+        final int centerEndX = (int) (width * 0.75);
+        final int centerStartY = (int) (height * 0.25);
+        final int centerEndY = (int) (height * 0.75);
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                int rgb = image.getRGB(x, y);
-                int r = (rgb >> 16) & 0xFF;
-                int g = (rgb >> 8) & 0xFF;
-                int b = rgb & 0xFF;
+                final int rgb = image.getRGB(x, y);
+                final int r = (rgb >> 16) & 0xFF;
+                final int g = (rgb >> 8) & 0xFF;
+                final int b = rgb & 0xFF;
 
-                double cb = (-0.168736 * r) + (-0.331264 * g) + (0.5 * b) + 128;
-                double cr = (0.5 * r) + (-0.418688 * g) + (-0.081312 * b) + 128;
+                final double cb = (-0.168736 * r) + (-0.331264 * g) + (0.5 * b) + 128;
+                final double cr = (0.5 * r) + (-0.418688 * g) + (-0.081312 * b) + 128;
 
-                boolean skin =
+                final boolean skin =
                     r > 60 && g > 40 && b > 20 &&
                         (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) > 15) &&
                         r > g && r > b &&
@@ -638,12 +638,12 @@ public class UserService {
                     maxX = Math.max(maxX, x);
                     maxY = Math.max(maxY, y);
 
-                    int gray = rgbToGray(rgb);
+                    final int gray = rgbToGray(rgb);
                     if (gray < 70) {
                         darkOnSkin++;
                     }
 
-                    boolean inCenter = x >= centerStartX && x <= centerEndX && y >= centerStartY && y <= centerEndY;
+                    final boolean inCenter = x >= centerStartX && x <= centerEndX && y >= centerStartY && y <= centerEndY;
                     if (inCenter) {
                         centerSkin++;
                     } else if (x < 8 || x > width - 9 || y < 8 || y > height - 9) {
@@ -653,16 +653,16 @@ public class UserService {
             }
         }
 
-        double coverage = total > 0 ? (double) skinPixels / total : 0.0;
-        double darkRatio = skinPixels > 0 ? (double) darkOnSkin / skinPixels : 0.0;
-        double centerCoverage = skinPixels > 0 ? (double) centerSkin / skinPixels : 0.0;
-        double edgeSkinRatio = skinPixels > 0 ? (double) edgeSkin / skinPixels : 0.0;
+        final double coverage = total > 0 ? (double) skinPixels / total : 0.0;
+        final double darkRatio = skinPixels > 0 ? (double) darkOnSkin / skinPixels : 0.0;
+        final double centerCoverage = skinPixels > 0 ? (double) centerSkin / skinPixels : 0.0;
+        final double edgeSkinRatio = skinPixels > 0 ? (double) edgeSkin / skinPixels : 0.0;
 
         double aspectRatio = 0.0;
         double bboxCoverage = 0.0;
         if (maxX >= minX && maxY >= minY) {
-            int bboxW = (maxX - minX) + 1;
-            int bboxH = (maxY - minY) + 1;
+            final int bboxW = (maxX - minX) + 1;
+            final int bboxH = (maxY - minY) + 1;
             aspectRatio = (double) bboxW / bboxH;
             bboxCoverage = (double) (bboxW * bboxH) / total;
         }
@@ -670,10 +670,10 @@ public class UserService {
         return new SkinStats(coverage, bboxCoverage, aspectRatio, darkRatio, centerCoverage, edgeSkinRatio);
     }
 
-    private double calculateEntropy(BufferedImage image) {
-        double[] hist = grayscaleHistogram(image);
+    private double calculateEntropy(final BufferedImage image) {
+        final double[] hist = grayscaleHistogram(image);
         double entropy = 0.0;
-        for (double v : hist) {
+        for (final double v : hist) {
             if (v > 0) {
                 entropy += -v * (Math.log(v) / Math.log(2));
             }
@@ -681,30 +681,30 @@ public class UserService {
         return entropy;
     }
 
-    private boolean looksLikeScreen(BufferedImage image) {
-        double gridScore = pixelGridScore(image);
-        double saturation = averageSaturation(image);
+    private boolean looksLikeScreen(final BufferedImage image) {
+        final double gridScore = pixelGridScore(image);
+        final double saturation = averageSaturation(image);
         return gridScore > 22.0 && saturation < 0.25;
     }
 
-    private double pixelGridScore(BufferedImage image) {
-        int width = image.getWidth();
-        int height = image.getHeight();
+    private double pixelGridScore(final BufferedImage image) {
+        final int width = image.getWidth();
+        final int height = image.getHeight();
         double accum = 0.0;
         int count = 0;
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                int current = rgbToGray(image.getRGB(x, y));
+                final int current = rgbToGray(image.getRGB(x, y));
                 if (x + 1 < width) {
-                    int right = rgbToGray(image.getRGB(x + 1, y));
+                    final int right = rgbToGray(image.getRGB(x + 1, y));
                     if ((x & 1) == 0) {
                         accum += Math.abs(current - right);
                         count++;
                     }
                 }
                 if (y + 1 < height) {
-                    int down = rgbToGray(image.getRGB(x, y + 1));
+                    final int down = rgbToGray(image.getRGB(x, y + 1));
                     if ((y & 1) == 0) {
                         accum += Math.abs(current - down);
                         count++;
@@ -716,22 +716,22 @@ public class UserService {
         return count > 0 ? accum / count : 0.0;
     }
 
-    private double averageSaturation(BufferedImage image) {
-        int width = image.getWidth();
-        int height = image.getHeight();
+    private double averageSaturation(final BufferedImage image) {
+        final int width = image.getWidth();
+        final int height = image.getHeight();
         double total = 0.0;
         int count = 0;
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                int rgb = image.getRGB(x, y);
-                int r = (rgb >> 16) & 0xFF;
-                int g = (rgb >> 8) & 0xFF;
-                int b = rgb & 0xFF;
+                final int rgb = image.getRGB(x, y);
+                final int r = (rgb >> 16) & 0xFF;
+                final int g = (rgb >> 8) & 0xFF;
+                final int b = rgb & 0xFF;
 
-                double max = Math.max(r, Math.max(g, b));
-                double min = Math.min(r, Math.min(g, b));
-                double s = max == 0 ? 0 : (max - min) / max;
+                final double max = Math.max(r, Math.max(g, b));
+                final double min = Math.min(r, Math.min(g, b));
+                final double s = max == 0 ? 0 : (max - min) / max;
                 total += s;
                 count++;
             }
@@ -740,14 +740,14 @@ public class UserService {
         return count > 0 ? total / count : 0.0;
     }
 
-    private double laplacianVariance(BufferedImage image) {
-        int width = image.getWidth();
-        int height = image.getHeight();
+    private double laplacianVariance(final BufferedImage image) {
+        final int width = image.getWidth();
+        final int height = image.getHeight();
         double sum = 0.0;
         double sumSq = 0.0;
         int count = 0;
 
-        int[][] kernel = {
+        final int[][] kernel = {
             {0, 1, 0},
             {1, -4, 1},
             {0, 1, 0}
@@ -758,7 +758,7 @@ public class UserService {
                 double lap = 0.0;
                 for (int ky = -1; ky <= 1; ky++) {
                     for (int kx = -1; kx <= 1; kx++) {
-                        int gray = rgbToGray(image.getRGB(x + kx, y + ky));
+                        final int gray = rgbToGray(image.getRGB(x + kx, y + ky));
                         lap += gray * kernel[ky + 1][kx + 1];
                     }
                 }
@@ -771,86 +771,70 @@ public class UserService {
         if (count == 0) {
             return 0.0;
         }
-        double mean = sum / count;
+        final double mean = sum / count;
         return (sumSq / count) - (mean * mean);
     }
 
-    private int rgbToGray(int rgb) {
-        int r = (rgb >> 16) & 0xFF;
-        int g = (rgb >> 8) & 0xFF;
-        int b = rgb & 0xFF;
+    private int rgbToGray(final int rgb) {
+        final int r = (rgb >> 16) & 0xFF;
+        final int g = (rgb >> 8) & 0xFF;
+        final int b = rgb & 0xFF;
         return (r + g + b) / 3;
     }
 
-    private static class SkinStats {
-        final double coverage;
-        final double boundingBoxCoverage;
-        final double aspectRatio;
-        final double darkOnSkin;
-        final double centerCoverage;
-        final double edgeSkinRatio;
-
-        SkinStats(double coverage, double boundingBoxCoverage, double aspectRatio, double darkOnSkin, double centerCoverage, double edgeSkinRatio) {
-            this.coverage = coverage;
-            this.boundingBoxCoverage = boundingBoxCoverage;
-            this.aspectRatio = aspectRatio;
-            this.darkOnSkin = darkOnSkin;
-            this.centerCoverage = centerCoverage;
-            this.edgeSkinRatio = edgeSkinRatio;
-        }
+    private record SkinStats(double coverage, double boundingBoxCoverage, double aspectRatio, double darkOnSkin, double centerCoverage, double edgeSkinRatio) {
     }
 
-    private boolean isCommunityMember(Long vkId) {
+    private boolean isCommunityMember(final Long vkId) {
         if (vkId == null) {
             return false;
         }
         try {
-            String url = "https://api.vk.com/method/groups.isMember"
+            final String url = "https://api.vk.com/method/groups.isMember"
                 + "?group_id=" + AppConfig.VK_COMMUNITY_GROUP_ID
                 + "&user_id=" + URLEncoder.encode(String.valueOf(vkId), java.nio.charset.StandardCharsets.UTF_8)
                 + "&extended=0"
                 + "&v=" + AppConfig.VK_API_VERSION
                 + "&access_token=" + URLEncoder.encode(AppConfig.VK_COMMUNITY_ACCESS_TOKEN, java.nio.charset.StandardCharsets.UTF_8);
 
-            HttpRequest request = HttpRequest.newBuilder()
+            final HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .GET()
                 .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            String body = response.body();
+            final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            final String body = response.body();
             if (body == null || body.isBlank()) {
                 logger.warn("Empty response from VK groups.isMember");
                 return false;
             }
-            io.vertx.core.json.JsonObject json = new io.vertx.core.json.JsonObject(body);
+            final io.vertx.core.json.JsonObject json = new io.vertx.core.json.JsonObject(body);
             if (json.containsKey("error")) {
                 logger.warn("VK groups.isMember error: {}", json.getJsonObject("error"));
                 return false;
             }
             if (json.containsKey("response")) {
-                Object resp = json.getValue("response");
+                final Object resp = json.getValue("response");
                 if (resp instanceof Number) {
                     return ((Number) resp).intValue() == 1;
                 }
-                if (resp instanceof io.vertx.core.json.JsonObject) {
-                    io.vertx.core.json.JsonObject respObj = (io.vertx.core.json.JsonObject) resp;
+                if (resp instanceof io.vertx.core.json.JsonObject respObj) {
                     return respObj.getInteger("member", 0) == 1;
                 }
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.warn("Failed to check VK community membership for {}", vkId, e);
         }
         return false;
     }
 
-    private void ensureProfileCost(User user) {
+    private void ensureProfileCost(final User user) {
         if (user.getProfileCost() == null || user.getProfileCost() < 0) {
             user.setProfileCost(AppConfig.ANONYMOUS_CHAT_CREATION_COST);
         }
     }
 
-    private void applySpecialPrivileges(User user) {
+    private void applySpecialPrivileges(final User user) {
         if (user == null || user.getVkId() == null) {
             return;
         }
@@ -869,11 +853,11 @@ public class UserService {
         return userRepository.findOnlineUsers();
     }
 
-    public List<User> findUsersForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city) {
+    public List<User> findUsersForMatching(final User.Gender gender, final Integer minAge, final Integer maxAge, final String city) {
         return userRepository.findForMatching(gender, minAge, maxAge, city, false);
     }
 
-    public UserStats getUserStats(Long userId) {
+    public UserStats getUserStats(final Long userId) {
         return new UserStats(
             0, // totalChats
             0, // activeChats
@@ -885,8 +869,8 @@ public class UserService {
     }
 
     public OnlineStats getOnlineStats() {
-        long totalUsers = userRepository.count();
-        long activeUsers = userRepository.findOnlineUsers().size();
+        final long totalUsers = userRepository.count();
+        final long activeUsers = userRepository.findOnlineUsers().size();
 
         return new OnlineStats(
             0, // anonymousChats - будет подсчитываться в ChatService
@@ -895,22 +879,22 @@ public class UserService {
         );
     }
 
-    public RewardStatus getRewardStatus(Long userId) {
-        User user = userRepository.findById(userId)
+    public RewardStatus getRewardStatus(final Long userId) {
+        final User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
         ensureRewards(user);
         return buildRewardStatus(user);
     }
 
-    public RewardClaimResult claimReward(Long userId, RewardType type, boolean confirmed) {
+    public RewardClaimResult claimReward(final Long userId, final RewardType type, final boolean confirmed) {
         if (type == null) {
             throw new RuntimeException("Unknown reward type");
         }
-        User user = userRepository.findById(userId)
+        final User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
         ensureRewards(user);
 
-        int rewardAmount;
+        final int rewardAmount;
         switch (type) {
             case AD:
                 if (!confirmed) {
@@ -944,7 +928,7 @@ public class UserService {
             user.setBalance(0);
         }
         user.setBalance(user.getBalance() + rewardAmount);
-        User saved = userRepository.save(user);
+        final User saved = userRepository.save(user);
 
         return new RewardClaimResult(
             saved.getBalance(),
@@ -953,9 +937,9 @@ public class UserService {
         );
     }
 
-    private RewardStatus buildRewardStatus(User user) {
+    private RewardStatus buildRewardStatus(final User user) {
         ensureRewards(user);
-        boolean subscriptionClaimed = user.getRewards() != null
+        final boolean subscriptionClaimed = user.getRewards() != null
             && Boolean.TRUE.equals(user.getRewards().getSubscriptionBonusClaimed());
 
         return new RewardStatus(
@@ -966,20 +950,7 @@ public class UserService {
         );
     }
 
-    public static class UserVerificationResult {
-        private final boolean verified;
-        private final double similarity;
-        private final String reason;
-
-        public UserVerificationResult(boolean verified, double similarity, String reason) {
-            this.verified = verified;
-            this.similarity = similarity;
-            this.reason = reason;
-        }
-
-        public boolean isVerified() { return verified; }
-        public double getSimilarity() { return similarity; }
-        public String getReason() { return reason; }
+    public record UserVerificationResult(boolean verified, double similarity, String reason) {
     }
 
     public enum RewardType {
@@ -987,47 +958,13 @@ public class UserService {
         COMMUNITY
     }
 
-    public static class RewardStatus {
-        private final boolean adAvailable;
-        private final Integer adCooldownSeconds;
-        private final boolean subscriptionAvailable;
-        private final boolean subscriptionClaimed;
-
-        public RewardStatus(
-            boolean adAvailable,
-            Integer adCooldownSeconds,
-            boolean subscriptionAvailable,
-            boolean subscriptionClaimed
-        ) {
-            this.adAvailable = adAvailable;
-            this.adCooldownSeconds = adCooldownSeconds;
-            this.subscriptionAvailable = subscriptionAvailable;
-            this.subscriptionClaimed = subscriptionClaimed;
-        }
-
-        public boolean isAdAvailable() { return adAvailable; }
-        public Integer getAdCooldownSeconds() { return adCooldownSeconds; }
-        public boolean isSubscriptionAvailable() { return subscriptionAvailable; }
-        public boolean isSubscriptionClaimed() { return subscriptionClaimed; }
+    public record RewardStatus(boolean adAvailable, Integer adCooldownSeconds, boolean subscriptionAvailable, boolean subscriptionClaimed) {
     }
 
-    public static class RewardClaimResult {
-        private final int balance;
-        private final int rewardedAmount;
-        private final RewardStatus rewards;
-
-        public RewardClaimResult(int balance, int rewardedAmount, RewardStatus rewards) {
-            this.balance = balance;
-            this.rewardedAmount = rewardedAmount;
-            this.rewards = rewards;
-        }
-
-        public int getBalance() { return balance; }
-        public int getRewardedAmount() { return rewardedAmount; }
-        public RewardStatus getRewards() { return rewards; }
+    public record RewardClaimResult(int balance, int rewardedAmount, RewardStatus rewards) {
     }
 
-    private int calculateCoinsForPayment(Integer amount, String paymentMethod) {
+    private int calculateCoinsForPayment(final Integer amount, final String paymentMethod) {
         switch (paymentMethod) {
             case "vk_pay":
                 return amount * AppConfig.VK_PAY_COIN_RATE; // 1 рубль = 100 фиан
@@ -1038,45 +975,9 @@ public class UserService {
         }
     }
 
-    public static class UserStats {
-        private final int totalChats;
-        private final int activeChats;
-        private final int totalMessages;
-        private final int likesReceived;
-        private final int profileViews;
-        private final int matchesFound;
-
-        public UserStats(int totalChats, int activeChats, int totalMessages,
-                        int likesReceived, int profileViews, int matchesFound) {
-            this.totalChats = totalChats;
-            this.activeChats = activeChats;
-            this.totalMessages = totalMessages;
-            this.likesReceived = likesReceived;
-            this.profileViews = profileViews;
-            this.matchesFound = matchesFound;
-        }
-
-        public int getTotalChats() { return totalChats; }
-        public int getActiveChats() { return activeChats; }
-        public int getTotalMessages() { return totalMessages; }
-        public int getLikesReceived() { return likesReceived; }
-        public int getProfileViews() { return profileViews; }
-        public int getMatchesFound() { return matchesFound; }
+        public record UserStats(int totalChats, int activeChats, int totalMessages, int likesReceived, int profileViews, int matchesFound) {
     }
 
-    public static class OnlineStats {
-        private final int anonymousChats;
-        private final int totalUsers;
-        private final int activeUsers;
-
-        public OnlineStats(int anonymousChats, int totalUsers, int activeUsers) {
-            this.anonymousChats = anonymousChats;
-            this.totalUsers = totalUsers;
-            this.activeUsers = activeUsers;
-        }
-
-        public int getAnonymousChats() { return anonymousChats; }
-        public int getTotalUsers() { return totalUsers; }
-        public int getActiveUsers() { return activeUsers; }
+    public record OnlineStats(int anonymousChats, int totalUsers, int activeUsers) {
     }
 }

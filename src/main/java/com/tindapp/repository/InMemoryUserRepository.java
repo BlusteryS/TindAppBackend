@@ -19,7 +19,7 @@ public class InMemoryUserRepository implements UserRepository {
     private final AtomicLong idGenerator = new AtomicLong(1);
 
     @Override
-    public User save(User user) {
+    public User save(final User user) {
         if (user.getId() == null) {
             user.setId(idGenerator.getAndIncrement());
         }
@@ -32,13 +32,13 @@ public class InMemoryUserRepository implements UserRepository {
     }
 
     @Override
-    public Optional<User> findById(Long id) {
+    public Optional<User> findById(final Long id) {
         return Optional.ofNullable(users.get(id));
     }
 
     @Override
-    public Optional<User> findByVkId(Long vkId) {
-        Long userId = vkIdToUserId.get(vkId);
+    public Optional<User> findByVkId(final Long vkId) {
+        final Long userId = vkIdToUserId.get(vkId);
         return userId != null ? findById(userId) : Optional.empty();
     }
 
@@ -48,10 +48,10 @@ public class InMemoryUserRepository implements UserRepository {
     }
 
     @Override
-    public List<User> findAll(int page, int limit) {
-        List<User> allUsers = findAll();
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, allUsers.size());
+    public List<User> findAll(final int page, final int limit) {
+        final List<User> allUsers = findAll();
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, allUsers.size());
 
         if (start >= allUsers.size()) {
             return new ArrayList<>();
@@ -63,60 +63,60 @@ public class InMemoryUserRepository implements UserRepository {
     @Override
     public List<User> findOnlineUsers() {
         return users.values().stream()
-                .filter(user -> Boolean.TRUE.equals(user.getIsOnline()))
-                .collect(Collectors.toList());
+            .filter(user -> Boolean.TRUE.equals(user.getIsOnline()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<User> findByGender(User.Gender gender) {
+    public List<User> findByGender(final User.Gender gender) {
         return users.values().stream()
-                .filter(user -> gender.equals(user.getGender()))
-                .collect(Collectors.toList());
+            .filter(user -> gender.equals(user.getGender()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<User> findByAgeRange(Integer minAge, Integer maxAge) {
+    public List<User> findByAgeRange(final Integer minAge, final Integer maxAge) {
         return users.values().stream()
-                .filter(user -> {
-                    Integer age = resolveAge(user);
-                    return age != null && age >= minAge && age <= maxAge;
-                })
-                .collect(Collectors.toList());
+            .filter(user -> {
+                final Integer age = resolveAge(user);
+                return age != null && age >= minAge && age <= maxAge;
+            })
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<User> findByCity(String city) {
+    public List<User> findByCity(final String city) {
         return users.values().stream()
-                .filter(user -> city.equals(user.getCity()))
-                .collect(Collectors.toList());
+            .filter(user -> city.equals(user.getCity()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly) {
+    public List<User> findForMatching(final User.Gender gender, final Integer minAge, final Integer maxAge, final String city, final Boolean verifiedOnly) {
         return users.values().stream()
-                .filter(user -> Boolean.TRUE.equals(user.getIsVisible()))
-                .filter(user -> {
-                    if (user.getSettings() == null) {
-                        return false;
-                    }
-                    return Boolean.TRUE.equals(user.getSettings().getAllowMessages());
-                })
-                .filter(user -> Boolean.TRUE.equals(user.getSettings().getAllowMessages()))
-                .filter(user -> verifiedOnly == null || !verifiedOnly || Boolean.TRUE.equals(user.getIsVerified()))
-                .filter(user -> gender == null || gender.equals(user.getGender()))
-                .filter(user -> {
-                    Integer age = resolveAge(user);
-                    return age == null || (age >= minAge && age <= maxAge);
-                })
-                .filter(user -> city == null || city.equals(user.getCity()))
-                .collect(Collectors.toList());
+            .filter(user -> Boolean.TRUE.equals(user.getIsVisible()))
+            .filter(user -> {
+                if (user.getSettings() == null) {
+                    return false;
+                }
+                return Boolean.TRUE.equals(user.getSettings().getAllowMessages());
+            })
+            .filter(user -> Boolean.TRUE.equals(user.getSettings().getAllowMessages()))
+            .filter(user -> verifiedOnly == null || !verifiedOnly || Boolean.TRUE.equals(user.getIsVerified()))
+            .filter(user -> gender == null || gender.equals(user.getGender()))
+            .filter(user -> {
+                final Integer age = resolveAge(user);
+                return age == null || (age >= minAge && age <= maxAge);
+            })
+            .filter(user -> city == null || city.equals(user.getCity()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly, int page, int limit) {
-        List<User> all = findForMatching(gender, minAge, maxAge, city, verifiedOnly);
-        int start = Math.max(0, (page - 1) * limit);
-        int end = Math.min(start + limit, all.size());
+    public List<User> findForMatching(final User.Gender gender, final Integer minAge, final Integer maxAge, final String city, final Boolean verifiedOnly, final int page, final int limit) {
+        final List<User> all = findForMatching(gender, minAge, maxAge, city, verifiedOnly);
+        final int start = Math.max(0, (page - 1) * limit);
+        final int end = Math.min(start + limit, all.size());
         if (start >= all.size()) {
             return new ArrayList<>();
         }
@@ -124,16 +124,16 @@ public class InMemoryUserRepository implements UserRepository {
     }
 
     @Override
-    public void updateOnlineStatus(Long userId, boolean isOnline) {
-        User user = users.get(userId);
+    public void updateOnlineStatus(final Long userId, final boolean isOnline) {
+        final User user = users.get(userId);
         if (user != null) {
             user.updateOnlineStatus(isOnline);
         }
     }
 
     @Override
-    public void updateBalance(Long userId, Integer balance) {
-        User user = users.get(userId);
+    public void updateBalance(final Long userId, final Integer balance) {
+        final User user = users.get(userId);
         if (user != null) {
             user.setBalance(balance);
             user.setUpdatedAtDateTime(LocalDateTime.now());
@@ -141,15 +141,15 @@ public class InMemoryUserRepository implements UserRepository {
     }
 
     @Override
-    public void deleteById(Long id) {
-        User user = users.remove(id);
+    public void deleteById(final Long id) {
+        final User user = users.remove(id);
         if (user != null && user.getVkId() != null) {
             vkIdToUserId.remove(user.getVkId());
         }
     }
 
     @Override
-    public boolean existsById(Long id) {
+    public boolean existsById(final Long id) {
         return users.containsKey(id);
     }
 
@@ -158,7 +158,7 @@ public class InMemoryUserRepository implements UserRepository {
         return users.size();
     }
 
-    private Integer resolveAge(User user) {
+    private Integer resolveAge(final User user) {
         if (user == null) {
             return null;
         }
@@ -166,7 +166,7 @@ public class InMemoryUserRepository implements UserRepository {
             return user.getAge();
         }
         if (user.getBirthDate() != null) {
-            LocalDate today = LocalDate.now();
+            final LocalDate today = LocalDate.now();
             int age = today.getYear() - user.getBirthDate().getYear();
             if (user.getBirthDate().plusYears(age).isAfter(today)) {
                 age -= 1;

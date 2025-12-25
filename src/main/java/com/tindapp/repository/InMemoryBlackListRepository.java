@@ -16,7 +16,7 @@ public class InMemoryBlackListRepository implements BlackListRepository {
     private final AtomicLong idGenerator = new AtomicLong(1);
 
     @Override
-    public BlackListItem save(BlackListItem blackListItem) {
+    public BlackListItem save(final BlackListItem blackListItem) {
         if (blackListItem.getId() == null) {
             blackListItem.setId(String.valueOf(idGenerator.getAndIncrement()));
         }
@@ -25,7 +25,7 @@ public class InMemoryBlackListRepository implements BlackListRepository {
     }
 
     @Override
-    public Optional<BlackListItem> findById(String id) {
+    public Optional<BlackListItem> findById(final String id) {
         return Optional.ofNullable(blackListItems.get(id));
     }
 
@@ -35,13 +35,13 @@ public class InMemoryBlackListRepository implements BlackListRepository {
     }
 
     @Override
-    public List<BlackListItem> findAll(int page, int limit) {
-        List<BlackListItem> allItems = findAll().stream()
-                .sorted((b1, b2) -> b2.getCreatedAt().compareTo(b1.getCreatedAt()))
-                .collect(Collectors.toList());
+    public List<BlackListItem> findAll(final int page, final int limit) {
+        final List<BlackListItem> allItems = findAll().stream()
+            .sorted((b1, b2) -> b2.getCreatedAt().compareTo(b1.getCreatedAt()))
+            .collect(Collectors.toList());
 
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, allItems.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, allItems.size());
 
         if (start >= allItems.size()) {
             return new ArrayList<>();
@@ -51,19 +51,19 @@ public class InMemoryBlackListRepository implements BlackListRepository {
     }
 
     @Override
-    public List<BlackListItem> findByUserId(Long userId) {
+    public List<BlackListItem> findByUserId(final Long userId) {
         return blackListItems.values().stream()
-                .filter(item -> userId.equals(item.getUserId()))
-                .sorted((b1, b2) -> b2.getCreatedAt().compareTo(b1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(item -> userId.equals(item.getUserId()))
+            .sorted((b1, b2) -> b2.getCreatedAt().compareTo(b1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<BlackListItem> findByUserId(Long userId, int page, int limit) {
-        List<BlackListItem> userItems = findByUserId(userId);
+    public List<BlackListItem> findByUserId(final Long userId, final int page, final int limit) {
+        final List<BlackListItem> userItems = findByUserId(userId);
 
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, userItems.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, userItems.size());
 
         if (start >= userItems.size()) {
             return new ArrayList<>();
@@ -73,61 +73,61 @@ public class InMemoryBlackListRepository implements BlackListRepository {
     }
 
     @Override
-    public Optional<BlackListItem> findByUserIdAndBlockedUserId(Long userId, Long blockedUserId) {
+    public Optional<BlackListItem> findByUserIdAndBlockedUserId(final Long userId, final Long blockedUserId) {
         return blackListItems.values().stream()
-                .filter(item -> userId.equals(item.getUserId()) &&
-                               blockedUserId.equals(item.getBlockedUserId()))
-                .findFirst();
+            .filter(item -> userId.equals(item.getUserId()) &&
+                blockedUserId.equals(item.getBlockedUserId()))
+            .findFirst();
     }
 
     @Override
-    public List<BlackListItem> findByBlockedUserId(Long blockedUserId) {
+    public List<BlackListItem> findByBlockedUserId(final Long blockedUserId) {
         return blackListItems.values().stream()
-                .filter(item -> blockedUserId.equals(item.getBlockedUserId()))
-                .sorted((b1, b2) -> b2.getCreatedAt().compareTo(b1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(item -> blockedUserId.equals(item.getBlockedUserId()))
+            .sorted((b1, b2) -> b2.getCreatedAt().compareTo(b1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public boolean isBlocked(Long userId, Long blockedUserId) {
+    public boolean isBlocked(final Long userId, final Long blockedUserId) {
         return findByUserIdAndBlockedUserId(userId, blockedUserId).isPresent();
     }
 
     @Override
-    public void unblockUser(Long userId, Long blockedUserId) {
+    public void unblockUser(final Long userId, final Long blockedUserId) {
         blackListItems.entrySet().removeIf(entry -> {
-            BlackListItem item = entry.getValue();
+            final BlackListItem item = entry.getValue();
             return userId.equals(item.getUserId()) &&
-                   blockedUserId.equals(item.getBlockedUserId());
+                blockedUserId.equals(item.getBlockedUserId());
         });
     }
 
     @Override
-    public long countByUserId(Long userId) {
+    public long countByUserId(final Long userId) {
         return blackListItems.values().stream()
-                .filter(item -> userId.equals(item.getUserId()))
-                .count();
+            .filter(item -> userId.equals(item.getUserId()))
+            .count();
     }
 
     @Override
-    public long countByBlockedUserId(Long blockedUserId) {
+    public long countByBlockedUserId(final Long blockedUserId) {
         return blackListItems.values().stream()
-                .filter(item -> blockedUserId.equals(item.getBlockedUserId()))
-                .count();
+            .filter(item -> blockedUserId.equals(item.getBlockedUserId()))
+            .count();
     }
 
     @Override
-    public void deleteByUserIdAndBlockedUserId(Long userId, Long blockedUserId) {
+    public void deleteByUserIdAndBlockedUserId(final Long userId, final Long blockedUserId) {
         unblockUser(userId, blockedUserId);
     }
 
     @Override
-    public void deleteById(String id) {
+    public void deleteById(final String id) {
         blackListItems.remove(id);
     }
 
     @Override
-    public boolean existsById(String id) {
+    public boolean existsById(final String id) {
         return blackListItems.containsKey(id);
     }
 

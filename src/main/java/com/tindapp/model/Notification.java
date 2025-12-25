@@ -23,11 +23,11 @@ public class Notification {
     private LocalDateTime createdAt;
 
     public Notification() {
-        this.isRead = false;
-        this.createdAt = LocalDateTime.now();
+        isRead = false;
+        createdAt = LocalDateTime.now();
     }
 
-    public Notification(String id, Long userId, NotificationType type, String title, String message) {
+    public Notification(final String id, final Long userId, final NotificationType type, final String title, final String message) {
         this();
         this.id = id;
         this.userId = userId;
@@ -40,31 +40,71 @@ public class Notification {
         NEW_MESSAGE, NEW_MATCH, SUBSCRIPTION_EXPIRY, SYSTEM, REPORT_UPDATE
     }
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public String getId() {
+        return id;
+    }
 
-    public Long getUserId() { return userId; }
-    public void setUserId(Long userId) { this.userId = userId; }
+    public void setId(final String id) {
+        this.id = id;
+    }
 
-    public NotificationType getType() { return type; }
-    public void setType(NotificationType type) { this.type = type; }
+    public Long getUserId() {
+        return userId;
+    }
 
-    public String getTitle() { return title; }
-    public void setTitle(String title) { this.title = title; }
+    public void setUserId(final Long userId) {
+        this.userId = userId;
+    }
 
-    public String getMessage() { return message; }
-    public void setMessage(String message) { this.message = message; }
+    public NotificationType getType() {
+        return type;
+    }
 
-    public Boolean getIsRead() { return isRead; }
-    public void setIsRead(Boolean isRead) { this.isRead = isRead; }
+    public void setType(final NotificationType type) {
+        this.type = type;
+    }
 
-    public Map<String, Object> getData() { return data; }
-    public void setData(Map<String, Object> data) { this.data = data; }
+    public String getTitle() {
+        return title;
+    }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public void setTitle(final String title) {
+        this.title = title;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(final String message) {
+        this.message = message;
+    }
+
+    public Boolean getIsRead() {
+        return isRead;
+    }
+
+    public void setIsRead(final Boolean isRead) {
+        this.isRead = isRead;
+    }
+
+    public Map<String, Object> getData() {
+        return data;
+    }
+
+    public void setData(final Map<String, Object> data) {
+        this.data = data;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(final LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 
     public void markAsRead() {
-        this.isRead = true;
+        isRead = true;
     }
 }

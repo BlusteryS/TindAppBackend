@@ -26,27 +26,27 @@ public class TranslationService {
         this(AppConfig.TRANSLATION_API_URL);
     }
 
-    public TranslationService(String endpoint) {
+    public TranslationService(final String endpoint) {
         this.endpoint = endpoint;
-        this.httpClient = HttpClient.newBuilder()
+        httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
     }
 
-    public Optional<Message.MessageTranslation> translate(String text, String sourceLanguage, String targetLanguage) {
+    public Optional<Message.MessageTranslation> translate(final String text, final String sourceLanguage, final String targetLanguage) {
         if (text == null || text.trim().isEmpty()) {
             return Optional.empty();
         }
 
-        String normalizedTarget = LanguageUtils.normalizeLanguage(targetLanguage);
-        String normalizedSource = LanguageUtils.normalizeLanguage(sourceLanguage);
+        final String normalizedTarget = LanguageUtils.normalizeLanguage(targetLanguage);
+        final String normalizedSource = LanguageUtils.normalizeLanguage(sourceLanguage);
 
         if (!LanguageUtils.canTranslate(normalizedSource, normalizedTarget)) {
             return Optional.empty();
         }
 
         try {
-            JsonObject payload = new JsonObject()
+            final JsonObject payload = new JsonObject()
                 .put("q", text)
                 .put("source", normalizedSource)
                 .put("target", normalizedTarget)
@@ -54,32 +54,32 @@ public class TranslationService {
                 .put("alternatives", 0)
                 .put("api_key", System.getenv("TRANSLATION_API_KEY"));
 
-            HttpRequest request = HttpRequest.newBuilder()
+            final HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(payload.encode(), StandardCharsets.UTF_8))
                 .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() / 100 != 2) {
                 logger.warn("Translation request failed with status {}: {}", response.statusCode(), response.body());
                 return Optional.empty();
             }
 
-            JsonObject json = new JsonObject(response.body());
-            String translatedText = json.getString("translatedText");
+            final JsonObject json = new JsonObject(response.body());
+            final String translatedText = json.getString("translatedText");
             if (translatedText == null || translatedText.isBlank()) {
                 return Optional.empty();
             }
 
-            Message.MessageTranslation translation = new Message.MessageTranslation(
+            final Message.MessageTranslation translation = new Message.MessageTranslation(
                 normalizedTarget,
                 normalizedSource,
                 translatedText
             );
             return Optional.of(translation);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             logger.warn("Failed to translate text", e);
             return Optional.empty();
         }

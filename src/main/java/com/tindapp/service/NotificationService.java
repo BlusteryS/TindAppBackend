@@ -19,47 +19,47 @@ public class NotificationService {
     private final UserService userService;
     private final VkGroupNotificationService vkGroupNotificationService;
 
-    public NotificationService(NotificationRepository notificationRepository,
-                               UserService userService,
-                               VkGroupNotificationService vkGroupNotificationService) {
+    public NotificationService(final NotificationRepository notificationRepository,
+                               final UserService userService,
+                               final VkGroupNotificationService vkGroupNotificationService) {
         this.notificationRepository = notificationRepository;
         this.userService = userService;
         this.vkGroupNotificationService = vkGroupNotificationService;
     }
 
-    public List<Notification> getUserNotifications(Long userId, int page, int limit) {
+    public List<Notification> getUserNotifications(final Long userId, final int page, final int limit) {
         return notificationRepository.findByUserId(userId, page, limit);
     }
 
-    public List<Notification> getUnreadNotifications(Long userId) {
+    public List<Notification> getUnreadNotifications(final Long userId) {
         return notificationRepository.findUnreadByUserId(userId);
     }
 
-    public long getUnreadCount(Long userId) {
+    public long getUnreadCount(final Long userId) {
         return notificationRepository.countUnreadByUserId(userId);
     }
 
-    public Notification createNotification(Long userId, Notification.NotificationType type,
-                                         String title, String message) {
-        String notificationId = UUID.randomUUID().toString();
-        Notification notification = new Notification(notificationId, userId, type, title, message);
+    public Notification createNotification(final Long userId, final Notification.NotificationType type,
+                                           final String title, final String message) {
+        final String notificationId = UUID.randomUUID().toString();
+        final Notification notification = new Notification(notificationId, userId, type, title, message);
         return notificationRepository.save(notification);
     }
 
-    public void markAsRead(String notificationId) {
+    public void markAsRead(final String notificationId) {
         notificationRepository.markAsRead(notificationId);
     }
 
-    public void markNotificationsAsRead(List<String> notificationIds) {
+    public void markNotificationsAsRead(final List<String> notificationIds) {
         notificationRepository.markAsReadByIds(notificationIds);
     }
 
-    public void markAllAsRead(Long userId) {
+    public void markAllAsRead(final Long userId) {
         notificationRepository.markAllAsReadByUserId(userId);
     }
 
-    public void deleteNotification(String notificationId, Long userId) {
-        Optional<Notification> notification = notificationRepository.findById(notificationId);
+    public void deleteNotification(final String notificationId, final Long userId) {
+        final Optional<Notification> notification = notificationRepository.findById(notificationId);
         if (notification.isPresent() && notification.get().getUserId().equals(userId)) {
             notificationRepository.deleteById(notificationId);
         } else {
@@ -67,13 +67,13 @@ public class NotificationService {
         }
     }
 
-    public void sendNewMessageNotification(Long userId, Chat.ChatType chatType, String senderName) {
-        User user = getUser(userId);
+    public void sendNewMessageNotification(final Long userId, final Chat.ChatType chatType, final String senderName) {
+        final User user = getUser(userId);
         if (user == null) {
             return;
         }
 
-        boolean enabled =
+        final boolean enabled =
             chatType == Chat.ChatType.ANONYMOUS
                 ? shouldNotifyAnonMessages(user)
                 : shouldNotifyProfileMessages(user);
@@ -81,10 +81,10 @@ public class NotificationService {
             return;
         }
 
-        String safeSender = senderName != null && !senderName.isBlank() ? senderName : "Собеседник";
-        String title =
+        final String safeSender = senderName != null && !senderName.isBlank() ? senderName : "Собеседник";
+        final String title =
             chatType == Chat.ChatType.ANONYMOUS ? "Сообщение в анонимном чате" : "Новое сообщение";
-        String message =
+        final String message =
             chatType == Chat.ChatType.ANONYMOUS
                 ? "У вас новое сообщение в анонимном чате."
                 : "Вам написал(а) " + safeSender + " в TindApp.";
@@ -93,27 +93,27 @@ public class NotificationService {
         sendCommunityNotification(user, title, message);
     }
 
-    public void sendProfileChatCreatedNotification(Long userId, String initiatorName) {
-        User user = getUser(userId);
+    public void sendProfileChatCreatedNotification(final Long userId, final String initiatorName) {
+        final User user = getUser(userId);
         if (user == null || !shouldNotifyProfileNewChat(user)) {
             return;
         }
 
-        String safeName = initiatorName != null && !initiatorName.isBlank() ? initiatorName : "Пользователь";
-        String title = "Новый чат";
-        String message = safeName + " начал чат с вами. Ответьте, чтобы продолжить общение.";
+        final String safeName = initiatorName != null && !initiatorName.isBlank() ? initiatorName : "Пользователь";
+        final String title = "Новый чат";
+        final String message = safeName + " начал чат с вами. Ответьте, чтобы продолжить общение.";
 
         createNotification(userId, Notification.NotificationType.NEW_MATCH, title, message);
         sendCommunityNotification(user, title, message);
     }
 
-    public void sendDialogClosedNotification(Long userId, Chat.ChatType chatType, String closedByName) {
-        User user = getUser(userId);
+    public void sendDialogClosedNotification(final Long userId, final Chat.ChatType chatType, final String closedByName) {
+        final User user = getUser(userId);
         if (user == null) {
             return;
         }
 
-        boolean enabled =
+        final boolean enabled =
             chatType == Chat.ChatType.ANONYMOUS
                 ? shouldNotifyAnonDialogClosed(user)
                 : shouldNotifyProfileDialogClosed(user);
@@ -121,9 +121,9 @@ public class NotificationService {
             return;
         }
 
-        String safeName = closedByName != null && !closedByName.isBlank() ? closedByName : "Собеседник";
-        String title = "Диалог завершен";
-        String message =
+        final String safeName = closedByName != null && !closedByName.isBlank() ? closedByName : "Собеседник";
+        final String title = "Диалог завершен";
+        final String message =
             chatType == Chat.ChatType.ANONYMOUS
                 ? "Собеседник завершил анонимный чат."
                 : safeName + " завершил чат.";
@@ -132,38 +132,38 @@ public class NotificationService {
         sendCommunityNotification(user, title, message);
     }
 
-    public void sendMatchFoundNotification(Long userId, String companionNickname) {
-        User user = getUser(userId);
+    public void sendMatchFoundNotification(final Long userId, final String companionNickname) {
+        final User user = getUser(userId);
         if (user == null) {
             return;
         }
 
-        String safeName = companionNickname != null && !companionNickname.isBlank()
+        final String safeName = companionNickname != null && !companionNickname.isBlank()
             ? companionNickname
             : "Собеседник";
-        String title = "Найден собеседник!";
-        String message = "Вы подключены к чату с " + safeName;
+        final String title = "Найден собеседник!";
+        final String message = "Вы подключены к чату с " + safeName;
 
         createNotification(userId, Notification.NotificationType.NEW_MATCH, title, message);
         sendCommunityNotification(user, title,
             "Мы нашли для вас собеседника. Загляните в TindApp!");
     }
 
-    public void sendSubscriptionExpiryNotification(Long userId) {
-        User user = getUser(userId);
+    public void sendSubscriptionExpiryNotification(final Long userId) {
+        final User user = getUser(userId);
         if (user == null || !shouldNotifySubscriptionProblems(user)) {
             return;
         }
 
-        String title = "Продлите подписку";
-        String message = "Подписка закончилась, автопродление отключено. Продлите её, чтобы сохранить преимущества.";
+        final String title = "Продлите подписку";
+        final String message = "Подписка закончилась, автопродление отключено. Продлите её, чтобы сохранить преимущества.";
 
         createNotification(userId, Notification.NotificationType.SUBSCRIPTION_EXPIRY, title, message);
         sendCommunityNotification(user, title,
             "Подписка TindApp закончилась, потому что автопродление отключено. Возобновите её, чтобы не потерять преимущества.");
     }
 
-    public void sendSystemNotification(Long userId, String title, String message) {
+    public void sendSystemNotification(final Long userId, final String title, final String message) {
         createNotification(
             userId,
             Notification.NotificationType.SYSTEM,
@@ -173,8 +173,8 @@ public class NotificationService {
         sendCommunityNotification(userId, title, message);
     }
 
-    public boolean sendCommunityTestNotification(Long userId) {
-        VkGroupNotificationService.VkSendResult result = sendCommunityNotification(
+    public boolean sendCommunityTestNotification(final Long userId) {
+        final VkGroupNotificationService.VkSendResult result = sendCommunityNotification(
             userId,
             "Уведомления включены",
             "Теперь мы будем присылать сообщения от имени сообщества TindApp при новых событиях."
@@ -182,12 +182,12 @@ public class NotificationService {
         return result == VkGroupNotificationService.VkSendResult.SUCCESS;
     }
 
-    private VkGroupNotificationService.VkSendResult sendCommunityNotification(Long userId, String title, String message) {
+    private VkGroupNotificationService.VkSendResult sendCommunityNotification(final Long userId, final String title, final String message) {
         if (vkGroupNotificationService == null) {
             return VkGroupNotificationService.VkSendResult.FAILED;
         }
 
-        Optional<User> userOpt = userService.getUserById(userId);
+        final Optional<User> userOpt = userService.getUserById(userId);
         if (userOpt.isEmpty()) {
             return VkGroupNotificationService.VkSendResult.FAILED;
         }
@@ -195,7 +195,7 @@ public class NotificationService {
         return sendCommunityNotification(userOpt.get(), title, message);
     }
 
-    private VkGroupNotificationService.VkSendResult sendCommunityNotification(User user, String title, String message) {
+    private VkGroupNotificationService.VkSendResult sendCommunityNotification(final User user, final String title, final String message) {
         if (user == null || user.getVkId() == null) {
             return VkGroupNotificationService.VkSendResult.FAILED;
         }
@@ -204,8 +204,8 @@ public class NotificationService {
             return VkGroupNotificationService.VkSendResult.FAILED;
         }
 
-        String payload = buildCommunityMessage(title, message);
-        VkGroupNotificationService.VkSendResult result =
+        final String payload = buildCommunityMessage(title, message);
+        final VkGroupNotificationService.VkSendResult result =
             vkGroupNotificationService.sendMessage(user.getVkId(), payload);
 
         if (result == VkGroupNotificationService.VkSendResult.PERMISSION_ERROR) {
@@ -215,55 +215,55 @@ public class NotificationService {
         return result;
     }
 
-    private boolean isCommunityNotificationsEnabled(User user) {
+    private boolean isCommunityNotificationsEnabled(final User user) {
         if (user.getSettings() == null) {
             return false;
         }
         return Boolean.TRUE.equals(user.getSettings().getAllowCommunityMessages());
     }
 
-    private boolean shouldNotifyAnonMessages(User user) {
+    private boolean shouldNotifyAnonMessages(final User user) {
         return getSetting(user, User.UserSettings::getNotifyAnonMessages, true);
     }
 
-    private boolean shouldNotifyAnonDialogClosed(User user) {
+    private boolean shouldNotifyAnonDialogClosed(final User user) {
         return getSetting(user, User.UserSettings::getNotifyAnonDialogClosed, true);
     }
 
-    private boolean shouldNotifyProfileNewChat(User user) {
+    private boolean shouldNotifyProfileNewChat(final User user) {
         return getSetting(user, User.UserSettings::getNotifyProfileNewChat, true);
     }
 
-    private boolean shouldNotifyProfileMessages(User user) {
+    private boolean shouldNotifyProfileMessages(final User user) {
         return getSetting(user, User.UserSettings::getNotifyProfileMessages, true);
     }
 
-    private boolean shouldNotifyProfileDialogClosed(User user) {
+    private boolean shouldNotifyProfileDialogClosed(final User user) {
         return getSetting(user, User.UserSettings::getNotifyProfileDialogClosed, true);
     }
 
-    private boolean shouldNotifySubscriptionProblems(User user) {
+    private boolean shouldNotifySubscriptionProblems(final User user) {
         return getSetting(user, User.UserSettings::getNotifySubscriptionProblems, true);
     }
 
-    private boolean getSetting(User user, java.util.function.Function<User.UserSettings, Boolean> getter, boolean defaultValue) {
-        User.UserSettings settings = user.getSettings();
+    private boolean getSetting(final User user, final java.util.function.Function<User.UserSettings, Boolean> getter, final boolean defaultValue) {
+        final User.UserSettings settings = user.getSettings();
         if (settings == null) {
             return defaultValue;
         }
-        Boolean value = getter.apply(settings);
+        final Boolean value = getter.apply(settings);
         return value == null ? defaultValue : value;
     }
 
-    private User getUser(Long userId) {
+    private User getUser(final Long userId) {
         if (userId == null) {
             return null;
         }
         return userService.getUserById(userId).orElse(null);
     }
 
-    private String buildCommunityMessage(String title, String body) {
-        StringBuilder sb = new StringBuilder();
+    private String buildCommunityMessage(final String title, final String body) {
+        final StringBuilder sb = new StringBuilder();
         if (title != null && !title.isBlank()) {
             sb.append(title.trim()).append("\n\n");
         }
@@ -274,7 +274,7 @@ public class NotificationService {
         return sb.toString();
     }
 
-    private void disableCommunityNotifications(User user) {
+    private void disableCommunityNotifications(final User user) {
         if (user == null || user.getId() == null) {
             return;
         }

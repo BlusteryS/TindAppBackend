@@ -16,12 +16,12 @@ public final class ResponseMapper {
     private ResponseMapper() {
     }
 
-    public static JsonObject toUserResponse(User user) {
+    public static JsonObject toUserResponse(final User user) {
         if (user == null) {
             return new JsonObject();
         }
 
-        JsonObject response = new JsonObject()
+        final JsonObject response = new JsonObject()
             .put("id", user.getId())
             .put("vkId", user.getVkId())
             .put("age", user.getAge())
@@ -49,7 +49,7 @@ public final class ResponseMapper {
         response.put("updatedAt", DateTimeUtils.formatToIso(user.getUpdatedAtDateTime()));
         response.put("bannedAt", DateTimeUtils.formatToIso(user.getBannedAt()));
 
-        JsonObject subscription = new JsonObject();
+        final JsonObject subscription = new JsonObject();
         if (user.getSubscription() != null) {
             subscription
                 .put("isActive", user.getSubscription().getIsActive())
@@ -64,7 +64,7 @@ public final class ResponseMapper {
         }
         response.put("subscription", subscription.getMap());
 
-        JsonObject settings = new JsonObject();
+        final JsonObject settings = new JsonObject();
         if (user.getSettings() != null) {
             settings
                 .put("showAge", user.getSettings().getShowAge())
@@ -92,7 +92,7 @@ public final class ResponseMapper {
         }
         response.put("settings", settings.getMap());
 
-        JsonObject rewards = new JsonObject();
+        final JsonObject rewards = new JsonObject();
         if (user.getRewards() != null) {
             rewards
                 .put("subscriptionBonusClaimed", user.getRewards().getSubscriptionBonusClaimed())
@@ -107,12 +107,12 @@ public final class ResponseMapper {
         return response;
     }
 
-    public static JsonObject toMessageResponse(Message message) {
+    public static JsonObject toMessageResponse(final Message message) {
         if (message == null) {
             return new JsonObject();
         }
 
-        JsonObject response = new JsonObject()
+        final JsonObject response = new JsonObject()
             .put("id", message.getId())
             .put("chatId", message.getChatId())
             .put("senderId", message.getSenderId())
@@ -124,7 +124,7 @@ public final class ResponseMapper {
             .put("updatedAt", message.getUpdatedAt());
 
         if (message.getReplyTo() != null) {
-            JsonObject replyTo = new JsonObject()
+            final JsonObject replyTo = new JsonObject()
                 .put("messageId", message.getReplyTo().getMessageId())
                 .put("text", message.getReplyTo().getText())
                 .put("senderName", message.getReplyTo().getSenderName());
@@ -132,9 +132,9 @@ public final class ResponseMapper {
         }
 
         if (message.getAttachments() != null && !message.getAttachments().isEmpty()) {
-            List<Map<String, Object>> attachments = new ArrayList<>();
+            final List<Map<String, Object>> attachments = new ArrayList<>();
             message.getAttachments().forEach(attachment -> {
-                JsonObject attachmentJson = new JsonObject()
+                final JsonObject attachmentJson = new JsonObject()
                     .put("type", attachment.getType() != null ? attachment.getType().name().toLowerCase() : null)
                     .put("url", attachment.getUrl());
                 if (attachment.getPreview() != null) {
@@ -146,12 +146,12 @@ public final class ResponseMapper {
         }
 
         if (message.getTranslations() != null && !message.getTranslations().isEmpty()) {
-            JsonObject translated = new JsonObject();
+            final JsonObject translated = new JsonObject();
             message.getTranslations().forEach((language, translation) -> {
                 if (translation == null) {
                     return;
                 }
-                JsonObject translationJson = new JsonObject()
+                final JsonObject translationJson = new JsonObject()
                     .put("text", translation.getText())
                     .put("from", translation.getFrom())
                     .put("to", translation.getTo());
@@ -165,12 +165,12 @@ public final class ResponseMapper {
         return response;
     }
 
-    public static JsonObject toChatResponse(Chat chat) {
+    public static JsonObject toChatResponse(final Chat chat) {
         if (chat == null) {
             return new JsonObject();
         }
 
-        JsonObject response = new JsonObject()
+        final JsonObject response = new JsonObject()
             .put("id", chat.getId())
             .put("type", chat.getType() != null ? chat.getType().name() : null)
             .put("user1Id", chat.getUser1Id())
@@ -187,9 +187,9 @@ public final class ResponseMapper {
             response.put("lastMessage", toMessageResponse(chat.getLastMessage()).getMap());
         }
 
-        Chat.ChatSettings settings = chat.getSettings();
+        final Chat.ChatSettings settings = chat.getSettings();
         if (settings != null) {
-            JsonObject settingsJson = new JsonObject()
+            final JsonObject settingsJson = new JsonObject()
                 .put("cost", settings.getCost())
                 .put("anonymousId", settings.getAnonymousId());
             response.put("settings", settingsJson.getMap());
@@ -200,7 +200,7 @@ public final class ResponseMapper {
         return response;
     }
 
-    public static JsonObject toReportResponse(Report report) {
+    public static JsonObject toReportResponse(final Report report) {
         if (report == null) {
             return new JsonObject();
         }
@@ -217,7 +217,7 @@ public final class ResponseMapper {
             .put("createdAt", DateTimeUtils.formatToIso(report.getCreatedAt()));
     }
 
-    public static JsonObject toBlackListItemResponse(BlackListItem item) {
+    public static JsonObject toBlackListItemResponse(final BlackListItem item) {
         if (item == null) {
             return new JsonObject();
         }

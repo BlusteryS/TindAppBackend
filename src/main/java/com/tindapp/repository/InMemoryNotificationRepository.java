@@ -16,7 +16,7 @@ public class InMemoryNotificationRepository implements NotificationRepository {
     private final AtomicLong idGenerator = new AtomicLong(1);
 
     @Override
-    public Notification save(Notification notification) {
+    public Notification save(final Notification notification) {
         if (notification.getId() == null) {
             notification.setId(String.valueOf(idGenerator.getAndIncrement()));
         }
@@ -25,7 +25,7 @@ public class InMemoryNotificationRepository implements NotificationRepository {
     }
 
     @Override
-    public Optional<Notification> findById(String id) {
+    public Optional<Notification> findById(final String id) {
         return Optional.ofNullable(notifications.get(id));
     }
 
@@ -35,13 +35,13 @@ public class InMemoryNotificationRepository implements NotificationRepository {
     }
 
     @Override
-    public List<Notification> findAll(int page, int limit) {
-        List<Notification> allNotifications = findAll().stream()
-                .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
-                .collect(Collectors.toList());
+    public List<Notification> findAll(final int page, final int limit) {
+        final List<Notification> allNotifications = findAll().stream()
+            .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
+            .collect(Collectors.toList());
 
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, allNotifications.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, allNotifications.size());
 
         if (start >= allNotifications.size()) {
             return new ArrayList<>();
@@ -51,19 +51,19 @@ public class InMemoryNotificationRepository implements NotificationRepository {
     }
 
     @Override
-    public List<Notification> findByUserId(Long userId) {
+    public List<Notification> findByUserId(final Long userId) {
         return notifications.values().stream()
-                .filter(notification -> userId.equals(notification.getUserId()))
-                .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(notification -> userId.equals(notification.getUserId()))
+            .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<Notification> findByUserId(Long userId, int page, int limit) {
-        List<Notification> userNotifications = findByUserId(userId);
+    public List<Notification> findByUserId(final Long userId, final int page, final int limit) {
+        final List<Notification> userNotifications = findByUserId(userId);
 
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, userNotifications.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, userNotifications.size());
 
         if (start >= userNotifications.size()) {
             return new ArrayList<>();
@@ -73,63 +73,63 @@ public class InMemoryNotificationRepository implements NotificationRepository {
     }
 
     @Override
-    public List<Notification> findUnreadByUserId(Long userId) {
+    public List<Notification> findUnreadByUserId(final Long userId) {
         return notifications.values().stream()
-                .filter(notification -> userId.equals(notification.getUserId()))
-                .filter(notification -> Boolean.FALSE.equals(notification.getIsRead()))
-                .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(notification -> userId.equals(notification.getUserId()))
+            .filter(notification -> Boolean.FALSE.equals(notification.getIsRead()))
+            .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public void markAsRead(String notificationId) {
-        Notification notification = notifications.get(notificationId);
+    public void markAsRead(final String notificationId) {
+        final Notification notification = notifications.get(notificationId);
         if (notification != null) {
             notification.markAsRead();
         }
     }
 
     @Override
-    public void markAllAsReadByUserId(Long userId) {
+    public void markAllAsReadByUserId(final Long userId) {
         notifications.values().stream()
-                .filter(notification -> userId.equals(notification.getUserId()))
-                .forEach(Notification::markAsRead);
+            .filter(notification -> userId.equals(notification.getUserId()))
+            .forEach(Notification::markAsRead);
     }
 
     @Override
-    public void markAsReadByIds(List<String> notificationIds) {
+    public void markAsReadByIds(final List<String> notificationIds) {
         notificationIds.forEach(this::markAsRead);
     }
 
     @Override
-    public long countUnreadByUserId(Long userId) {
+    public long countUnreadByUserId(final Long userId) {
         return notifications.values().stream()
-                .filter(notification -> userId.equals(notification.getUserId()))
-                .filter(notification -> Boolean.FALSE.equals(notification.getIsRead()))
-                .count();
+            .filter(notification -> userId.equals(notification.getUserId()))
+            .filter(notification -> Boolean.FALSE.equals(notification.getIsRead()))
+            .count();
     }
 
     @Override
-    public List<Notification> findByType(Notification.NotificationType type) {
+    public List<Notification> findByType(final Notification.NotificationType type) {
         return notifications.values().stream()
-                .filter(notification -> type.equals(notification.getType()))
-                .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
-                .collect(Collectors.toList());
+            .filter(notification -> type.equals(notification.getType()))
+            .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 
     @Override
-    public void deleteByUserId(Long userId) {
+    public void deleteByUserId(final Long userId) {
         notifications.entrySet().removeIf(entry ->
             userId.equals(entry.getValue().getUserId()));
     }
 
     @Override
-    public void deleteById(String id) {
+    public void deleteById(final String id) {
         notifications.remove(id);
     }
 
     @Override
-    public boolean existsById(String id) {
+    public boolean existsById(final String id) {
         return notifications.containsKey(id);
     }
 

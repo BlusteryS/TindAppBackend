@@ -19,33 +19,58 @@ public class BlackListItem {
     private LocalDateTime createdAt;
 
     public BlackListItem() {
-        this.createdAt = LocalDateTime.now();
+        createdAt = LocalDateTime.now();
     }
 
-    public BlackListItem(String id, Long userId, Long blockedUserId) {
+    public BlackListItem(final String id, final Long userId, final Long blockedUserId) {
         this();
         this.id = id;
         this.userId = userId;
         this.blockedUserId = blockedUserId;
     }
 
-    public BlackListItem(String id, Long userId, Long blockedUserId, String reason) {
+    public BlackListItem(final String id, final Long userId, final Long blockedUserId, final String reason) {
         this(id, userId, blockedUserId);
         this.reason = reason;
     }
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public String getId() {
+        return id;
+    }
 
-    public Long getUserId() { return userId; }
-    public void setUserId(Long userId) { this.userId = userId; }
+    public void setId(final String id) {
+        this.id = id;
+    }
 
-    public Long getBlockedUserId() { return blockedUserId; }
-    public void setBlockedUserId(Long blockedUserId) { this.blockedUserId = blockedUserId; }
+    public Long getUserId() {
+        return userId;
+    }
 
-    public String getReason() { return reason; }
-    public void setReason(String reason) { this.reason = reason; }
+    public void setUserId(final Long userId) {
+        this.userId = userId;
+    }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public Long getBlockedUserId() {
+        return blockedUserId;
+    }
+
+    public void setBlockedUserId(final Long blockedUserId) {
+        this.blockedUserId = blockedUserId;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public void setReason(final String reason) {
+        this.reason = reason;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(final LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 }

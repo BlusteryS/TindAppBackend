@@ -18,7 +18,7 @@ public class InMemoryMessageRepository implements MessageRepository {
     private final AtomicLong idGenerator = new AtomicLong(1);
 
     @Override
-    public Message save(Message message) {
+    public Message save(final Message message) {
         if (message.getId() == null) {
             message.setId(String.valueOf(idGenerator.getAndIncrement()));
         }
@@ -28,7 +28,7 @@ public class InMemoryMessageRepository implements MessageRepository {
     }
 
     @Override
-    public Optional<Message> findById(String id) {
+    public Optional<Message> findById(final String id) {
         return Optional.ofNullable(messages.get(id));
     }
 
@@ -38,20 +38,20 @@ public class InMemoryMessageRepository implements MessageRepository {
     }
 
     @Override
-    public List<Message> findAll(int page, int limit) {
-        List<Message> allMessages = findAll().stream()
-                .sorted((m1, m2) -> {
-                    LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                    LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
-                    if (date1 == null && date2 == null) return 0;
-                    if (date1 == null) return 1;
-                    if (date2 == null) return -1;
-                    return date2.compareTo(date1);
-                })
-                .collect(Collectors.toList());
+    public List<Message> findAll(final int page, final int limit) {
+        final List<Message> allMessages = findAll().stream()
+            .sorted((m1, m2) -> {
+                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
+                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
+                if (date1 == null && date2 == null) return 0;
+                if (date1 == null) return 1;
+                if (date2 == null) return -1;
+                return date2.compareTo(date1);
+            })
+            .collect(Collectors.toList());
 
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, allMessages.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, allMessages.size());
 
         if (start >= allMessages.size()) {
             return new ArrayList<>();
@@ -61,35 +61,35 @@ public class InMemoryMessageRepository implements MessageRepository {
     }
 
     @Override
-    public List<Message> findByChatId(String chatId) {
+    public List<Message> findByChatId(final String chatId) {
         return messages.values().stream()
-                .filter(message -> chatId.equals(message.getChatId()))
-                .sorted((m1, m2) -> {
-                    LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                    LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
-                    if (date1 == null && date2 == null) return 0;
-                    if (date1 == null) return 1;
-                    if (date2 == null) return -1;
-                    return date1.compareTo(date2);
-                })
-                .collect(Collectors.toList());
+            .filter(message -> chatId.equals(message.getChatId()))
+            .sorted((m1, m2) -> {
+                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
+                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
+                if (date1 == null && date2 == null) return 0;
+                if (date1 == null) return 1;
+                if (date2 == null) return -1;
+                return date1.compareTo(date2);
+            })
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<Message> findByChatId(String chatId, int page, int limit) {
-        List<Message> chatMessages = findByChatId(chatId).stream()
-                .sorted((m1, m2) -> {
-                    LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                    LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
-                    if (date1 == null && date2 == null) return 0;
-                    if (date1 == null) return 1;
-                    if (date2 == null) return -1;
-                    return date2.compareTo(date1);
-                })
-                .collect(Collectors.toList());
+    public List<Message> findByChatId(final String chatId, final int page, final int limit) {
+        final List<Message> chatMessages = findByChatId(chatId).stream()
+            .sorted((m1, m2) -> {
+                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
+                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
+                if (date1 == null && date2 == null) return 0;
+                if (date1 == null) return 1;
+                if (date2 == null) return -1;
+                return date2.compareTo(date1);
+            })
+            .collect(Collectors.toList());
 
-        int start = (page - 1) * limit;
-        int end = Math.min(start + limit, chatMessages.size());
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, chatMessages.size());
 
         if (start >= chatMessages.size()) {
             return new ArrayList<>();
@@ -99,90 +99,90 @@ public class InMemoryMessageRepository implements MessageRepository {
     }
 
     @Override
-    public List<Message> findBySenderId(Long senderId) {
+    public List<Message> findBySenderId(final Long senderId) {
         return messages.values().stream()
-                .filter(message -> senderId.equals(message.getSenderId()))
-                .sorted((m1, m2) -> {
-                    LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                    LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
-                    if (date1 == null && date2 == null) return 0;
-                    if (date1 == null) return 1;
-                    if (date2 == null) return -1;
-                    return date1.compareTo(date2);
-                })
-                .collect(Collectors.toList());
+            .filter(message -> senderId.equals(message.getSenderId()))
+            .sorted((m1, m2) -> {
+                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
+                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
+                if (date1 == null && date2 == null) return 0;
+                if (date1 == null) return 1;
+                if (date2 == null) return -1;
+                return date1.compareTo(date2);
+            })
+            .collect(Collectors.toList());
     }
 
     @Override
-    public List<Message> findUnreadMessagesByChatId(String chatId) {
+    public List<Message> findUnreadMessagesByChatId(final String chatId) {
         return messages.values().stream()
-                .filter(message -> chatId.equals(message.getChatId()))
-                .filter(message -> Boolean.FALSE.equals(message.getIsRead()))
-                .sorted((m1, m2) -> {
-                    LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                    LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
-                    if (date1 == null && date2 == null) return 0;
-                    if (date1 == null) return 1;
-                    if (date2 == null) return -1;
-                    return date1.compareTo(date2);
-                })
-                .collect(Collectors.toList());
+            .filter(message -> chatId.equals(message.getChatId()))
+            .filter(message -> Boolean.FALSE.equals(message.getIsRead()))
+            .sorted((m1, m2) -> {
+                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
+                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
+                if (date1 == null && date2 == null) return 0;
+                if (date1 == null) return 1;
+                if (date2 == null) return -1;
+                return date1.compareTo(date2);
+            })
+            .collect(Collectors.toList());
     }
 
     @Override
-    public void markAsRead(String messageId) {
-        Message message = messages.get(messageId);
+    public void markAsRead(final String messageId) {
+        final Message message = messages.get(messageId);
         if (message != null) {
             message.markAsRead();
         }
     }
 
     @Override
-    public void markMessagesAsRead(String chatId, List<String> messageIds) {
+    public void markMessagesAsRead(final String chatId, final List<String> messageIds) {
         messageIds.forEach(this::markAsRead);
     }
 
     @Override
-    public long countUnreadMessagesByChatId(String chatId) {
+    public long countUnreadMessagesByChatId(final String chatId) {
         return messages.values().stream()
-                .filter(message -> chatId.equals(message.getChatId()))
-                .filter(message -> Boolean.FALSE.equals(message.getIsRead()))
-                .count();
+            .filter(message -> chatId.equals(message.getChatId()))
+            .filter(message -> Boolean.FALSE.equals(message.getIsRead()))
+            .count();
     }
 
     @Override
-    public long countMessagesByChatId(String chatId) {
+    public long countMessagesByChatId(final String chatId) {
         return messages.values().stream()
-                .filter(message -> chatId.equals(message.getChatId()))
-                .count();
+            .filter(message -> chatId.equals(message.getChatId()))
+            .count();
     }
 
     @Override
-    public List<Message> findRecentByChatId(String chatId, int limit) {
+    public List<Message> findRecentByChatId(final String chatId, final int limit) {
         if (limit <= 0) {
             return new ArrayList<>();
         }
 
         return findByChatId(chatId).stream()
-                .sorted((m1, m2) -> {
-                    LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                    LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
-                    if (date1 == null && date2 == null) return 0;
-                    if (date1 == null) return 1;
-                    if (date2 == null) return -1;
-                    return date2.compareTo(date1);
-                })
-                .limit(limit)
-                .collect(Collectors.toList());
+            .sorted((m1, m2) -> {
+                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
+                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
+                if (date1 == null && date2 == null) return 0;
+                if (date1 == null) return 1;
+                if (date2 == null) return -1;
+                return date2.compareTo(date1);
+            })
+            .limit(limit)
+            .collect(Collectors.toList());
     }
 
     @Override
-    public void deleteById(String id) {
+    public void deleteById(final String id) {
         messages.remove(id);
     }
 
     @Override
-    public boolean existsById(String id) {
+    public boolean existsById(final String id) {
         return messages.containsKey(id);
     }
 

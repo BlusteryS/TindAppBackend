@@ -14,7 +14,7 @@ public final class LanguageUtils {
     private static final Set<String> SUPPORTED_LANGUAGES;
 
     static {
-        Map<String, String> aliases = new HashMap<>();
+        final Map<String, String> aliases = new HashMap<>();
         aliases.put("ua", "uk");
         aliases.put("uk", "uk");
         aliases.put("en", "en");
@@ -28,7 +28,7 @@ public final class LanguageUtils {
         aliases.put("zh", "zh");
         LANGUAGE_ALIASES = Collections.unmodifiableMap(aliases);
 
-        Set<String> supported = new HashSet<>();
+        final Set<String> supported = new HashSet<>();
         supported.add("en");
         supported.add("ar");
         supported.add("de");
@@ -45,30 +45,30 @@ public final class LanguageUtils {
     private LanguageUtils() {
     }
 
-    public static String normalizeLanguage(String language) {
+    public static String normalizeLanguage(final String language) {
         if (language == null || language.isBlank()) {
             return DEFAULT_LANGUAGE;
         }
-        String lower = language.trim().toLowerCase();
+        final String lower = language.trim().toLowerCase();
         if (LANGUAGE_ALIASES.containsKey(lower)) {
             return LANGUAGE_ALIASES.get(lower);
         }
         return SUPPORTED_LANGUAGES.contains(lower) ? lower : DEFAULT_LANGUAGE;
     }
 
-    public static boolean isSupportedLanguage(String language) {
+    public static boolean isSupportedLanguage(final String language) {
         if (language == null) {
             return false;
         }
         return SUPPORTED_LANGUAGES.contains(language.trim().toLowerCase());
     }
 
-    public static boolean canTranslate(String source, String target) {
+    public static boolean canTranslate(final String source, final String target) {
         if (source == null || target == null) {
             return false;
         }
-        String normalizedSource = normalizeLanguage(source);
-        String normalizedTarget = normalizeLanguage(target);
+        final String normalizedSource = normalizeLanguage(source);
+        final String normalizedTarget = normalizeLanguage(target);
         return !normalizedSource.equals(normalizedTarget) && isSupportedLanguage(normalizedTarget);
     }
 
