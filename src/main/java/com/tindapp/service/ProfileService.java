@@ -9,14 +9,9 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Random;
-import java.util.stream.Collectors;
 
 public class ProfileService {
 
@@ -46,25 +41,29 @@ public class ProfileService {
         final ProfileFilters filters = normalizeFilters(rawFilters, viewer);
 
         final User.Gender genderEnum = toGenderEnum(filters.getGender());
-        final List<User> candidates = userRepository.findForMatching(genderEnum, filters.getMinAge(), filters.getMaxAge(), filters.getCity(), filters.isVerifiedOnly(), page, limit * 2).stream()
-            .filter(user -> !Objects.equals(user.getId(), viewer.getId()))
-            .filter(user -> matchesFilters(viewer, user, filters))
-            .collect(Collectors.toList());
+        final List<User> candidates = userRepository.findForMatching(
+            viewer.getId(),
+            genderEnum,
+            filters.getMinAge(),
+            filters.getMaxAge(),
+            filters.getCity(),
+            filters.isVerifiedOnly(),
+            page,
+            limit
+        );
+        final int total = Math.toIntExact(userRepository.countForMatching(
+            viewer.getId(),
+            genderEnum,
+            filters.getMinAge(),
+            filters.getMaxAge(),
+            filters.getCity(),
+            filters.isVerifiedOnly()
+        ));
 
-        final Comparator<User> comparator = Comparator
-            .comparingInt((User candidate) -> filters.isPrioritizeCity() && isSameCity(viewer, candidate) ? 0 : 1)
-            .thenComparingLong(this::lastSeenRank)
-            .thenComparingDouble(candidate -> deterministicOrder(viewer.getId(), candidate.getId()));
-
-        candidates.sort(comparator);
-
-        final int total = candidates.size();
-        final int fromIndex = Math.min((page - 1) * limit, total);
-        final int toIndex = Math.min(fromIndex + limit, total);
-
-        final List<ProfileCard> cards = candidates.subList(fromIndex, toIndex).stream()
-            .map(candidate -> toProfileCard(viewer, candidate))
-            .collect(Collectors.toList());
+        final int chatCost = hasActiveSubscription(viewer) ? 0 : ChatPricingPolicy.calculateCost((int) userRepository.countOnlineUsers());
+        final List<ProfileCard> cards = candidates.stream()
+            .map(candidate -> toProfileCard(viewer, candidate, chatCost))
+            .toList();
 
         return new ProfileSearchResult(cards, total);
     }
@@ -123,20 +122,18 @@ public class ProfileService {
     }
 
     public ProfileCard toProfileCard(final User viewer, final User candidate) {
+        final int chatCost = hasActiveSubscription(viewer) ? 0 : ChatPricingPolicy.calculateCost((int) userRepository.countOnlineUsers());
+        return toProfileCard(viewer, candidate, chatCost);
+    }
+
+    private ProfileCard toProfileCard(final User viewer, final User candidate, final int cost) {
         final boolean sameCity = isSameCity(viewer, candidate);
         final String lastSeen = candidate.getLastSeenDateTime() != null ?
             DateTimeUtils.formatToIso(candidate.getLastSeenDateTime()) :
             null;
 
-        final boolean viewerHasSubscription = viewer != null
-            && viewer.getSubscription() != null
-            && Boolean.TRUE.equals(viewer.getSubscription().getIsActive());
         final boolean hasActiveSubscription = candidate.getSubscription() != null
             && Boolean.TRUE.equals(candidate.getSubscription().getIsActive());
-        final int baseCost = candidate.getProfileCost() != null
-            ? candidate.getProfileCost()
-            : AppConfig.ANONYMOUS_CHAT_CREATION_COST;
-        final int cost = viewerHasSubscription ? 0 : baseCost;
 
         return new ProfileCard(
             candidate.getId(),
@@ -155,6 +152,12 @@ public class ProfileService {
             sameCity,
             hasActiveSubscription
         );
+    }
+
+    private boolean hasActiveSubscription(final User user) {
+        return user != null
+            && user.getSubscription() != null
+            && Boolean.TRUE.equals(user.getSubscription().getIsActive());
     }
 
     public boolean matchesFilters(final User viewer, final User candidate, final ProfileFilters filters) {
@@ -241,20 +244,6 @@ public class ProfileService {
             return false;
         }
         return viewer.getCity().equalsIgnoreCase(candidate.getCity());
-    }
-
-    private long lastSeenRank(final User user) {
-        final LocalDateTime reference = user.isOnline() ? LocalDateTime.now() : user.getLastSeenDateTime();
-        if (reference == null) {
-            return Long.MAX_VALUE;
-        }
-        return Long.MAX_VALUE - reference.toEpochSecond(ZoneOffset.UTC);
-    }
-
-    private double deterministicOrder(final Long viewerId, final Long candidateId) {
-        final long seed = Objects.hash(viewerId, candidateId, LocalDate.now().getDayOfYear());
-        final Random random = new Random(seed);
-        return random.nextDouble();
     }
 
     private int parseInt(final String value, final int defaultValue) {

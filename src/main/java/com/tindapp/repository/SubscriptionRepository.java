@@ -9,12 +9,6 @@ public interface SubscriptionRepository extends Repository<Subscription, String>
 
     Optional<Subscription> findActiveByUserId(Long userId);
 
-    List<Subscription> findByUserId(Long userId);
-
-    List<Subscription> findByStatus(Subscription.SubscriptionStatus status);
-
-    List<Subscription> findByType(Subscription.SubscriptionType type);
-
     List<Subscription> findExpiring();
 
     void cancelByUserId(Long userId);

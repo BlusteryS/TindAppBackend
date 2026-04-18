@@ -142,8 +142,8 @@ public class MessageService {
         chatRepository.save(chat);
     }
 
-    public long getUnreadMessagesCount(final String chatId) {
-        return messageRepository.countUnreadMessagesByChatId(chatId);
+    public long countMessages(final String chatId) {
+        return messageRepository.countMessagesByChatId(chatId);
     }
 
     public List<Message> getRecentMessages(final String chatId, final int limit) {

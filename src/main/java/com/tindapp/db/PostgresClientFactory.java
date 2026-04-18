@@ -15,14 +15,29 @@ public class PostgresClientFactory {
 
     public static PgPool createPool(final Vertx vertx, final DatabaseConfig config) {
         if (vertx == null || config == null || !config.isEnabled()) {
-            return null;
+            throw new IllegalArgumentException("PostgreSQL configuration is invalid");
         }
 
         try {
-            return PgPool.pool(vertx, config.toConnectOptions(), config.toPoolOptions());
+            final PgPool pool = PgPool.pool(vertx, config.toConnectOptions(), config.toPoolOptions());
+            try {
+                pool.query("SELECT 1")
+                    .execute()
+                    .toCompletionStage()
+                    .toCompletableFuture()
+                    .join();
+            } catch (final Exception e) {
+                pool.close()
+                    .toCompletionStage()
+                    .toCompletableFuture()
+                    .join();
+                throw e;
+            }
+            logger.info("Postgres pool is ready for {}", config.getSafeDescription());
+            return pool;
         } catch (final Exception e) {
             logger.error("Failed to create Postgres pool for {}", config.getSafeDescription(), e);
-            return null;
+            throw new IllegalStateException("Failed to initialize PostgreSQL connection pool", e);
         }
     }
 }

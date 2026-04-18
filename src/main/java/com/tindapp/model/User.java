@@ -57,7 +57,7 @@ public class User {
         firstName = "";
         lastName = "";
         avatarUrl = "";
-        profileCost = AppConfig.ANONYMOUS_CHAT_CREATION_COST;
+        profileCost = 0;
         isAdmin = false;
         isBanned = false;
         nativeLanguage = LanguageUtils.getDefaultLanguage();

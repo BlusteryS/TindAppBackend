@@ -28,13 +28,8 @@ public class InMemoryChatRepository implements ChatRepository {
     }
 
     @Override
-    public List<Chat> findAll() {
-        return new ArrayList<>(chats.values());
-    }
-
-    @Override
     public List<Chat> findAll(final int page, final int limit) {
-        final List<Chat> allChats = findAll().stream()
+        final List<Chat> allChats = new ArrayList<>(chats.values()).stream()
             .sorted((c1, c2) -> {
                 final LocalDateTime date1 = DateTimeUtils.parseFromIso(c1.getUpdatedAt());
                 final LocalDateTime date2 = DateTimeUtils.parseFromIso(c2.getUpdatedAt());
@@ -56,23 +51,8 @@ public class InMemoryChatRepository implements ChatRepository {
     }
 
     @Override
-    public List<Chat> findByParticipantId(final Long userId) {
-        return chats.values().stream()
-            .filter(chat -> chat.hasParticipant(userId))
-            .sorted((c1, c2) -> {
-                final LocalDateTime date1 = DateTimeUtils.parseFromIso(c1.getUpdatedAt());
-                final LocalDateTime date2 = DateTimeUtils.parseFromIso(c2.getUpdatedAt());
-                if (date1 == null && date2 == null) return 0;
-                if (date1 == null) return 1;
-                if (date2 == null) return -1;
-                return date2.compareTo(date1);
-            })
-            .collect(Collectors.toList());
-    }
-
-    @Override
     public List<Chat> findByParticipantId(final Long userId, final int page, final int limit) {
-        final List<Chat> userChats = findByParticipantId(userId);
+        final List<Chat> userChats = getChatsForParticipant(userId);
 
         final int start = (page - 1) * limit;
         final int end = Math.min(start + limit, userChats.size());
@@ -85,26 +65,19 @@ public class InMemoryChatRepository implements ChatRepository {
     }
 
     @Override
+    public List<Chat> findByParticipantIdAndActive(final Long userId, final boolean isActive) {
+        return getChatsForParticipant(userId).stream()
+            .filter(chat -> Boolean.valueOf(isActive).equals(chat.getIsActive()))
+            .collect(Collectors.toList());
+    }
+
+    @Override
     public Optional<Chat> findActiveAnonymousChat(final Long userId) {
         return chats.values().stream()
             .filter(chat -> chat.getType() == Chat.ChatType.ANONYMOUS)
             .filter(chat -> Boolean.TRUE.equals(chat.getIsActive()))
             .filter(chat -> chat.hasParticipant(userId))
             .findFirst();
-    }
-
-    @Override
-    public List<Chat> findActiveChats() {
-        return chats.values().stream()
-            .filter(chat -> Boolean.TRUE.equals(chat.getIsActive()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Chat> findByType(final Chat.ChatType type) {
-        return chats.values().stream()
-            .filter(chat -> chat.getType() == type)
-            .collect(Collectors.toList());
     }
 
     @Override
@@ -115,6 +88,39 @@ public class InMemoryChatRepository implements ChatRepository {
             .filter(chat -> (chat.getUser1Id().equals(user1Id) && chat.getUser2Id().equals(user2Id)) ||
                 (chat.getUser1Id().equals(user2Id) && chat.getUser2Id().equals(user1Id)))
             .findFirst();
+    }
+
+    @Override
+    public List<Chat> findByParticipants(final Long user1Id, final Long user2Id, final boolean isActive,
+                                         final Chat.ChatClosureReason closureReason) {
+        return chats.values().stream()
+            .filter(chat -> chat.hasParticipant(user1Id))
+            .filter(chat -> chat.hasParticipant(user2Id))
+            .filter(chat -> Boolean.valueOf(isActive).equals(chat.getIsActive()))
+            .filter(chat -> closureReason == null || closureReason == chat.getClosureReason())
+            .sorted((c1, c2) -> compareByUpdatedAtDesc(c1, c2))
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public boolean existsActiveBetweenParticipants(final Long user1Id, final Long user2Id) {
+        return chats.values().stream()
+            .anyMatch(chat -> Boolean.TRUE.equals(chat.getIsActive()) && chat.hasParticipant(user1Id) && chat.hasParticipant(user2Id));
+    }
+
+    @Override
+    public long countByParticipantId(final Long userId) {
+        return chats.values().stream()
+            .filter(chat -> chat.hasParticipant(userId))
+            .count();
+    }
+
+    @Override
+    public long countActiveByType(final Chat.ChatType type) {
+        return chats.values().stream()
+            .filter(chat -> chat.getType() == type)
+            .filter(chat -> Boolean.TRUE.equals(chat.getIsActive()))
+            .count();
     }
 
     @Override
@@ -162,5 +168,27 @@ public class InMemoryChatRepository implements ChatRepository {
     @Override
     public long count() {
         return chats.size();
+    }
+
+    private List<Chat> getChatsForParticipant(final Long userId) {
+        return chats.values().stream()
+            .filter(chat -> chat.hasParticipant(userId))
+            .sorted(this::compareByUpdatedAtDesc)
+            .collect(Collectors.toList());
+    }
+
+    private int compareByUpdatedAtDesc(final Chat first, final Chat second) {
+        final LocalDateTime firstUpdated = DateTimeUtils.parseFromIso(first.getUpdatedAt());
+        final LocalDateTime secondUpdated = DateTimeUtils.parseFromIso(second.getUpdatedAt());
+        if (firstUpdated == null && secondUpdated == null) {
+            return 0;
+        }
+        if (firstUpdated == null) {
+            return 1;
+        }
+        if (secondUpdated == null) {
+            return -1;
+        }
+        return secondUpdated.compareTo(firstUpdated);
     }
 }

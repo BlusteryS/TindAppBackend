@@ -43,7 +43,7 @@ public class ReportService {
     }
 
     public List<Report> getUserReports(final Long userId, final int page, final int limit) {
-        return reportRepository.findByReporterId(userId);
+        return reportRepository.findByReporterId(userId, page, limit);
     }
 
     public List<Report> getAllReports(final int page, final int limit) {
@@ -54,16 +54,8 @@ public class ReportService {
         return reportRepository.count();
     }
 
-    public List<Report> getReportsAgainstUser(final Long userId) {
-        return reportRepository.findByTargetId(userId);
-    }
-
-    public List<Report> getPendingReports() {
-        return reportRepository.findPendingReports();
-    }
-
-    public List<Report> getReportsByStatus(final Report.ReportStatus status) {
-        return reportRepository.findByStatus(status);
+    public long countUserReports(final Long userId) {
+        return reportRepository.countByReporterId(userId);
     }
 
     public void updateReportStatus(final String reportId, final Report.ReportStatus status) {
@@ -93,10 +85,6 @@ public class ReportService {
 
     public Optional<Report> getReportById(final String reportId) {
         return reportRepository.findById(reportId);
-    }
-
-    public List<Report> getReportsByReason(final Report.ReportReason reason) {
-        return reportRepository.findByReason(reason);
     }
 
     public void deleteReport(final String reportId) {

@@ -45,6 +45,7 @@ public class WebSocketHandler {
     private final Map<Long, String> userChats = new ConcurrentHashMap<>(); // userId -> active chatId
     private final Map<Long, Boolean> typingStatus = new ConcurrentHashMap<>();
     private final Map<Long, ProfileSubscription> profileSubscriptions = new ConcurrentHashMap<>();
+    private final Map<String, ChatParticipants> chatParticipantsCache = new ConcurrentHashMap<>();
 
     public WebSocketHandler(final Vertx vertx, final ChatService chatService, final MessageService messageService, final UserService userService,
                             final TokenService tokenService, final ProfileService profileService, final NotificationService notificationService) {
@@ -210,6 +211,7 @@ public class WebSocketHandler {
             }
 
             final com.tindapp.model.Chat chat = chatOpt.get();
+            cacheChatParticipants(chat);
             final Long companionId = chat.getCompanionId(userId);
             final boolean companionInChat = isUserActiveInChat(companionId, chatId);
 
@@ -635,6 +637,21 @@ public class WebSocketHandler {
     private record ProfileSubscription(Long userId, ProfileService.ProfileFilters filters, ServerWebSocket webSocket) {
     }
 
+    private record ChatParticipants(Long user1Id, Long user2Id) {
+        private Long companionId(final Long userId) {
+            if (userId == null) {
+                return null;
+            }
+            if (userId.equals(user1Id)) {
+                return user2Id;
+            }
+            if (userId.equals(user2Id)) {
+                return user1Id;
+            }
+            return null;
+        }
+    }
+
     private List<Message.MessageAttachment> parseAttachments(final io.vertx.core.json.JsonArray attachmentsJson) {
         final List<Message.MessageAttachment> attachments = new ArrayList<>();
         if (attachmentsJson == null || attachmentsJson.isEmpty()) {
@@ -665,19 +682,17 @@ public class WebSocketHandler {
 
     private void broadcastToChat(final String chatId, final String type, final JsonObject data) {
         try {
-            final Optional<Chat> chatOpt = chatService.getChatById(chatId);
-            if (!chatOpt.isPresent()) {
+            final ChatParticipants participants = resolveChatParticipants(chatId);
+            if (participants == null) {
                 return;
             }
 
-            final com.tindapp.model.Chat chat = chatOpt.get();
-
-            final ServerWebSocket socket1 = userConnections.get(chat.getUser1Id());
+            final ServerWebSocket socket1 = userConnections.get(participants.user1Id());
             if (socket1 != null) {
                 sendMessage(socket1, type, data);
             }
 
-            final ServerWebSocket socket2 = userConnections.get(chat.getUser2Id());
+            final ServerWebSocket socket2 = userConnections.get(participants.user2Id());
             if (socket2 != null) {
                 sendMessage(socket2, type, data);
             }
@@ -688,14 +703,12 @@ public class WebSocketHandler {
 
     private void notifyOtherParticipants(final String chatId, final Long excludeUserId, final String type, final JsonObject data) {
         try {
-            final Optional<com.tindapp.model.Chat> chatOpt = chatService.getChatById(chatId);
-            if (!chatOpt.isPresent()) {
+            final ChatParticipants participants = resolveChatParticipants(chatId);
+            if (participants == null) {
                 return;
             }
 
-            final com.tindapp.model.Chat chat = chatOpt.get();
-
-            final Long companionId = chat.getCompanionId(excludeUserId);
+            final Long companionId = participants.companionId(excludeUserId);
             if (companionId != null) {
                 final ServerWebSocket socket = userConnections.get(companionId);
                 if (socket != null) {
@@ -772,8 +785,35 @@ public class WebSocketHandler {
         return userConnections.containsKey(userId);
     }
 
-    public int getOnlineUsersCount() {
-        return userConnections.size();
+    private void cacheChatParticipants(final Chat chat) {
+        if (chat == null || chat.getId() == null || chat.getUser1Id() == null || chat.getUser2Id() == null) {
+            return;
+        }
+        chatParticipantsCache.put(chat.getId(), new ChatParticipants(chat.getUser1Id(), chat.getUser2Id()));
+    }
+
+    private ChatParticipants resolveChatParticipants(final String chatId) {
+        if (chatId == null) {
+            return null;
+        }
+
+        final ChatParticipants cached = chatParticipantsCache.get(chatId);
+        if (cached != null) {
+            return cached;
+        }
+
+        if (io.vertx.core.Context.isOnEventLoopThread()) {
+            logger.warn("Skipped uncached chat lookup on event loop for chat {}", chatId);
+            return null;
+        }
+
+        final Optional<Chat> chatOpt = chatService.getChatById(chatId);
+        if (chatOpt.isEmpty()) {
+            return null;
+        }
+
+        cacheChatParticipants(chatOpt.get());
+        return chatParticipantsCache.get(chatId);
     }
 
     private void runOnWorker(final ServerWebSocket webSocket, final Runnable action, final String errorContext) {

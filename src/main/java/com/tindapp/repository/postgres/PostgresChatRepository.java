@@ -1,6 +1,7 @@
 package com.tindapp.repository.postgres;
 
 import com.tindapp.model.Chat;
+import com.tindapp.model.Message;
 import com.tindapp.repository.ChatRepository;
 import com.tindapp.util.DateTimeUtils;
 import io.vertx.core.json.JsonObject;
@@ -9,22 +10,21 @@ import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 public class PostgresChatRepository extends AbstractPostgresRepository implements ChatRepository {
 
+    private static final int MAX_LIMIT = 100;
+    private static final String CHAT_COLUMNS = """
+        id, type, user1_id, user2_id, last_message, last_message_id, unread_count,
+        settings, is_active, created_at, updated_at, closed_by_user_id, closure_reason, closed_at
+        """;
+
     public PostgresChatRepository(final PgPool client) {
         super(client);
-        ensureTable("""
-            CREATE TABLE IF NOT EXISTS chats (
-                id TEXT PRIMARY KEY,
-                data JSONB NOT NULL
-            )
-            """);
     }
 
     @Override
@@ -32,107 +32,134 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
         if (chat == null) {
             throw new IllegalArgumentException("Chat is null");
         }
-        final JsonObject payload = toJson(chat);
-        execute(
-            "INSERT INTO chats (id, data) VALUES ($1, $2::jsonb) " +
-                "ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
-            Tuple.of(chat.getId(), payload)
-        );
+        if (chat.getId() == null || chat.getId().isBlank()) {
+            throw new IllegalArgumentException("Chat id is required");
+        }
+        if (chat.getCreatedAt() == null) {
+            chat.setCreatedAt(DateTimeUtils.nowAsIso());
+        }
+        chat.setUpdatedAt(DateTimeUtils.nowAsIso());
+        if (chat.getSettings() == null) {
+            chat.setSettings(new Chat.ChatSettings());
+        }
+        if (chat.getUnreadCount() == null) {
+            chat.setUnreadCount(0);
+        }
+        if (chat.getIsActive() == null) {
+            chat.setIsActive(true);
+        }
+
+        final Long participantLowId = chat.getUser1Id() != null && chat.getUser2Id() != null
+            ? Math.min(chat.getUser1Id(), chat.getUser2Id())
+            : null;
+        final Long participantHighId = chat.getUser1Id() != null && chat.getUser2Id() != null
+            ? Math.max(chat.getUser1Id(), chat.getUser2Id())
+            : null;
+        final JsonObject settingsJson = toJson(chat.getSettings());
+        final JsonObject lastMessageJson = chat.getLastMessage() != null ? toJson(chat.getLastMessage()) : null;
+
+        execute("""
+            INSERT INTO chats (
+                id, type, user1_id, user2_id, participant_low_id, participant_high_id,
+                last_message, last_message_id, unread_count, settings, is_active,
+                created_at, updated_at, closed_by_user_id, closure_reason, closed_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16)
+            ON CONFLICT (id) DO UPDATE SET
+                type = EXCLUDED.type,
+                user1_id = EXCLUDED.user1_id,
+                user2_id = EXCLUDED.user2_id,
+                participant_low_id = EXCLUDED.participant_low_id,
+                participant_high_id = EXCLUDED.participant_high_id,
+                last_message = EXCLUDED.last_message,
+                last_message_id = EXCLUDED.last_message_id,
+                unread_count = EXCLUDED.unread_count,
+                settings = EXCLUDED.settings,
+                is_active = EXCLUDED.is_active,
+                created_at = EXCLUDED.created_at,
+                updated_at = EXCLUDED.updated_at,
+                closed_by_user_id = EXCLUDED.closed_by_user_id,
+                closure_reason = EXCLUDED.closure_reason,
+                closed_at = EXCLUDED.closed_at
+            """, Tuple.of(
+            chat.getId(),
+            chat.getType() != null ? chat.getType().name() : null,
+            chat.getUser1Id(),
+            chat.getUser2Id(),
+            participantLowId,
+            participantHighId,
+            lastMessageJson,
+            chat.getLastMessage() != null ? chat.getLastMessage().getId() : null,
+            chat.getUnreadCount(),
+            settingsJson,
+            chat.getIsActive(),
+            toOffset(chat.getCreatedAt()),
+            toOffset(chat.getUpdatedAt()),
+            chat.getClosedByUserId(),
+            chat.getClosureReason() != null ? chat.getClosureReason().name() : null,
+            toOffset(chat.getClosedAt())
+        ));
         return chat;
     }
 
     @Override
     public Optional<Chat> findById(final String id) {
-        if (id == null) {
+        if (id == null || id.isBlank()) {
             return Optional.empty();
         }
-        final RowSet<Row> rows = execute("SELECT data FROM chats WHERE id = $1 LIMIT 1", Tuple.of(id));
-        if (!rows.iterator().hasNext()) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(mapRow(rows.iterator().next(), Chat.class));
+        return firstRow("SELECT " + CHAT_COLUMNS + " FROM chats WHERE id = $1 LIMIT 1", Tuple.of(id))
+            .map(this::mapChat);
     }
 
-    @Override
-    public List<Chat> findAll() {
-        final RowSet<Row> rows = execute("SELECT data FROM chats");
-        final List<Chat> result = new ArrayList<>();
-        for (final Row row : rows) {
-            final Chat chat = mapRow(row, Chat.class);
-            if (chat != null) {
-                result.add(chat);
-            }
-        }
-        return result;
-    }
-
-    @Override
     public List<Chat> findAll(final int page, final int limit) {
-        final List<Chat> allChats = findAll().stream()
-            .sorted((c1, c2) -> {
-                final LocalDateTime date1 = DateTimeUtils.parseFromIso(c1.getUpdatedAt());
-                final LocalDateTime date2 = DateTimeUtils.parseFromIso(c2.getUpdatedAt());
-                if (date1 == null && date2 == null) return 0;
-                if (date1 == null) return 1;
-                if (date2 == null) return -1;
-                return date2.compareTo(date1);
-            })
-            .collect(Collectors.toList());
-
-        final int start = (page - 1) * limit;
-        final int end = Math.min(start + limit, allChats.size());
-        if (start >= allChats.size()) {
-            return new ArrayList<>();
-        }
-        return allChats.subList(start, end);
+        final int safeLimit = safeLimit(limit, MAX_LIMIT);
+        return queryChats(
+            "SELECT " + CHAT_COLUMNS + " FROM chats ORDER BY updated_at DESC LIMIT $1 OFFSET $2",
+            Tuple.of(safeLimit, offset(page, safeLimit))
+        );
     }
 
     @Override
-    public List<Chat> findByParticipantId(final Long userId) {
-        return findAll().stream()
-            .filter(chat -> chat.hasParticipant(userId))
-            .sorted((c1, c2) -> {
-                final LocalDateTime date1 = DateTimeUtils.parseFromIso(c1.getUpdatedAt());
-                final LocalDateTime date2 = DateTimeUtils.parseFromIso(c2.getUpdatedAt());
-                if (date1 == null && date2 == null) return 0;
-                if (date1 == null) return 1;
-                if (date2 == null) return -1;
-                return date2.compareTo(date1);
-            })
-            .collect(Collectors.toList());
+    public List<Chat> findByParticipantIdAndActive(final Long userId, final boolean isActive) {
+        if (userId == null) {
+            return List.of();
+        }
+        return queryChats(
+            "SELECT " + CHAT_COLUMNS + " FROM chats WHERE (user1_id = $1 OR user2_id = $1) AND is_active = $2 ORDER BY updated_at DESC",
+            Tuple.of(userId, isActive)
+        );
     }
 
     @Override
     public List<Chat> findByParticipantId(final Long userId, final int page, final int limit) {
-        final List<Chat> chats = findByParticipantId(userId);
-        final int start = (page - 1) * limit;
-        final int end = Math.min(start + limit, chats.size());
-        if (start >= chats.size()) {
-            return new ArrayList<>();
+        if (userId == null) {
+            return List.of();
         }
-        return chats.subList(start, end);
+        final int safeLimit = safeLimit(limit, MAX_LIMIT);
+        return queryChats(
+            "SELECT " + CHAT_COLUMNS + " FROM chats WHERE user1_id = $1 OR user2_id = $1 ORDER BY updated_at DESC LIMIT $2 OFFSET $3",
+            Tuple.of(userId, safeLimit, offset(page, safeLimit))
+        );
     }
 
     @Override
     public Optional<Chat> findActiveAnonymousChat(final Long userId) {
-        return findAll().stream()
-            .filter(chat -> chat.getType() == Chat.ChatType.ANONYMOUS)
-            .filter(chat -> Boolean.TRUE.equals(chat.getIsActive()))
-            .filter(chat -> chat.hasParticipant(userId))
-            .findFirst();
-    }
-
-    @Override
-    public List<Chat> findActiveChats() {
-        return findAll().stream()
-            .filter(chat -> Boolean.TRUE.equals(chat.getIsActive()))
-            .collect(Collectors.toList());
+        if (userId == null) {
+            return Optional.empty();
+        }
+        return firstRow(
+            "SELECT " + CHAT_COLUMNS + " FROM chats WHERE type = 'ANONYMOUS' AND is_active = TRUE AND (user1_id = $1 OR user2_id = $1) ORDER BY updated_at DESC LIMIT 1",
+            Tuple.of(userId)
+        ).map(this::mapChat);
     }
 
     @Override
     public void updateLastMessage(final String chatId, final String messageId) {
         findById(chatId).ifPresent(chat -> {
-            chat.setUpdatedAt(DateTimeUtils.nowAsIso());
+            if (chat.getLastMessage() == null) {
+                chat.setLastMessage(new Message());
+            }
+            chat.getLastMessage().setId(messageId);
             save(chat);
         });
     }
@@ -140,8 +167,7 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
     @Override
     public void updateUnreadCount(final String chatId, final Integer count) {
         findById(chatId).ifPresent(chat -> {
-            chat.setUnreadCount(count);
-            chat.setUpdatedAt(DateTimeUtils.nowAsIso());
+            chat.setUnreadCount(count != null ? count : 0);
             save(chat);
         });
     }
@@ -150,33 +176,90 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
     public void markChatAsInactive(final String chatId) {
         findById(chatId).ifPresent(chat -> {
             chat.setIsActive(false);
-            chat.setUpdatedAt(DateTimeUtils.nowAsIso());
             save(chat);
         });
     }
 
     @Override
     public boolean isParticipant(final String chatId, final Long userId) {
-        return findById(chatId)
-            .map(chat -> chat.hasParticipant(userId))
-            .orElse(false);
+        if (chatId == null || userId == null) {
+            return false;
+        }
+        return exists(
+            "SELECT 1 FROM chats WHERE id = $1 AND (user1_id = $2 OR user2_id = $2) LIMIT 1",
+            Tuple.of(chatId, userId)
+        );
     }
 
     @Override
-    public List<Chat> findByType(final Chat.ChatType type) {
-        return findAll().stream()
-            .filter(chat -> chat.getType() == type)
-            .collect(Collectors.toList());
+    public List<Chat> findByParticipants(final Long user1Id, final Long user2Id, final boolean isActive,
+                                         final Chat.ChatClosureReason closureReason) {
+        if (user1Id == null || user2Id == null) {
+            return List.of();
+        }
+        final long participantLowId = Math.min(user1Id, user2Id);
+        final long participantHighId = Math.max(user1Id, user2Id);
+        final StringBuilder sql = new StringBuilder(
+            "SELECT " + CHAT_COLUMNS + " FROM chats WHERE participant_low_id = $1 AND participant_high_id = $2 AND is_active = $3"
+        );
+        final List<Object> params = new ArrayList<>();
+        params.add(participantLowId);
+        params.add(participantHighId);
+        params.add(isActive);
+        if (closureReason != null) {
+            sql.append(" AND closure_reason = $").append(params.size() + 1);
+            params.add(closureReason.name());
+        }
+        sql.append(" ORDER BY updated_at DESC");
+        return queryChats(sql.toString(), Tuple.tuple(params));
     }
 
     @Override
     public Optional<Chat> findByParticipants(final Long user1Id, final Long user2Id, final Chat.ChatType type) {
-        return findAll().stream()
-            .filter(chat -> chat.getType() == type)
-            .filter(chat -> Boolean.TRUE.equals(chat.getIsActive()))
-            .filter(chat -> (chat.getUser1Id().equals(user1Id) && chat.getUser2Id().equals(user2Id)) ||
-                (chat.getUser1Id().equals(user2Id) && chat.getUser2Id().equals(user1Id)))
-            .findFirst();
+        if (user1Id == null || user2Id == null || type == null) {
+            return Optional.empty();
+        }
+        final long participantLowId = Math.min(user1Id, user2Id);
+        final long participantHighId = Math.max(user1Id, user2Id);
+        return firstRow(
+            "SELECT " + CHAT_COLUMNS + " FROM chats WHERE participant_low_id = $1 AND participant_high_id = $2 AND type = $3 AND is_active = TRUE ORDER BY updated_at DESC LIMIT 1",
+            Tuple.of(participantLowId, participantHighId, type.name())
+        ).map(this::mapChat);
+    }
+
+    @Override
+    public boolean existsActiveBetweenParticipants(final Long user1Id, final Long user2Id) {
+        if (user1Id == null || user2Id == null) {
+            return false;
+        }
+        final long participantLowId = Math.min(user1Id, user2Id);
+        final long participantHighId = Math.max(user1Id, user2Id);
+        return exists(
+            "SELECT 1 FROM chats WHERE participant_low_id = $1 AND participant_high_id = $2 AND is_active = TRUE LIMIT 1",
+            Tuple.of(participantLowId, participantHighId)
+        );
+    }
+
+    @Override
+    public long countByParticipantId(final Long userId) {
+        if (userId == null) {
+            return 0L;
+        }
+        return countRows(
+            "SELECT COUNT(*) AS cnt FROM chats WHERE user1_id = $1 OR user2_id = $1",
+            Tuple.of(userId)
+        );
+    }
+
+    @Override
+    public long countActiveByType(final Chat.ChatType type) {
+        if (type == null) {
+            return 0L;
+        }
+        return countRows(
+            "SELECT COUNT(*) AS cnt FROM chats WHERE type = $1 AND is_active = TRUE",
+            Tuple.of(type.name())
+        );
     }
 
     @Override
@@ -186,14 +269,61 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
 
     @Override
     public boolean existsById(final String id) {
-        final RowSet<Row> rows = execute("SELECT 1 FROM chats WHERE id = $1 LIMIT 1", Tuple.of(id));
-        return rows.iterator().hasNext();
+        return exists("SELECT 1 FROM chats WHERE id = $1 LIMIT 1", Tuple.of(id));
     }
 
     @Override
     public long count() {
-        final RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM chats");
-        final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
-        return row != null ? row.getLong("cnt") : 0L;
+        return countRows("SELECT COUNT(*) AS cnt FROM chats");
+    }
+
+    private List<Chat> queryChats(final String sql, final Tuple params) {
+        final RowSet<Row> rows = execute(sql, params);
+        final List<Chat> chats = new ArrayList<>();
+        for (final Row row : rows) {
+            final Chat chat = mapChat(row);
+            if (chat != null) {
+                chats.add(chat);
+            }
+        }
+        return chats;
+    }
+
+    private Chat mapChat(final Row row) {
+        if (row == null) {
+            return null;
+        }
+        final Chat chat = new Chat();
+        chat.setId(row.getString("id"));
+
+        final String type = row.getString("type");
+        if (type != null) {
+            chat.setType(Chat.ChatType.valueOf(type));
+        }
+
+        chat.setUser1Id(row.getLong("user1_id"));
+        chat.setUser2Id(row.getLong("user2_id"));
+        chat.setLastMessage(fromJsonObject(row.getValue("last_message"), Message.class));
+        chat.setUnreadCount(row.getInteger("unread_count"));
+
+        Chat.ChatSettings settings = fromJsonObject(row.getValue("settings"), Chat.ChatSettings.class);
+        if (settings == null) {
+            settings = new Chat.ChatSettings();
+        }
+        chat.setSettings(settings);
+
+        chat.setIsActive(row.getBoolean("is_active"));
+        chat.setCreatedAt(toIso(row.getOffsetDateTime("created_at")));
+        chat.setUpdatedAt(toIso(row.getOffsetDateTime("updated_at")));
+        chat.setClosedByUserId(row.getLong("closed_by_user_id"));
+
+        final String closureReason = row.getString("closure_reason");
+        if (closureReason != null) {
+            chat.setClosureReason(Chat.ChatClosureReason.valueOf(closureReason));
+        }
+
+        final OffsetDateTime closedAt = row.getOffsetDateTime("closed_at");
+        chat.setClosedAt(toIso(closedAt));
+        return chat;
     }
 }

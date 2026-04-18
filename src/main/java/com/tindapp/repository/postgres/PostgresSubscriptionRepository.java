@@ -2,34 +2,28 @@ package com.tindapp.repository.postgres;
 
 import com.tindapp.model.Subscription;
 import com.tindapp.repository.SubscriptionRepository;
-import io.vertx.core.json.JsonObject;
 import io.vertx.pgclient.PgPool;
 import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 public class PostgresSubscriptionRepository extends AbstractPostgresRepository implements SubscriptionRepository {
 
-    private static final Comparator<Subscription> START_DATE_DESC = Comparator
-        .comparing(Subscription::getStartDate, Comparator.nullsLast(Comparator.naturalOrder()))
-        .reversed();
+    private static final int MAX_LIMIT = 100;
+    private static final String SUBSCRIPTION_COLUMNS = """
+        id, user_id, type, status, start_date, end_date, price, payment_method, auto_renew, plan_id,
+        vk_subscription_id, price_in_votes, next_bill_date, pending_cancel, cancel_reason, app_order_id
+        """;
 
     public PostgresSubscriptionRepository(final PgPool client) {
         super(client);
-        ensureTable("""
-            CREATE TABLE IF NOT EXISTS subscriptions (
-                id TEXT PRIMARY KEY,
-                data JSONB NOT NULL
-            )
-            """);
     }
 
     @Override
@@ -37,138 +31,165 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
         if (subscription == null) {
             throw new IllegalArgumentException("Subscription is null");
         }
-        if (subscription.getId() == null) {
+        if (subscription.getId() == null || subscription.getId().isBlank()) {
             subscription.setId(UUID.randomUUID().toString());
         }
-        final JsonObject payload = toJson(subscription);
-        execute(
-            "INSERT INTO subscriptions (id, data) VALUES ($1, $2::jsonb) " +
-                "ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
-            Tuple.of(subscription.getId(), payload)
-        );
+        if (subscription.getStatus() == null) {
+            subscription.setStatus(Subscription.SubscriptionStatus.ACTIVE);
+        }
+        if (subscription.getStartDate() == null) {
+            subscription.setStartDate(LocalDateTime.now());
+        }
+        if (subscription.getAutoRenew() == null) {
+            subscription.setAutoRenew(false);
+        }
+        if (subscription.getPendingCancel() == null) {
+            subscription.setPendingCancel(false);
+        }
+
+        execute("""
+            INSERT INTO subscriptions (
+                id, user_id, type, status, start_date, end_date, price, payment_method, auto_renew,
+                plan_id, vk_subscription_id, price_in_votes, next_bill_date, pending_cancel, cancel_reason, app_order_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            ON CONFLICT (id) DO UPDATE SET
+                user_id = EXCLUDED.user_id,
+                type = EXCLUDED.type,
+                status = EXCLUDED.status,
+                start_date = EXCLUDED.start_date,
+                end_date = EXCLUDED.end_date,
+                price = EXCLUDED.price,
+                payment_method = EXCLUDED.payment_method,
+                auto_renew = EXCLUDED.auto_renew,
+                plan_id = EXCLUDED.plan_id,
+                vk_subscription_id = EXCLUDED.vk_subscription_id,
+                price_in_votes = EXCLUDED.price_in_votes,
+                next_bill_date = EXCLUDED.next_bill_date,
+                pending_cancel = EXCLUDED.pending_cancel,
+                cancel_reason = EXCLUDED.cancel_reason,
+                app_order_id = EXCLUDED.app_order_id
+            """, Tuple.of(
+            subscription.getId(),
+            subscription.getUserId(),
+            subscription.getType() != null ? subscription.getType().name() : null,
+            subscription.getStatus().name(),
+            toOffset(subscription.getStartDate()),
+            toOffset(subscription.getEndDate()),
+            subscription.getPrice(),
+            subscription.getPaymentMethod() != null ? subscription.getPaymentMethod().name() : null,
+            subscription.getAutoRenew(),
+            subscription.getPlanId(),
+            subscription.getVkSubscriptionId(),
+            subscription.getPriceInVotes(),
+            toOffset(subscription.getNextBillDate()),
+            subscription.getPendingCancel(),
+            subscription.getCancelReason(),
+            subscription.getAppOrderId()
+        ));
         return subscription;
     }
 
     @Override
     public Optional<Subscription> findById(final String id) {
-        if (id == null) {
+        if (id == null || id.isBlank()) {
             return Optional.empty();
         }
-        final RowSet<Row> rows = execute("SELECT data FROM subscriptions WHERE id = $1 LIMIT 1", Tuple.of(id));
-        if (!rows.iterator().hasNext()) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(mapRow(rows.iterator().next(), Subscription.class));
+        return firstRow(
+            "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions WHERE id = $1 LIMIT 1",
+            Tuple.of(id)
+        ).map(this::mapSubscription);
     }
 
-    @Override
-    public List<Subscription> findAll() {
-        final RowSet<Row> rows = execute("SELECT data FROM subscriptions");
-        final List<Subscription> result = new ArrayList<>();
-        for (final Row row : rows) {
-            final Subscription subscription = mapRow(row, Subscription.class);
-            if (subscription != null) {
-                result.add(subscription);
-            }
-        }
-        return result;
-    }
-
-    @Override
     public List<Subscription> findAll(final int page, final int limit) {
-        final List<Subscription> allSubs = findAll().stream()
-            .sorted(START_DATE_DESC)
-            .collect(Collectors.toList());
-        final int start = (page - 1) * limit;
-        final int end = Math.min(start + limit, allSubs.size());
-        if (start >= allSubs.size()) {
-            return new ArrayList<>();
-        }
-        return allSubs.subList(start, end);
+        final int safeLimit = safeLimit(limit, MAX_LIMIT);
+        return querySubscriptions(
+            "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions ORDER BY start_date DESC LIMIT $1 OFFSET $2",
+            Tuple.of(safeLimit, offset(page, safeLimit))
+        );
     }
 
     @Override
     public Optional<Subscription> findActiveByUserId(final Long userId) {
-        return findAll().stream()
-            .filter(sub -> userId.equals(sub.getUserId()))
-            .filter(Subscription::isActive)
-            .findFirst();
-    }
-
-    @Override
-    public List<Subscription> findByUserId(final Long userId) {
-        return findAll().stream()
-            .filter(sub -> userId.equals(sub.getUserId()))
-            .sorted(START_DATE_DESC)
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Subscription> findByStatus(final Subscription.SubscriptionStatus status) {
-        return findAll().stream()
-            .filter(sub -> status.equals(sub.getStatus()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Subscription> findByType(final Subscription.SubscriptionType type) {
-        return findAll().stream()
-            .filter(sub -> type.equals(sub.getType()))
-            .collect(Collectors.toList());
+        if (userId == null) {
+            return Optional.empty();
+        }
+        return firstRow(
+            "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions WHERE user_id = $1 AND status = 'ACTIVE' AND (end_date IS NULL OR end_date > NOW()) ORDER BY start_date DESC LIMIT 1",
+            Tuple.of(userId)
+        ).map(this::mapSubscription);
     }
 
     @Override
     public List<Subscription> findExpiring() {
-        final LocalDateTime tomorrow = LocalDateTime.now().plusDays(1);
-        return findAll().stream()
-            .filter(sub -> sub.getStatus() == Subscription.SubscriptionStatus.ACTIVE)
-            .filter(sub -> sub.getEndDate() != null && sub.getEndDate().isBefore(tomorrow))
-            .collect(Collectors.toList());
+        return querySubscriptions(
+            "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions WHERE status = 'ACTIVE' AND end_date IS NOT NULL AND end_date < NOW() + INTERVAL '1 day' ORDER BY end_date ASC",
+            Tuple.tuple()
+        );
     }
 
     @Override
     public void cancelByUserId(final Long userId) {
-        findByUserId(userId).stream()
-            .filter(sub -> sub.getStatus() == Subscription.SubscriptionStatus.ACTIVE)
-            .forEach(sub -> {
-                sub.cancel();
-                save(sub);
-            });
+        execute("""
+            UPDATE subscriptions
+            SET status = 'CANCELLED',
+                auto_renew = FALSE,
+                pending_cancel = FALSE,
+                end_date = NOW(),
+                next_bill_date = NULL
+            WHERE user_id = $1 AND status = 'ACTIVE'
+            """, Tuple.of(userId));
     }
 
     @Override
     public void expireById(final String subscriptionId) {
-        findById(subscriptionId).ifPresent(sub -> {
-            sub.expire();
-            save(sub);
-        });
+        execute("""
+            UPDATE subscriptions
+            SET status = 'EXPIRED',
+                auto_renew = FALSE,
+                pending_cancel = FALSE
+            WHERE id = $1
+            """, Tuple.of(subscriptionId));
     }
 
     @Override
     public boolean hasActiveSubscription(final Long userId) {
-        return findActiveByUserId(userId).isPresent();
+        if (userId == null) {
+            return false;
+        }
+        return exists(
+            "SELECT 1 FROM subscriptions WHERE user_id = $1 AND status = 'ACTIVE' AND (end_date IS NULL OR end_date > NOW()) LIMIT 1",
+            Tuple.of(userId)
+        );
     }
 
     @Override
     public Optional<Subscription> findByVkSubscriptionId(final String vkSubscriptionId) {
-        return findAll().stream()
-            .filter(sub -> vkSubscriptionId != null && vkSubscriptionId.equals(sub.getVkSubscriptionId()))
-            .findFirst();
+        if (vkSubscriptionId == null || vkSubscriptionId.isBlank()) {
+            return Optional.empty();
+        }
+        return firstRow(
+            "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions WHERE vk_subscription_id = $1 LIMIT 1",
+            Tuple.of(vkSubscriptionId)
+        ).map(this::mapSubscription);
     }
 
     @Override
     public void cancelByVkSubscriptionId(final String vkSubscriptionId) {
-        findByVkSubscriptionId(vkSubscriptionId).ifPresent(sub -> {
-            sub.cancel();
-            save(sub);
-        });
+        execute("""
+            UPDATE subscriptions
+            SET status = 'CANCELLED',
+                auto_renew = FALSE,
+                pending_cancel = FALSE,
+                end_date = NOW(),
+                next_bill_date = NULL
+            WHERE vk_subscription_id = $1
+            """, Tuple.of(vkSubscriptionId));
     }
 
     @Override
     public long countActiveSubscriptions() {
-        return findAll().stream()
-            .filter(Subscription::isActive)
-            .count();
+        return countRows("SELECT COUNT(*) AS cnt FROM subscriptions WHERE status = 'ACTIVE' AND (end_date IS NULL OR end_date > NOW())");
     }
 
     @Override
@@ -178,14 +199,65 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
 
     @Override
     public boolean existsById(final String id) {
-        final RowSet<Row> rows = execute("SELECT 1 FROM subscriptions WHERE id = $1 LIMIT 1", Tuple.of(id));
-        return rows.iterator().hasNext();
+        return exists("SELECT 1 FROM subscriptions WHERE id = $1 LIMIT 1", Tuple.of(id));
     }
 
     @Override
     public long count() {
-        final RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM subscriptions");
-        final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
-        return row != null ? row.getLong("cnt") : 0L;
+        return countRows("SELECT COUNT(*) AS cnt FROM subscriptions");
+    }
+
+    private List<Subscription> querySubscriptions(final String sql, final Tuple params) {
+        final RowSet<Row> rows = execute(sql, params);
+        final List<Subscription> subscriptions = new ArrayList<>();
+        for (final Row row : rows) {
+            final Subscription subscription = mapSubscription(row);
+            if (subscription != null) {
+                subscriptions.add(subscription);
+            }
+        }
+        return subscriptions;
+    }
+
+    private Subscription mapSubscription(final Row row) {
+        if (row == null) {
+            return null;
+        }
+        final Subscription subscription = new Subscription();
+        subscription.setId(row.getString("id"));
+        subscription.setUserId(row.getLong("user_id"));
+
+        final String type = row.getString("type");
+        if (type != null) {
+            subscription.setType(Subscription.SubscriptionType.valueOf(type));
+        }
+
+        final String status = row.getString("status");
+        if (status != null) {
+            subscription.setStatus(Subscription.SubscriptionStatus.valueOf(status));
+        }
+
+        subscription.setStartDate(toLocalDateTime(row.getOffsetDateTime("start_date")));
+        subscription.setEndDate(toLocalDateTime(row.getOffsetDateTime("end_date")));
+        subscription.setPrice(row.getDouble("price"));
+
+        final String paymentMethod = row.getString("payment_method");
+        if (paymentMethod != null) {
+            subscription.setPaymentMethod(Subscription.PaymentMethod.valueOf(paymentMethod));
+        }
+
+        subscription.setAutoRenew(row.getBoolean("auto_renew"));
+        subscription.setPlanId(row.getString("plan_id"));
+        subscription.setVkSubscriptionId(row.getString("vk_subscription_id"));
+        subscription.setPriceInVotes(row.getInteger("price_in_votes"));
+        subscription.setNextBillDate(toLocalDateTime(row.getOffsetDateTime("next_bill_date")));
+        subscription.setPendingCancel(row.getBoolean("pending_cancel"));
+        subscription.setCancelReason(row.getString("cancel_reason"));
+        subscription.setAppOrderId(row.getInteger("app_order_id"));
+        return subscription;
+    }
+
+    private LocalDateTime toLocalDateTime(final OffsetDateTime value) {
+        return value != null ? value.toLocalDateTime() : null;
     }
 }

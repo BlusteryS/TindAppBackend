@@ -18,8 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ChatService {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatService.class);
-    private static final int ANONYMOUS_CHAT_COST = AppConfig.ANONYMOUS_CHAT_CREATION_COST;
-    private static final int FREE_CHAT_USER_THRESHOLD = 10; // Если пользователей меньше 10, чат бесплатный
 
     private static final AtomicInteger anonymousChatCounter = new AtomicInteger(1000);
 
@@ -40,6 +38,10 @@ public class ChatService {
 
     public List<Chat> getUserChats(final Long userId, final int page, final int limit) {
         return chatRepository.findByParticipantId(userId, page, limit);
+    }
+
+    public int countUserChats(final Long userId) {
+        return Math.toIntExact(chatRepository.countByParticipantId(userId));
     }
 
     public Optional<Chat> getChatById(final String chatId) {
@@ -111,16 +113,8 @@ public class ChatService {
         }
     }
 
-    private static int calculateChatCost(final int onlineAnonymousChats) {
-        if (onlineAnonymousChats >= AppConfig.SEARCH_QUEUE_PAID_THRESHOLD) {
-            return AppConfig.ANONYMOUS_CHAT_CREATION_COST;
-        }
-
-        return 0;
-    }
-
     private int calculateChatCost() {
-        return calculateChatCost(getActiveAnonymousChatsCount());
+        return ChatPricingPolicy.calculateCost(userService.countOnlineUsers());
     }
 
     public int getChatCost() {
@@ -174,19 +168,14 @@ public class ChatService {
             return reopenedChats;
         }
 
-        final List<Chat> userChats = chatRepository.findByParticipantId(userId);
-        for (final Chat chat : userChats) {
-            if (!chat.hasParticipant(companionId)) {
-                continue;
-            }
-            if (!Boolean.TRUE.equals(chat.getIsActive()) && chat.getClosureReason() == Chat.ChatClosureReason.BLOCKED) {
-                chat.setIsActive(true);
-                chat.setClosureReason(null);
-                chat.setClosedAt(null);
-                chat.setClosedByUserId(null);
-                final Chat reopened = chatRepository.save(chat);
-                reopenedChats.add(reopened);
-            }
+        final List<Chat> blockedChats = chatRepository.findByParticipants(userId, companionId, false, Chat.ChatClosureReason.BLOCKED);
+        for (final Chat chat : blockedChats) {
+            chat.setIsActive(true);
+            chat.setClosureReason(null);
+            chat.setClosedAt(null);
+            chat.setClosedByUserId(null);
+            final Chat reopened = chatRepository.save(chat);
+            reopenedChats.add(reopened);
         }
         return reopenedChats;
     }
@@ -197,12 +186,10 @@ public class ChatService {
             return closedChats;
         }
 
-        final List<Chat> userChats = chatRepository.findByParticipantId(userId);
-        for (final Chat chat : userChats) {
-            if (Boolean.TRUE.equals(chat.getIsActive())) {
-                final Chat closed = closeChatInternal(chat, userId, reason);
-                closedChats.add(closed);
-            }
+        final List<Chat> activeChats = chatRepository.findByParticipantIdAndActive(userId, true);
+        for (final Chat chat : activeChats) {
+            final Chat closed = closeChatInternal(chat, userId, reason);
+            closedChats.add(closed);
         }
         return closedChats;
     }
@@ -231,8 +218,7 @@ public class ChatService {
 
         final boolean initiatorHasSubscription = initiator.getSubscription() != null
             && Boolean.TRUE.equals(initiator.getSubscription().getIsActive());
-        final int baseCost = target.getProfileCost() != null ? target.getProfileCost() : AppConfig.ANONYMOUS_CHAT_CREATION_COST;
-        final int cost = initiatorHasSubscription ? 0 : baseCost;
+        final int cost = initiatorHasSubscription ? 0 : calculateChatCost();
         if (cost > 0) {
             userService.deductCoins(initiatorId, cost);
         }
@@ -257,7 +243,7 @@ public class ChatService {
     }
 
     public int getActiveAnonymousChatsCount() {
-        return chatRepository.findByType(Chat.ChatType.ANONYMOUS).size();
+        return Math.toIntExact(chatRepository.countActiveByType(Chat.ChatType.ANONYMOUS));
     }
 
     private Chat closeChatInternal(final Chat chat, final Long closedByUserId, final Chat.ChatClosureReason reason) {

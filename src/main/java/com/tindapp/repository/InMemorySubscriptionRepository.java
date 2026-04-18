@@ -31,13 +31,8 @@ public class InMemorySubscriptionRepository implements SubscriptionRepository {
     }
 
     @Override
-    public List<Subscription> findAll() {
-        return new ArrayList<>(subscriptions.values());
-    }
-
-    @Override
     public List<Subscription> findAll(final int page, final int limit) {
-        final List<Subscription> allSubs = findAll().stream()
+        final List<Subscription> allSubs = new ArrayList<>(subscriptions.values()).stream()
             .sorted((s1, s2) -> s2.getStartDate().compareTo(s1.getStartDate()))
             .collect(Collectors.toList());
 
@@ -59,29 +54,6 @@ public class InMemorySubscriptionRepository implements SubscriptionRepository {
             .findFirst();
     }
 
-    @Override
-    public List<Subscription> findByUserId(final Long userId) {
-        return subscriptions.values().stream()
-            .filter(sub -> userId.equals(sub.getUserId()))
-            .sorted((s1, s2) -> s2.getStartDate().compareTo(s1.getStartDate()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Subscription> findByStatus(final Subscription.SubscriptionStatus status) {
-        return subscriptions.values().stream()
-            .filter(sub -> status.equals(sub.getStatus()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Subscription> findByType(final Subscription.SubscriptionType type) {
-        return subscriptions.values().stream()
-            .filter(sub -> type.equals(sub.getType()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
     public List<Subscription> findExpiring() {
         final LocalDateTime tomorrow = LocalDateTime.now().plusDays(1);
         return subscriptions.values().stream()

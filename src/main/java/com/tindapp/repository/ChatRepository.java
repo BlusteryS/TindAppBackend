@@ -7,13 +7,11 @@ import java.util.Optional;
 
 public interface ChatRepository extends Repository<Chat, String> {
 
-    List<Chat> findByParticipantId(Long userId);
-
     List<Chat> findByParticipantId(Long userId, int page, int limit);
 
-    Optional<Chat> findActiveAnonymousChat(Long userId);
+    List<Chat> findByParticipantIdAndActive(Long userId, boolean isActive);
 
-    List<Chat> findActiveChats();
+    Optional<Chat> findActiveAnonymousChat(Long userId);
 
     void updateLastMessage(String chatId, String messageId);
 
@@ -23,7 +21,13 @@ public interface ChatRepository extends Repository<Chat, String> {
 
     boolean isParticipant(String chatId, Long userId);
 
-    List<Chat> findByType(Chat.ChatType type);
-
     Optional<Chat> findByParticipants(Long user1Id, Long user2Id, Chat.ChatType type);
+
+    List<Chat> findByParticipants(Long user1Id, Long user2Id, boolean isActive, Chat.ChatClosureReason closureReason);
+
+    boolean existsActiveBetweenParticipants(Long user1Id, Long user2Id);
+
+    long countByParticipantId(Long userId);
+
+    long countActiveByType(Chat.ChatType type);
 }

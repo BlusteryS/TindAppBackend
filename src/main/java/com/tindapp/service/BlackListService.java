@@ -60,21 +60,12 @@ public class BlackListService {
         return blackListRepository.findByUserId(userId, page, limit);
     }
 
-    public List<BlackListItem> getUserBlackList(final Long userId) {
-        return blackListRepository.findByUserId(userId);
-    }
-
     public boolean isUserBlocked(final Long userId, final Long blockedUserId) {
         return blackListRepository.isBlocked(userId, blockedUserId);
     }
 
     public boolean isUserBlockedByAnyone(final Long userId) {
-        final List<BlackListItem> blockers = blackListRepository.findByBlockedUserId(userId);
-        return !blockers.isEmpty();
-    }
-
-    public List<BlackListItem> getWhoBlockedUser(final Long userId) {
-        return blackListRepository.findByBlockedUserId(userId);
+        return blackListRepository.existsByBlockedUserId(userId);
     }
 
     public long getBlockedUsersCount(final Long userId) {
@@ -90,10 +81,7 @@ public class BlackListService {
     }
 
     public void deleteAllUserBlocks(final Long userId) {
-        final List<BlackListItem> userBlocks = blackListRepository.findByUserId(userId);
-        for (final BlackListItem item : userBlocks) {
-            blackListRepository.deleteById(item.getId());
-        }
+        blackListRepository.deleteByUserId(userId);
     }
 
     public boolean canUsersInteract(final Long userId1, final Long userId2) {

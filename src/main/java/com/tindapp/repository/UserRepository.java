@@ -9,17 +9,11 @@ public interface UserRepository extends Repository<User, Long> {
 
     Optional<User> findByVkId(Long vkId);
 
-    List<User> findOnlineUsers();
+    long countOnlineUsers();
 
-    List<User> findByGender(User.Gender gender);
+    List<User> findForMatching(Long viewerId, User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly, int page, int limit);
 
-    List<User> findByAgeRange(Integer minAge, Integer maxAge);
-
-    List<User> findByCity(String city);
-
-    List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly);
-
-    List<User> findForMatching(User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly, int page, int limit);
+    long countForMatching(Long viewerId, User.Gender gender, Integer minAge, Integer maxAge, String city, Boolean verifiedOnly);
 
     void updateOnlineStatus(Long userId, boolean isOnline);
 

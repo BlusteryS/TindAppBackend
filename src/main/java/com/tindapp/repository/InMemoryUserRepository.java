@@ -10,7 +10,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class InMemoryUserRepository implements UserRepository {
 
@@ -43,13 +45,8 @@ public class InMemoryUserRepository implements UserRepository {
     }
 
     @Override
-    public List<User> findAll() {
-        return new ArrayList<>(users.values());
-    }
-
-    @Override
     public List<User> findAll(final int page, final int limit) {
-        final List<User> allUsers = findAll();
+        final List<User> allUsers = new ArrayList<>(users.values());
         final int start = (page - 1) * limit;
         final int end = Math.min(start + limit, allUsers.size());
 
@@ -61,66 +58,29 @@ public class InMemoryUserRepository implements UserRepository {
     }
 
     @Override
-    public List<User> findOnlineUsers() {
+    public long countOnlineUsers() {
         return users.values().stream()
             .filter(user -> Boolean.TRUE.equals(user.getIsOnline()))
-            .collect(Collectors.toList());
+            .count();
     }
 
     @Override
-    public List<User> findByGender(final User.Gender gender) {
-        return users.values().stream()
-            .filter(user -> gender.equals(user.getGender()))
+    public List<User> findForMatching(final Long viewerId, final User.Gender gender, final Integer minAge, final Integer maxAge,
+                                      final String city, final Boolean verifiedOnly, final int page, final int limit) {
+        final List<User> all = matchingUsers(viewerId, gender, minAge, maxAge, city, verifiedOnly)
             .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<User> findByAgeRange(final Integer minAge, final Integer maxAge) {
-        return users.values().stream()
-            .filter(user -> {
-                final Integer age = resolveAge(user);
-                return age != null && age >= minAge && age <= maxAge;
-            })
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<User> findByCity(final String city) {
-        return users.values().stream()
-            .filter(user -> city.equals(user.getCity()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<User> findForMatching(final User.Gender gender, final Integer minAge, final Integer maxAge, final String city, final Boolean verifiedOnly) {
-        return users.values().stream()
-            .filter(user -> Boolean.TRUE.equals(user.getIsVisible()))
-            .filter(user -> {
-                if (user.getSettings() == null) {
-                    return false;
-                }
-                return Boolean.TRUE.equals(user.getSettings().getAllowMessages());
-            })
-            .filter(user -> Boolean.TRUE.equals(user.getSettings().getAllowMessages()))
-            .filter(user -> verifiedOnly == null || !verifiedOnly || Boolean.TRUE.equals(user.getIsVerified()))
-            .filter(user -> gender == null || gender.equals(user.getGender()))
-            .filter(user -> {
-                final Integer age = resolveAge(user);
-                return age == null || (age >= minAge && age <= maxAge);
-            })
-            .filter(user -> city == null || city.equals(user.getCity()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<User> findForMatching(final User.Gender gender, final Integer minAge, final Integer maxAge, final String city, final Boolean verifiedOnly, final int page, final int limit) {
-        final List<User> all = findForMatching(gender, minAge, maxAge, city, verifiedOnly);
         final int start = Math.max(0, (page - 1) * limit);
         final int end = Math.min(start + limit, all.size());
         if (start >= all.size()) {
             return new ArrayList<>();
         }
         return all.subList(start, end);
+    }
+
+    @Override
+    public long countForMatching(final Long viewerId, final User.Gender gender, final Integer minAge, final Integer maxAge,
+                                 final String city, final Boolean verifiedOnly) {
+        return matchingUsers(viewerId, gender, minAge, maxAge, city, verifiedOnly).count();
     }
 
     @Override
@@ -156,6 +116,39 @@ public class InMemoryUserRepository implements UserRepository {
     @Override
     public long count() {
         return users.size();
+    }
+
+    private Stream<User> matchingUsers(final Long viewerId, final User.Gender gender, final Integer minAge, final Integer maxAge,
+                                       final String city, final Boolean verifiedOnly) {
+        return users.values().stream()
+            .filter(excludeViewer(viewerId))
+            .filter(this::isVisibleForMatching)
+            .filter(user -> verifiedOnly == null || !verifiedOnly || Boolean.TRUE.equals(user.getIsVerified()))
+            .filter(user -> gender == null || gender.equals(user.getGender()))
+            .filter(user -> matchesAge(user, minAge, maxAge))
+            .filter(user -> city == null || city.equals(user.getCity()));
+    }
+
+    private Predicate<User> excludeViewer(final Long viewerId) {
+        return user -> viewerId == null || !viewerId.equals(user.getId());
+    }
+
+    private boolean isVisibleForMatching(final User user) {
+        return user != null
+            && Boolean.TRUE.equals(user.getIsVisible())
+            && !Boolean.TRUE.equals(user.getIsBanned())
+            && user.getSettings() != null
+            && Boolean.TRUE.equals(user.getSettings().getAllowMessages());
+    }
+
+    private boolean matchesAge(final User user, final Integer minAge, final Integer maxAge) {
+        final Integer age = resolveAge(user);
+        if (age == null) {
+            return true;
+        }
+        final boolean matchesMin = minAge == null || age >= minAge;
+        final boolean matchesMax = maxAge == null || age <= maxAge;
+        return matchesMin && matchesMax;
     }
 
     private Integer resolveAge(final User user) {

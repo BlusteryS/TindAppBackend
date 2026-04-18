@@ -7,15 +7,13 @@ import java.util.Optional;
 
 public interface BlackListRepository extends Repository<BlackListItem, String> {
 
-    List<BlackListItem> findByUserId(Long userId);
-
     List<BlackListItem> findByUserId(Long userId, int page, int limit);
 
     Optional<BlackListItem> findByUserIdAndBlockedUserId(Long userId, Long blockedUserId);
 
-    List<BlackListItem> findByBlockedUserId(Long blockedUserId);
-
     boolean isBlocked(Long userId, Long blockedUserId);
+
+    boolean existsByBlockedUserId(Long blockedUserId);
 
     void unblockUser(Long userId, Long blockedUserId);
 
@@ -24,4 +22,6 @@ public interface BlackListRepository extends Repository<BlackListItem, String> {
     long countByBlockedUserId(Long blockedUserId);
 
     void deleteByUserIdAndBlockedUserId(Long userId, Long blockedUserId);
+
+    void deleteByUserId(Long userId);
 }

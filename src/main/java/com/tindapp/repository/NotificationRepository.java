@@ -6,11 +6,7 @@ import java.util.List;
 
 public interface NotificationRepository extends Repository<Notification, String> {
 
-    List<Notification> findByUserId(Long userId);
-
     List<Notification> findByUserId(Long userId, int page, int limit);
-
-    List<Notification> findUnreadByUserId(Long userId);
 
     void markAsRead(String notificationId);
 
@@ -20,7 +16,7 @@ public interface NotificationRepository extends Repository<Notification, String>
 
     long countUnreadByUserId(Long userId);
 
-    List<Notification> findByType(Notification.NotificationType type);
+    long countByUserId(Long userId);
 
     void deleteByUserId(Long userId);
 }

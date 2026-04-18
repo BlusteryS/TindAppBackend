@@ -6,13 +6,7 @@ import java.util.List;
 
 public interface MessageRepository extends Repository<Message, String> {
 
-    List<Message> findByChatId(String chatId);
-
     List<Message> findByChatId(String chatId, int page, int limit);
-
-    List<Message> findBySenderId(Long senderId);
-
-    List<Message> findUnreadMessagesByChatId(String chatId);
 
     void markAsRead(String messageId);
 

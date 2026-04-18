@@ -30,13 +30,8 @@ public class InMemoryReportRepository implements ReportRepository {
     }
 
     @Override
-    public List<Report> findAll() {
-        return new ArrayList<>(reports.values());
-    }
-
-    @Override
     public List<Report> findAll(final int page, final int limit) {
-        final List<Report> allReports = findAll().stream()
+        final List<Report> allReports = new ArrayList<>(reports.values()).stream()
             .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
             .collect(Collectors.toList());
 
@@ -50,8 +45,7 @@ public class InMemoryReportRepository implements ReportRepository {
         return allReports.subList(start, end);
     }
 
-    @Override
-    public List<Report> findByReporterId(final Long reporterId) {
+    private List<Report> getReporterReports(final Long reporterId) {
         return reports.values().stream()
             .filter(report -> reporterId.equals(report.getReporterId()))
             .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
@@ -59,48 +53,16 @@ public class InMemoryReportRepository implements ReportRepository {
     }
 
     @Override
-    public List<Report> findByTargetId(final Long targetId) {
-        return reports.values().stream()
-            .filter(report -> targetId.equals(report.getTargetId()))
-            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-            .collect(Collectors.toList());
-    }
+    public List<Report> findByReporterId(final Long reporterId, final int page, final int limit) {
+        final List<Report> reporterReports = getReporterReports(reporterId);
+        final int start = (page - 1) * limit;
+        final int end = Math.min(start + limit, reporterReports.size());
 
-    @Override
-    public List<Report> findByStatus(final Report.ReportStatus status) {
-        return reports.values().stream()
-            .filter(report -> status.equals(report.getStatus()))
-            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-            .collect(Collectors.toList());
-    }
+        if (start >= reporterReports.size()) {
+            return new ArrayList<>();
+        }
 
-    @Override
-    public List<Report> findByReason(final Report.ReportReason reason) {
-        return reports.values().stream()
-            .filter(report -> reason.equals(report.getReason()))
-            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Report> findByChatId(final String chatId) {
-        return reports.values().stream()
-            .filter(report -> chatId.equals(report.getChatId()))
-            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Report> findByMessageId(final String messageId) {
-        return reports.values().stream()
-            .filter(report -> messageId.equals(report.getMessageId()))
-            .sorted((r1, r2) -> r2.getCreatedAt().compareTo(r1.getCreatedAt()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Report> findPendingReports() {
-        return findByStatus(Report.ReportStatus.PENDING);
+        return reporterReports.subList(start, end);
     }
 
     @Override

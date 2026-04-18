@@ -9,8 +9,6 @@ public interface Repository<T, ID> {
 
     Optional<T> findById(ID id);
 
-    List<T> findAll();
-
     List<T> findAll(int page, int limit);
 
     void deleteById(ID id);

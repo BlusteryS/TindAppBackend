@@ -573,15 +573,16 @@ public class ApiHandler {
     public void getChats(final RoutingContext ctx) {
         try {
             final Long userId = getUserIdFromContext(ctx);
-            final int page = Integer.parseInt(ctx.request().getParam("page", "1"));
-            final int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
+            final int page = parseIntParam(ctx.request().getParam("page"), 1);
+            final int limit = parseIntParam(ctx.request().getParam("limit"), 20);
 
             final List<Chat> chats = chatService.getUserChats(userId, page, limit);
+            final int total = chatService.countUserChats(userId);
             final List<Map<String, Object>> chatResponses = chats.stream()
                 .map(chat -> ResponseMapper.toChatResponse(chat).getMap())
                 .collect(Collectors.toList());
 
-            sendPaginatedSuccess(ctx, chatResponses, page, limit, chats.size());
+            sendPaginatedSuccess(ctx, chatResponses, page, limit, total);
         } catch (final Exception e) {
             logger.error("Error getting chats", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -675,8 +676,8 @@ public class ApiHandler {
         try {
             final String chatId = ctx.pathParam("chatId");
             final Long userId = getUserIdFromContext(ctx);
-            final int page = Integer.parseInt(ctx.request().getParam("page", "1"));
-            final int limit = Integer.parseInt(ctx.request().getParam("limit", "50"));
+            final int page = parseIntParam(ctx.request().getParam("page"), 1);
+            final int limit = parseIntParam(ctx.request().getParam("limit"), 50);
 
             if (!chatService.isUserInChat(chatId, userId)) {
                 sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
@@ -684,11 +685,12 @@ public class ApiHandler {
             }
 
             final List<Message> messages = messageService.getChatMessages(chatId, page, limit);
+            final int total = (int) messageService.countMessages(chatId);
             final List<Map<String, Object>> messageResponses = messages.stream()
                 .map(message -> ResponseMapper.toMessageResponse(message).getMap())
                 .collect(Collectors.toList());
 
-            sendPaginatedSuccess(ctx, messageResponses, page, limit, messages.size());
+            sendPaginatedSuccess(ctx, messageResponses, page, limit, total);
         } catch (final Exception e) {
             logger.error("Error getting messages", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -879,8 +881,8 @@ public class ApiHandler {
     public void getReports(final RoutingContext ctx) {
         try {
             final Long userId = getUserIdFromContext(ctx);
-            final int page = Integer.parseInt(ctx.request().getParam("page", "1"));
-            final int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
+            final int page = parseIntParam(ctx.request().getParam("page"), 1);
+            final int limit = parseIntParam(ctx.request().getParam("limit"), 20);
 
             final User currentUser = userService.getUserById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -892,7 +894,7 @@ public class ApiHandler {
                 total = (int) reportService.countReports();
             } else {
                 reports = reportService.getUserReports(userId, page, limit);
-                total = reports.size();
+                total = (int) reportService.countUserReports(userId);
             }
 
             final List<Map<String, Object>> payload = new ArrayList<>();
@@ -1036,16 +1038,30 @@ public class ApiHandler {
     public void getBlacklist(final RoutingContext ctx) {
         try {
             final Long userId = getUserIdFromContext(ctx);
-            final int page = Integer.parseInt(ctx.request().getParam("page", "1"));
-            final int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
+            final int page = parseIntParam(ctx.request().getParam("page"), 1);
+            final int limit = parseIntParam(ctx.request().getParam("limit"), 20);
 
             final List<BlackListItem> blackList = blackListService.getUserBlackList(userId, page, limit);
+            final int total = (int) blackListService.getBlockedUsersCount(userId);
             final List<Map<String, Object>> payload = blackList.stream()
                 .map(item -> ResponseMapper.toBlackListItemResponse(item).getMap())
                 .collect(Collectors.toList());
-            sendPaginatedSuccess(ctx, payload, page, limit, blackList.size());
+            sendPaginatedSuccess(ctx, payload, page, limit, total);
         } catch (final Exception e) {
             logger.error("Error getting blacklist", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
+    }
+
+    public void getBlacklistStatus(final RoutingContext ctx) {
+        try {
+            final Long userId = getUserIdFromContext(ctx);
+            final Long blockedUserId = Long.valueOf(ctx.pathParam("userId"));
+            final boolean blocked = blackListService.isUserBlocked(userId, blockedUserId);
+
+            sendSuccess(ctx, new JsonObject().put("blocked", blocked));
+        } catch (final Exception e) {
+            logger.error("Error getting blacklist status", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
@@ -1178,11 +1194,12 @@ public class ApiHandler {
     public void getNotifications(final RoutingContext ctx) {
         try {
             final Long userId = getUserIdFromContext(ctx);
-            final int page = Integer.parseInt(ctx.request().getParam("page", "1"));
-            final int limit = Integer.parseInt(ctx.request().getParam("limit", "20"));
+            final int page = parseIntParam(ctx.request().getParam("page"), 1);
+            final int limit = parseIntParam(ctx.request().getParam("limit"), 20);
 
             final List<Notification> notifications = notificationService.getUserNotifications(userId, page, limit);
-            sendPaginatedSuccess(ctx, notifications, page, limit, notifications.size());
+            final int total = notificationService.countUserNotifications(userId);
+            sendPaginatedSuccess(ctx, notifications, page, limit, total);
         } catch (final Exception e) {
             logger.error("Error getting notifications", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");

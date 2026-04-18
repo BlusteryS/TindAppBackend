@@ -1,13 +1,17 @@
 plugins {
     id 'java'
     id 'application'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'com.gradleup.shadow' version '9.3.1'
 }
 
 group = 'com.tindapp'
 version = '1.0.0'
-sourceCompatibility = '21'
-targetCompatibility = '21'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
 
 repositories {
     mavenCentral()
@@ -15,6 +19,7 @@ repositories {
 
 ext {
     vertxVersion = '4.5.22'
+    flywayVersion = '9.22.3'
     logbackVersion = '1.4.11'
     jacksonVersion = '2.15.2'
     postgresqlVersion = '42.7.8'
@@ -34,6 +39,7 @@ dependencies {
     implementation "io.vertx:vertx-pg-client:$vertxVersion"
     implementation "io.vertx:vertx-sql-client:$vertxVersion"
     implementation "org.postgresql:postgresql:$postgresqlVersion"
+    implementation "org.flywaydb:flyway-core:$flywayVersion"
     implementation "com.ongres.scram:common:$scramVersion"
     implementation "com.ongres.scram:client:$scramVersion"
     implementation "com.ongres.stringprep:saslprep:$stringprepVersion"
@@ -47,7 +53,7 @@ dependencies {
 }
 
 application {
-    mainClassName = 'com.tindapp.MainVerticle'
+    mainClass = 'com.tindapp.MainVerticle'
 }
 
 shadowJar {

@@ -104,19 +104,8 @@ public class SubscriptionService {
             .findFirst();
     }
 
-    public Optional<SubscriptionPlan> findPlanByTypeAndPeriod(final Subscription.SubscriptionType type, final String periodCode) {
-        return availablePlans.stream()
-            .filter(plan -> plan.hasType(type))
-            .filter(plan -> plan.getPeriodCode().equalsIgnoreCase(periodCode))
-            .findFirst();
-    }
-
     public Optional<Subscription> getActiveSubscription(final Long userId) {
         return subscriptionRepository.findActiveByUserId(userId);
-    }
-
-    public List<Subscription> getUserSubscriptions(final Long userId) {
-        return subscriptionRepository.findByUserId(userId);
     }
 
     public Optional<Subscription> findByVkSubscriptionId(final String vkSubscriptionId) {
@@ -253,10 +242,6 @@ public class SubscriptionService {
 
         subscriptionRepository.save(subscription);
         updateUserSubscriptionState(subscription.getUserId(), subscription);
-    }
-
-    public long getActiveSubscriptionsCount() {
-        return subscriptionRepository.countActiveSubscriptions();
     }
 
     private void updateUserSubscriptionState(final Long userId, final Subscription subscription) {

@@ -1,32 +1,36 @@
 package com.tindapp.repository.postgres;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.tindapp.model.Message;
 import com.tindapp.repository.MessageRepository;
 import com.tindapp.util.DateTimeUtils;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.pgclient.PgPool;
 import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 public class PostgresMessageRepository extends AbstractPostgresRepository implements MessageRepository {
 
+    private static final int MAX_LIMIT = 200;
+    private static final TypeReference<List<Message.MessageAttachment>> ATTACHMENTS_TYPE = new TypeReference<>() {
+    };
+    private static final TypeReference<Map<String, Message.MessageTranslation>> TRANSLATIONS_TYPE = new TypeReference<>() {
+    };
+    private static final String MESSAGE_COLUMNS = """
+        id, chat_id, sender_id, text, type, reply_to, reply_to_message_id, attachments,
+        translations, is_read, is_edited, created_at, updated_at
+        """;
+
     public PostgresMessageRepository(final PgPool client) {
         super(client);
-        ensureTable("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY,
-                data JSONB NOT NULL
-            )
-            """);
     }
 
     @Override
@@ -34,162 +38,142 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
         if (message == null) {
             throw new IllegalArgumentException("Message is null");
         }
-        if (message.getId() == null) {
+        if (message.getId() == null || message.getId().isBlank()) {
             message.setId(UUID.randomUUID().toString());
         }
         if (message.getCreatedAt() == null) {
             message.setCreatedAt(DateTimeUtils.nowAsIso());
         }
+        if (message.getText() == null) {
+            message.setText("");
+        }
+        if (message.getType() == null) {
+            message.setType(Message.MessageType.TEXT);
+        }
+        if (message.getIsRead() == null) {
+            message.setIsRead(false);
+        }
+        if (message.getIsEdited() == null) {
+            message.setIsEdited(false);
+        }
+
         message.setUpdatedAt(DateTimeUtils.nowAsIso());
 
-        final JsonObject payload = toJson(message);
-        execute(
-            "INSERT INTO messages (id, data) VALUES ($1, $2::jsonb) " +
-                "ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
-            Tuple.of(message.getId(), payload)
-        );
+        final JsonObject replyToJson = message.getReplyTo() != null ? toJson(message.getReplyTo()) : null;
+        final JsonArray attachmentsJson =
+            message.getAttachments() != null ? new JsonArray(message.getAttachments().stream().map(this::toJson).toList()) : null;
+        final JsonObject translationsJson =
+            message.getTranslations() != null ? toJson(message.getTranslations()) : null;
+
+        execute("""
+            INSERT INTO messages (
+                id, chat_id, sender_id, text, type, reply_to, reply_to_message_id, attachments,
+                translations, is_read, is_edited, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13)
+            ON CONFLICT (id) DO UPDATE SET
+                chat_id = EXCLUDED.chat_id,
+                sender_id = EXCLUDED.sender_id,
+                text = EXCLUDED.text,
+                type = EXCLUDED.type,
+                reply_to = EXCLUDED.reply_to,
+                reply_to_message_id = EXCLUDED.reply_to_message_id,
+                attachments = EXCLUDED.attachments,
+                translations = EXCLUDED.translations,
+                is_read = EXCLUDED.is_read,
+                is_edited = EXCLUDED.is_edited,
+                created_at = EXCLUDED.created_at,
+                updated_at = EXCLUDED.updated_at
+            """, Tuple.of(
+            message.getId(),
+            message.getChatId(),
+            message.getSenderId(),
+            message.getText(),
+            message.getType().name(),
+            replyToJson,
+            message.getReplyTo() != null ? message.getReplyTo().getMessageId() : null,
+            attachmentsJson,
+            translationsJson,
+            message.getIsRead(),
+            message.getIsEdited(),
+            toOffset(message.getCreatedAt()),
+            toOffset(message.getUpdatedAt())
+        ));
         return message;
     }
 
     @Override
     public Optional<Message> findById(final String id) {
-        if (id == null) {
+        if (id == null || id.isBlank()) {
             return Optional.empty();
         }
-        final RowSet<Row> rows = execute("SELECT data FROM messages WHERE id = $1 LIMIT 1", Tuple.of(id));
-        if (!rows.iterator().hasNext()) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(mapRow(rows.iterator().next(), Message.class));
+        return firstRow("SELECT " + MESSAGE_COLUMNS + " FROM messages WHERE id = $1 LIMIT 1", Tuple.of(id))
+            .map(this::mapMessage);
     }
 
-    @Override
-    public List<Message> findAll() {
-        final RowSet<Row> rows = execute("SELECT data FROM messages");
-        final List<Message> result = new ArrayList<>();
-        for (final Row row : rows) {
-            final Message message = mapRow(row, Message.class);
-            if (message != null) {
-                result.add(message);
-            }
-        }
-        return result;
-    }
-
-    @Override
     public List<Message> findAll(final int page, final int limit) {
-        final List<Message> allMessages = findAll().stream()
-            .sorted((m1, m2) -> {
-                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
-                if (date1 == null && date2 == null) return 0;
-                if (date1 == null) return 1;
-                if (date2 == null) return -1;
-                return date2.compareTo(date1);
-            })
-            .collect(Collectors.toList());
-
-        final int start = (page - 1) * limit;
-        final int end = Math.min(start + limit, allMessages.size());
-        if (start >= allMessages.size()) {
-            return new ArrayList<>();
-        }
-        return allMessages.subList(start, end);
+        final int safeLimit = safeLimit(limit, MAX_LIMIT);
+        return queryMessages(
+            "SELECT " + MESSAGE_COLUMNS + " FROM messages ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+            Tuple.of(safeLimit, offset(page, safeLimit))
+        );
     }
 
-    @Override
-    public List<Message> findByChatId(final String chatId) {
-        return findAll().stream()
-            .filter(message -> chatId.equals(message.getChatId()))
-            .sorted(Comparator.comparing(m -> DateTimeUtils.parseFromIso(m.getCreatedAt()), Comparator.nullsLast(Comparator.naturalOrder())))
-            .collect(Collectors.toList());
-    }
-
-    @Override
     public List<Message> findByChatId(final String chatId, final int page, final int limit) {
-        final List<Message> chatMessages = findByChatId(chatId).stream()
-            .sorted((m1, m2) -> {
-                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
-                if (date1 == null && date2 == null) return 0;
-                if (date1 == null) return 1;
-                if (date2 == null) return -1;
-                return date2.compareTo(date1);
-            })
-            .collect(Collectors.toList());
-
-        final int start = (page - 1) * limit;
-        final int end = Math.min(start + limit, chatMessages.size());
-        if (start >= chatMessages.size()) {
-            return new ArrayList<>();
+        if (chatId == null || chatId.isBlank()) {
+            return List.of();
         }
-        return chatMessages.subList(start, end);
+        final int safeLimit = safeLimit(limit, MAX_LIMIT);
+        return queryMessages(
+            "SELECT " + MESSAGE_COLUMNS + " FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+            Tuple.of(chatId, safeLimit, offset(page, safeLimit))
+        );
     }
 
-    @Override
-    public List<Message> findBySenderId(final Long senderId) {
-        return findAll().stream()
-            .filter(message -> senderId.equals(message.getSenderId()))
-            .sorted(Comparator.comparing(m -> DateTimeUtils.parseFromIso(m.getCreatedAt()), Comparator.nullsLast(Comparator.naturalOrder())))
-            .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Message> findUnreadMessagesByChatId(final String chatId) {
-        return findAll().stream()
-            .filter(message -> chatId.equals(message.getChatId()))
-            .filter(message -> Boolean.FALSE.equals(message.getIsRead()))
-            .sorted(Comparator.comparing(m -> DateTimeUtils.parseFromIso(m.getCreatedAt()), Comparator.nullsLast(Comparator.naturalOrder())))
-            .collect(Collectors.toList());
-    }
-
-    @Override
     public void markAsRead(final String messageId) {
-        findById(messageId).ifPresent(message -> {
-            message.markAsRead();
-            save(message);
-        });
+        execute("UPDATE messages SET is_read = TRUE, updated_at = NOW() WHERE id = $1", Tuple.of(messageId));
     }
 
     @Override
     public void markMessagesAsRead(final String chatId, final List<String> messageIds) {
-        if (messageIds == null || messageIds.isEmpty()) {
+        if (chatId == null || messageIds == null || messageIds.isEmpty()) {
             return;
         }
-        messageIds.forEach(this::markAsRead);
+        final String[] ids = messageIds.toArray(String[]::new);
+        execute(
+            "UPDATE messages SET is_read = TRUE, updated_at = NOW() WHERE chat_id = $1 AND id = ANY($2)",
+            Tuple.of(chatId, (Object) ids)
+        );
     }
 
     @Override
     public long countUnreadMessagesByChatId(final String chatId) {
-        return findAll().stream()
-            .filter(message -> chatId.equals(message.getChatId()))
-            .filter(message -> Boolean.FALSE.equals(message.getIsRead()))
-            .count();
+        if (chatId == null || chatId.isBlank()) {
+            return 0L;
+        }
+        return countRows(
+            "SELECT COUNT(*) AS cnt FROM messages WHERE chat_id = $1 AND is_read = FALSE",
+            Tuple.of(chatId)
+        );
     }
 
     @Override
     public long countMessagesByChatId(final String chatId) {
-        return findAll().stream()
-            .filter(message -> chatId.equals(message.getChatId()))
-            .count();
+        if (chatId == null || chatId.isBlank()) {
+            return 0L;
+        }
+        return countRows("SELECT COUNT(*) AS cnt FROM messages WHERE chat_id = $1", Tuple.of(chatId));
     }
 
     @Override
     public List<Message> findRecentByChatId(final String chatId, final int limit) {
-        if (limit <= 0) {
-            return new ArrayList<>();
+        if (chatId == null || chatId.isBlank() || limit <= 0) {
+            return List.of();
         }
-        return findByChatId(chatId).stream()
-            .sorted((m1, m2) -> {
-                final LocalDateTime date1 = DateTimeUtils.parseFromIso(m1.getCreatedAt());
-                final LocalDateTime date2 = DateTimeUtils.parseFromIso(m2.getCreatedAt());
-                if (date1 == null && date2 == null) return 0;
-                if (date1 == null) return 1;
-                if (date2 == null) return -1;
-                return date2.compareTo(date1);
-            })
-            .limit(limit)
-            .collect(Collectors.toList());
+        return queryMessages(
+            "SELECT " + MESSAGE_COLUMNS + " FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT $2",
+            Tuple.of(chatId, safeLimit(limit, MAX_LIMIT))
+        );
     }
 
     @Override
@@ -199,14 +183,48 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
 
     @Override
     public boolean existsById(final String id) {
-        final RowSet<Row> rows = execute("SELECT 1 FROM messages WHERE id = $1 LIMIT 1", Tuple.of(id));
-        return rows.iterator().hasNext();
+        return exists("SELECT 1 FROM messages WHERE id = $1 LIMIT 1", Tuple.of(id));
     }
 
     @Override
     public long count() {
-        final RowSet<Row> rows = execute("SELECT COUNT(*) as cnt FROM messages");
-        final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
-        return row != null ? row.getLong("cnt") : 0L;
+        return countRows("SELECT COUNT(*) AS cnt FROM messages");
+    }
+
+    private List<Message> queryMessages(final String sql, final Tuple params) {
+        final RowSet<Row> rows = execute(sql, params);
+        final List<Message> messages = new ArrayList<>();
+        for (final Row row : rows) {
+            final Message message = mapMessage(row);
+            if (message != null) {
+                messages.add(message);
+            }
+        }
+        return messages;
+    }
+
+    private Message mapMessage(final Row row) {
+        if (row == null) {
+            return null;
+        }
+        final Message message = new Message();
+        message.setId(row.getString("id"));
+        message.setChatId(row.getString("chat_id"));
+        message.setSenderId(row.getLong("sender_id"));
+        message.setText(row.getString("text"));
+
+        final String type = row.getString("type");
+        if (type != null) {
+            message.setType(Message.MessageType.valueOf(type));
+        }
+
+        message.setReplyTo(fromJsonObject(row.getValue("reply_to"), Message.ReplyInfo.class));
+        message.setAttachments(fromJsonValue(row.getValue("attachments"), ATTACHMENTS_TYPE));
+        message.setTranslations(fromJsonValue(row.getValue("translations"), TRANSLATIONS_TYPE));
+        message.setIsRead(row.getBoolean("is_read"));
+        message.setIsEdited(row.getBoolean("is_edited"));
+        message.setCreatedAt(toIso(row.getOffsetDateTime("created_at")));
+        message.setUpdatedAt(toIso(row.getOffsetDateTime("updated_at")));
+        return message;
     }
 }

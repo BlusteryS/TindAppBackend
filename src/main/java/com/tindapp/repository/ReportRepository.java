@@ -6,19 +6,7 @@ import java.util.List;
 
 public interface ReportRepository extends Repository<Report, String> {
 
-    List<Report> findByReporterId(Long reporterId);
-
-    List<Report> findByTargetId(Long targetId);
-
-    List<Report> findByStatus(Report.ReportStatus status);
-
-    List<Report> findByReason(Report.ReportReason reason);
-
-    List<Report> findByChatId(String chatId);
-
-    List<Report> findByMessageId(String messageId);
-
-    List<Report> findPendingReports();
+    List<Report> findByReporterId(Long reporterId, int page, int limit);
 
     void updateStatus(String reportId, Report.ReportStatus status);
 

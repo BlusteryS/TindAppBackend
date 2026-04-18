@@ -4,19 +4,13 @@ import com.tindapp.auth.AuthHandler;
 import com.tindapp.auth.TokenAuthHandler;
 import com.tindapp.config.AppConfig;
 import com.tindapp.config.DatabaseConfig;
+import com.tindapp.db.DatabaseMigrator;
 import com.tindapp.db.PostgresClientFactory;
 import com.tindapp.handler.ApiHandler;
 import com.tindapp.handler.VkPaymentHandler;
 import com.tindapp.handler.WebSocketHandler;
 import com.tindapp.repository.BlackListRepository;
 import com.tindapp.repository.ChatRepository;
-import com.tindapp.repository.InMemoryBlackListRepository;
-import com.tindapp.repository.InMemoryChatRepository;
-import com.tindapp.repository.InMemoryMessageRepository;
-import com.tindapp.repository.InMemoryNotificationRepository;
-import com.tindapp.repository.InMemoryReportRepository;
-import com.tindapp.repository.InMemorySubscriptionRepository;
-import com.tindapp.repository.InMemoryUserRepository;
 import com.tindapp.repository.MessageRepository;
 import com.tindapp.repository.NotificationRepository;
 import com.tindapp.repository.ReportRepository;
@@ -57,7 +51,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.util.function.Supplier;
 
 public class MainVerticle extends AbstractVerticle {
     private static final Logger logger = LoggerFactory.getLogger(MainVerticle.class);
@@ -136,50 +129,23 @@ public class MainVerticle extends AbstractVerticle {
     }
 
     private void initializeServices() {
-        pgPool = setupPgPool();
-
-        final boolean usePostgres = pgPool != null;
-        if (usePostgres) {
-            logger.info("Using PostgreSQL repositories");
-        } else {
-            logger.warn("PostgreSQL is disabled or not available, falling back to in-memory repositories");
+        final DatabaseConfig databaseConfig = DatabaseConfig.fromEnvironment();
+        if (!databaseConfig.isEnabled()) {
+            throw new IllegalStateException("PostgreSQL must be configured for the application to start");
         }
 
-        final UserRepository userRepository = createRepository(
-            () -> new PostgresUserRepository(pgPool),
-            InMemoryUserRepository::new,
-            "User"
-        );
-        final ChatRepository chatRepository = createRepository(
-            () -> new PostgresChatRepository(pgPool),
-            InMemoryChatRepository::new,
-            "Chat"
-        );
-        final MessageRepository messageRepository = createRepository(
-            () -> new PostgresMessageRepository(pgPool),
-            InMemoryMessageRepository::new,
-            "Message"
-        );
-        final NotificationRepository notificationRepository = createRepository(
-            () -> new PostgresNotificationRepository(pgPool),
-            InMemoryNotificationRepository::new,
-            "Notification"
-        );
-        final SubscriptionRepository subscriptionRepository = createRepository(
-            () -> new PostgresSubscriptionRepository(pgPool),
-            InMemorySubscriptionRepository::new,
-            "Subscription"
-        );
-        final ReportRepository reportRepository = createRepository(
-            () -> new PostgresReportRepository(pgPool),
-            InMemoryReportRepository::new,
-            "Report"
-        );
-        final BlackListRepository blackListRepository = createRepository(
-            () -> new PostgresBlackListRepository(pgPool),
-            InMemoryBlackListRepository::new,
-            "BlackList"
-        );
+        DatabaseMigrator.migrate(databaseConfig);
+        pgPool = setupPgPool(databaseConfig);
+
+        logger.info("Using PostgreSQL repositories");
+
+        final UserRepository userRepository = new PostgresUserRepository(pgPool);
+        final ChatRepository chatRepository = new PostgresChatRepository(pgPool);
+        final MessageRepository messageRepository = new PostgresMessageRepository(pgPool);
+        final NotificationRepository notificationRepository = new PostgresNotificationRepository(pgPool);
+        final SubscriptionRepository subscriptionRepository = new PostgresSubscriptionRepository(pgPool);
+        final ReportRepository reportRepository = new PostgresReportRepository(pgPool);
+        final BlackListRepository blackListRepository = new PostgresBlackListRepository(pgPool);
 
         final UserService userService = new UserService(userRepository);
         final ProfileService profileService = new ProfileService(userRepository);
@@ -348,6 +314,7 @@ public class MainVerticle extends AbstractVerticle {
         blocking(apiRouter, io.vertx.core.http.HttpMethod.PATCH, "/reports/:reportId/status", apiHandler::updateReportStatus);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/blacklist", apiHandler::blockUser);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.DELETE, "/blacklist/:userId", apiHandler::unblockUser);
+        blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/blacklist/:userId/status", apiHandler::getBlacklistStatus);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.GET, "/blacklist", apiHandler::getBlacklist);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.POST, "/admin/users/:userId/ban", apiHandler::banUser);
         blocking(apiRouter, io.vertx.core.http.HttpMethod.DELETE, "/admin/users/:userId/ban", apiHandler::unbanUser);
@@ -369,28 +336,9 @@ public class MainVerticle extends AbstractVerticle {
         router.route("/api/v1/*").subRouter(apiRouter);
     }
 
-    private <T> T createRepository(final Supplier<T> postgresSupplier, final Supplier<T> fallbackSupplier, final String repoName) {
-        if (pgPool == null) {
-            return fallbackSupplier.get();
-        }
-        try {
-            return postgresSupplier.get();
-        } catch (final Exception e) {
-            logger.error("Failed to initialize {} repository with PostgreSQL, using in-memory fallback", repoName, e);
-            return fallbackSupplier.get();
-        }
-    }
-
-    private PgPool setupPgPool() {
-        final DatabaseConfig dbConfig = DatabaseConfig.fromEnvironment();
-        if (!dbConfig.isEnabled()) {
-            return null;
-        }
-
+    private PgPool setupPgPool(final DatabaseConfig dbConfig) {
         final PgPool pool = PostgresClientFactory.createPool(vertx, dbConfig);
-        if (pool != null) {
-            logger.info("Connected to PostgreSQL at {}", dbConfig.getSafeDescription());
-        }
+        logger.info("Connected to PostgreSQL at {}", dbConfig.getSafeDescription());
         return pool;
     }
 

@@ -32,12 +32,12 @@ public class NotificationService {
         return notificationRepository.findByUserId(userId, page, limit);
     }
 
-    public List<Notification> getUnreadNotifications(final Long userId) {
-        return notificationRepository.findUnreadByUserId(userId);
-    }
-
     public long getUnreadCount(final Long userId) {
         return notificationRepository.countUnreadByUserId(userId);
+    }
+
+    public int countUserNotifications(final Long userId) {
+        return Math.toIntExact(notificationRepository.countByUserId(userId));
     }
 
     public Notification createNotification(final Long userId, final Notification.NotificationType type,

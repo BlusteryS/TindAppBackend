@@ -830,7 +830,7 @@ public class UserService {
 
     private void ensureProfileCost(final User user) {
         if (user.getProfileCost() == null || user.getProfileCost() < 0) {
-            user.setProfileCost(AppConfig.ANONYMOUS_CHAT_CREATION_COST);
+            user.setProfileCost(0);
         }
     }
 
@@ -841,20 +841,13 @@ public class UserService {
 
         if (ADMIN_VK_IDS.contains(user.getVkId())) {
             user.setIsAdmin(true);
-            if (user.getBalance() == null || user.getBalance() < 1000) {
-                user.setBalance(1000);
-            }
         } else if (user.getIsAdmin() == null) {
             user.setIsAdmin(false);
         }
     }
 
-    public List<User> getOnlineUsers() {
-        return userRepository.findOnlineUsers();
-    }
-
-    public List<User> findUsersForMatching(final User.Gender gender, final Integer minAge, final Integer maxAge, final String city) {
-        return userRepository.findForMatching(gender, minAge, maxAge, city, false);
+    public int countOnlineUsers() {
+        return (int) userRepository.countOnlineUsers();
     }
 
     public UserStats getUserStats(final Long userId) {
@@ -870,7 +863,7 @@ public class UserService {
 
     public OnlineStats getOnlineStats() {
         final long totalUsers = userRepository.count();
-        final long activeUsers = userRepository.findOnlineUsers().size();
+        final long activeUsers = userRepository.countOnlineUsers();
 
         return new OnlineStats(
             0, // anonymousChats - будет подсчитываться в ChatService

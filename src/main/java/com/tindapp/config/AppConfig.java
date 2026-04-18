@@ -14,8 +14,8 @@ public class AppConfig {
     public static final boolean SUBSCRIPTIONS_ENABLED = true;
     public static final boolean VERIFICATION_ENABLED = true;
 
-    public static final int ANONYMOUS_CHAT_CREATION_COST = 100;
-    public static final int SEARCH_QUEUE_PAID_THRESHOLD = 10; // порог онлайна для платного анонимного чата
+    public static final int FREE_CHAT_ONLINE_THRESHOLD = 10;
+    public static final int CHAT_COST_PER_ONLINE_USER = 10;
     public static final int MESSAGES_COST = 0;
 
     public static final int MAX_CHATS_PER_USER = 10;
@@ -70,7 +70,9 @@ public class AppConfig {
 
     public static io.vertx.core.json.JsonObject getCostsConfig() {
         return new io.vertx.core.json.JsonObject()
-            .put("anonymousChatCreation", ANONYMOUS_CHAT_CREATION_COST)
+            .put("anonymousChatCreation", CHAT_COST_PER_ONLINE_USER)
+            .put("freeChatOnlineThreshold", FREE_CHAT_ONLINE_THRESHOLD)
+            .put("chatCostPerOnlineUser", CHAT_COST_PER_ONLINE_USER)
             .put("messagesCost", MESSAGES_COST);
     }
 

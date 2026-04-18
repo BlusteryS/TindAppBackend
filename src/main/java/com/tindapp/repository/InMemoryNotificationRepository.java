@@ -30,13 +30,8 @@ public class InMemoryNotificationRepository implements NotificationRepository {
     }
 
     @Override
-    public List<Notification> findAll() {
-        return new ArrayList<>(notifications.values());
-    }
-
-    @Override
     public List<Notification> findAll(final int page, final int limit) {
-        final List<Notification> allNotifications = findAll().stream()
+        final List<Notification> allNotifications = new ArrayList<>(notifications.values()).stream()
             .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
             .collect(Collectors.toList());
 
@@ -51,16 +46,8 @@ public class InMemoryNotificationRepository implements NotificationRepository {
     }
 
     @Override
-    public List<Notification> findByUserId(final Long userId) {
-        return notifications.values().stream()
-            .filter(notification -> userId.equals(notification.getUserId()))
-            .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
-            .collect(Collectors.toList());
-    }
-
-    @Override
     public List<Notification> findByUserId(final Long userId, final int page, final int limit) {
-        final List<Notification> userNotifications = findByUserId(userId);
+        final List<Notification> userNotifications = getUserNotifications(userId);
 
         final int start = (page - 1) * limit;
         final int end = Math.min(start + limit, userNotifications.size());
@@ -70,15 +57,6 @@ public class InMemoryNotificationRepository implements NotificationRepository {
         }
 
         return userNotifications.subList(start, end);
-    }
-
-    @Override
-    public List<Notification> findUnreadByUserId(final Long userId) {
-        return notifications.values().stream()
-            .filter(notification -> userId.equals(notification.getUserId()))
-            .filter(notification -> Boolean.FALSE.equals(notification.getIsRead()))
-            .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
-            .collect(Collectors.toList());
     }
 
     @Override
@@ -110,11 +88,10 @@ public class InMemoryNotificationRepository implements NotificationRepository {
     }
 
     @Override
-    public List<Notification> findByType(final Notification.NotificationType type) {
+    public long countByUserId(final Long userId) {
         return notifications.values().stream()
-            .filter(notification -> type.equals(notification.getType()))
-            .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
-            .collect(Collectors.toList());
+            .filter(notification -> userId.equals(notification.getUserId()))
+            .count();
     }
 
     @Override
@@ -136,5 +113,12 @@ public class InMemoryNotificationRepository implements NotificationRepository {
     @Override
     public long count() {
         return notifications.size();
+    }
+
+    private List<Notification> getUserNotifications(final Long userId) {
+        return notifications.values().stream()
+            .filter(notification -> userId.equals(notification.getUserId()))
+            .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
+            .collect(Collectors.toList());
     }
 }

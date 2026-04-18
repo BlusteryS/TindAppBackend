@@ -130,8 +130,7 @@ public class CompanionQueue {
     }
 
     private boolean hasActiveChatBetween(final Long userId, final Long companionId) {
-        return chatRepository.findByParticipantId(userId).stream()
-            .anyMatch(chat -> Boolean.TRUE.equals(chat.getIsActive()) && chat.hasParticipant(companionId));
+        return chatRepository.existsActiveBetweenParticipants(userId, companionId);
     }
 
     private boolean areFiltersCompatible(final SearchFilters userFilters, final SearchFilters companionFilters,
