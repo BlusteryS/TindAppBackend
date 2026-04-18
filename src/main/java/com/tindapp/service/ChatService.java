@@ -55,7 +55,7 @@ public class ChatService {
             .orElseThrow(() -> new RuntimeException("User not found"));
 
         final int queueSize = companionQueue.getQueueSize();
-        final int chatCost = calculateChatCost(queueSize);
+        final int chatCost = calculateChatCost();
 
         if (chatCost > 0 && user.getBalance() < chatCost) {
             throw new RuntimeException("Insufficient balance");
@@ -111,8 +111,8 @@ public class ChatService {
         }
     }
 
-    private static int calculateChatCost(final int queueSize) {
-        if (queueSize >= AppConfig.SEARCH_QUEUE_PAID_THRESHOLD) {
+    private static int calculateChatCost(final int onlineAnonymousChats) {
+        if (onlineAnonymousChats >= AppConfig.SEARCH_QUEUE_PAID_THRESHOLD) {
             return AppConfig.ANONYMOUS_CHAT_CREATION_COST;
         }
 
@@ -120,7 +120,7 @@ public class ChatService {
     }
 
     private int calculateChatCost() {
-        return calculateChatCost(companionQueue.getQueueSize());
+        return calculateChatCost(getActiveAnonymousChatsCount());
     }
 
     public int getChatCost() {

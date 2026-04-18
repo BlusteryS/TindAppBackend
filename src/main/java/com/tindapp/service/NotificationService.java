@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -41,8 +42,17 @@ public class NotificationService {
 
     public Notification createNotification(final Long userId, final Notification.NotificationType type,
                                            final String title, final String message) {
+        return createNotification(userId, type, title, message, null);
+    }
+
+    public Notification createNotification(final Long userId, final Notification.NotificationType type,
+                                           final String title, final String message,
+                                           final Map<String, Object> data) {
         final String notificationId = UUID.randomUUID().toString();
         final Notification notification = new Notification(notificationId, userId, type, title, message);
+        if (data != null && !data.isEmpty()) {
+            notification.setData(data);
+        }
         return notificationRepository.save(notification);
     }
 

@@ -15,7 +15,7 @@ public class AppConfig {
     public static final boolean VERIFICATION_ENABLED = true;
 
     public static final int ANONYMOUS_CHAT_CREATION_COST = 100;
-    public static final int SEARCH_QUEUE_PAID_THRESHOLD = 10;
+    public static final int SEARCH_QUEUE_PAID_THRESHOLD = 10; // порог онлайна для платного анонимного чата
     public static final int MESSAGES_COST = 0;
 
     public static final int MAX_CHATS_PER_USER = 10;

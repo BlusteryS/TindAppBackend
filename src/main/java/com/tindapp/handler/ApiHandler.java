@@ -479,9 +479,8 @@ public class ApiHandler {
             final JsonObject body = ctx.getBodyAsJson();
 
             final Integer amount = body.getInteger("amount");
-            final String paymentMethod = body.getString("paymentMethod");
 
-            final User updatedUser = userService.purchaseCoins(userId, amount, paymentMethod);
+            final User updatedUser = userService.purchaseCoins(userId, amount);
 
             final JsonObject response = new JsonObject().put("balance", updatedUser.getBalance());
             sendSuccess(ctx, response);

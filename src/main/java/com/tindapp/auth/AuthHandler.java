@@ -163,7 +163,7 @@ public class AuthHandler implements Handler<RoutingContext> {
         putIfPresent(userData, "vk_access_token_settings", params.get("vk_access_token_settings"), String::valueOf);
         putIfPresent(userData, "first_name", params.get("first_name"), String::valueOf);
         putIfPresent(userData, "last_name", params.get("last_name"), String::valueOf);
-        putIfPresent(userData, "photo_200", params.get("photo_200"), String::valueOf);
+        putIfPresent(userData, "photo_max_orig", params.get("photo_max_orig"), String::valueOf);
         putIfPresent(userData, "photo_100", params.get("photo_100"), String::valueOf);
         putIfPresent(userData, "sex", params.get("sex"), Integer::parseInt);
 
@@ -285,7 +285,7 @@ public class AuthHandler implements Handler<RoutingContext> {
         }
 
         final String avatarUrl = firstNonEmpty(
-            vkUserData.getString("photo_200"),
+            vkUserData.getString("photo_max_orig"),
             vkUserData.getString("photo_100"),
             vkUserData.getString("vk_profile_photo")
         );

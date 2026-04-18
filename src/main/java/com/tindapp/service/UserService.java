@@ -279,11 +279,11 @@ public class UserService {
         return user.getBalance();
     }
 
-    public User purchaseCoins(final Long userId, final Integer amount, final String paymentMethod) {
+    public User purchaseCoins(final Long userId, final Integer amount) {
         final User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
-        final int coinsToAdd = calculateCoinsForPayment(amount, paymentMethod);
+        final int coinsToAdd = calculateCoinsForPayment(amount);
         user.setBalance(user.getBalance() + coinsToAdd);
 
         return userRepository.save(user);
@@ -964,18 +964,18 @@ public class UserService {
     public record RewardClaimResult(int balance, int rewardedAmount, RewardStatus rewards) {
     }
 
-    private int calculateCoinsForPayment(final Integer amount, final String paymentMethod) {
-        switch (paymentMethod) {
-            case "vk_pay":
-                return amount * AppConfig.VK_PAY_COIN_RATE; // 1 рубль = 100 фиан
-            case "votes":
-                return amount * AppConfig.VOTES_COIN_RATE;  // 1 голос = 10 фиан
-            default:
-                return amount;
-        }
+    private static int calculateCoinsForPayment(final Integer amount) {
+        return switch (amount) {
+            case 50 -> 100;
+            case 100 -> 200;
+            case 250 -> 500;
+            case 500 -> 1600;
+            case 1500 -> 3000;
+            default -> 20;
+        };
     }
 
-        public record UserStats(int totalChats, int activeChats, int totalMessages, int likesReceived, int profileViews, int matchesFound) {
+    public record UserStats(int totalChats, int activeChats, int totalMessages, int likesReceived, int profileViews, int matchesFound) {
     }
 
     public record OnlineStats(int anonymousChats, int totalUsers, int activeUsers) {

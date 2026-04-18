@@ -223,7 +223,9 @@ public class MainVerticle extends AbstractVerticle {
         vkPaymentHandler = new VkPaymentHandler(
             config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET),
             subscriptionService,
-            userService
+            userService,
+            notificationService,
+            webSocketHandler
         );
     }
 

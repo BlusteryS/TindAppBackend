@@ -204,13 +204,15 @@ public class SubscriptionService {
         return saved;
     }
 
-    public void cancelSubscriptionByVkId(final String vkSubscriptionId, final String cancelReason) {
-        subscriptionRepository.findByVkSubscriptionId(vkSubscriptionId).ifPresent(subscription -> {
+    public Optional<Subscription> cancelSubscriptionByVkId(final String vkSubscriptionId, final String cancelReason) {
+        final Optional<Subscription> subscriptionOpt = subscriptionRepository.findByVkSubscriptionId(vkSubscriptionId);
+        subscriptionOpt.ifPresent(subscription -> {
             subscription.setCancelReason(cancelReason);
             subscription.cancel();
             subscriptionRepository.save(subscription);
             updateUserSubscriptionState(subscription.getUserId(), subscription);
         });
+        return subscriptionOpt;
     }
 
     public void cancelSubscription(final Long userId) {

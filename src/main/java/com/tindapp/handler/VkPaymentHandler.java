@@ -1,7 +1,9 @@
 package com.tindapp.handler;
 
+import com.tindapp.model.Notification;
 import com.tindapp.model.Subscription;
 import com.tindapp.model.User;
+import com.tindapp.service.NotificationService;
 import com.tindapp.service.SubscriptionService;
 import com.tindapp.service.UserService;
 import io.vertx.core.Handler;
@@ -30,11 +32,19 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
     private final String clientSecret;
     private final SubscriptionService subscriptionService;
     private final UserService userService;
+    private final NotificationService notificationService;
+    private final WebSocketHandler webSocketHandler;
 
-    public VkPaymentHandler(final String clientSecret, final SubscriptionService subscriptionService, final UserService userService) {
+    public VkPaymentHandler(final String clientSecret,
+                            final SubscriptionService subscriptionService,
+                            final UserService userService,
+                            final NotificationService notificationService,
+                            final WebSocketHandler webSocketHandler) {
         this.clientSecret = clientSecret;
         this.subscriptionService = subscriptionService;
         this.userService = userService;
+        this.notificationService = notificationService;
+        this.webSocketHandler = webSocketHandler;
     }
 
     @Override
@@ -187,6 +197,7 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
                         pendingCancel,
                         cancelReason
                     );
+                    notifySubscriptionUpdate(user, subscription, "Подписка активирована");
                     final Integer responseOrderId = subscription.getAppOrderId() != null
                         ? subscription.getAppOrderId()
                         : appOrderId;
@@ -198,7 +209,8 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
                 break;
             }
             case "cancelled": {
-                subscriptionService.cancelSubscriptionByVkId(subscriptionId, cancelReason);
+                final Optional<Subscription> cancelled = subscriptionService.cancelSubscriptionByVkId(subscriptionId, cancelReason);
+                notifySubscriptionUpdate(user, cancelled.orElse(null), "Подписка отменена");
                 sendSuccess(ctx, buildSubscriptionResponse(subscriptionId, appOrderId));
                 break;
             }
@@ -262,6 +274,25 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
             response.put("app_order_id", appOrderId);
         }
         return response;
+    }
+
+    private void notifySubscriptionUpdate(final User user, final Subscription subscription, final String message) {
+        if (user == null || notificationService == null || webSocketHandler == null) {
+            return;
+        }
+        final JsonObject subscriptionJson = subscription != null ? JsonObject.mapFrom(subscription) : null;
+        final Map<String, Object> data = new HashMap<>();
+        if (subscriptionJson != null) {
+            data.put("subscription", subscriptionJson.getMap());
+        }
+        final Notification notification = notificationService.createNotification(
+            user.getId(),
+            Notification.NotificationType.SYSTEM,
+            "Подписка",
+            message,
+            data.isEmpty() ? null : data
+        );
+        webSocketHandler.sendNotificationToUser(user.getId(), JsonObject.mapFrom(notification));
     }
 
     private Map<String, String> parseFormBody(final String rawBody) {
