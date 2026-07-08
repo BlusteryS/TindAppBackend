@@ -1,18 +1,19 @@
 package com.tindapp.repository;
 
 import com.tindapp.model.Report;
+import io.vertx.core.Future;
 
 import java.util.List;
 
 public interface ReportRepository extends Repository<Report, String> {
 
-    List<Report> findByReporterId(Long reporterId, int page, int limit);
+    Future<List<Report>> findByReporterId(Long reporterId, int page, int limit);
 
-    void updateStatus(String reportId, Report.ReportStatus status);
+    Future<Void> updateStatus(String reportId, Report.ReportStatus status);
 
-    long countByTargetId(Long targetId);
+    Future<Long> countByTargetId(Long targetId);
 
-    long countByReporterId(Long reporterId);
+    Future<Long> countByReporterId(Long reporterId);
 
-    boolean existsByReporterAndTarget(Long reporterId, Long targetId);
+    Future<Boolean> existsByReporterAndTarget(Long reporterId, Long targetId);
 }

@@ -4,14 +4,13 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.tindapp.model.Message;
 import com.tindapp.repository.MessageRepository;
 import com.tindapp.util.DateTimeUtils;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.pgclient.PgPool;
 import io.vertx.sqlclient.Row;
-import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,7 +24,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     private static final TypeReference<Map<String, Message.MessageTranslation>> TRANSLATIONS_TYPE = new TypeReference<>() {
     };
     private static final String MESSAGE_COLUMNS = """
-        id, chat_id, sender_id, text, type, reply_to, reply_to_message_id, attachments,
+        id, chat_id, sender_id, client_message_id, text, type, reply_to, reply_to_message_id, attachments,
         translations, is_read, is_edited, created_at, updated_at
         """;
 
@@ -34,9 +33,9 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public Message save(final Message message) {
+    public Future<Message> save(final Message message) {
         if (message == null) {
-            throw new IllegalArgumentException("Message is null");
+            return Future.failedFuture(new IllegalArgumentException("Message is null"));
         }
         if (message.getId() == null || message.getId().isBlank()) {
             message.setId(UUID.randomUUID().toString());
@@ -65,15 +64,16 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
         final JsonObject translationsJson =
             message.getTranslations() != null ? toJson(message.getTranslations()) : null;
 
-        execute("""
+        return execute("""
             INSERT INTO messages (
-                id, chat_id, sender_id, text, type, reply_to, reply_to_message_id, attachments,
+                id, chat_id, sender_id, client_message_id, text, type, reply_to, reply_to_message_id, attachments,
                 translations, is_read, is_edited, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, $10::jsonb, $11, $12, $13, $14)
             ON CONFLICT (id) DO UPDATE SET
                 chat_id = EXCLUDED.chat_id,
                 sender_id = EXCLUDED.sender_id,
+                client_message_id = EXCLUDED.client_message_id,
                 text = EXCLUDED.text,
                 type = EXCLUDED.type,
                 reply_to = EXCLUDED.reply_to,
@@ -88,6 +88,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
             message.getId(),
             message.getChatId(),
             message.getSenderId(),
+            message.getClientMessageId(),
             message.getText(),
             message.getType().name(),
             replyToJson,
@@ -98,58 +99,65 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
             message.getIsEdited(),
             toOffset(message.getCreatedAt()),
             toOffset(message.getUpdatedAt())
-        ));
-        return message;
+        )).map(message);
     }
 
     @Override
-    public Optional<Message> findById(final String id) {
+    public Future<Optional<Message>> findById(final String id) {
         if (id == null || id.isBlank()) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
-        return firstRow("SELECT " + MESSAGE_COLUMNS + " FROM messages WHERE id = $1 LIMIT 1", Tuple.of(id))
-            .map(this::mapMessage);
-    }
-
-    public List<Message> findAll(final int page, final int limit) {
-        final int safeLimit = safeLimit(limit, MAX_LIMIT);
-        return queryMessages(
-            "SELECT " + MESSAGE_COLUMNS + " FROM messages ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-            Tuple.of(safeLimit, offset(page, safeLimit))
+        return queryOptional(
+            "SELECT " + MESSAGE_COLUMNS + " FROM messages WHERE id = $1 LIMIT 1",
+            Tuple.of(id),
+            this::mapMessage
         );
-    }
-
-    public List<Message> findByChatId(final String chatId, final int page, final int limit) {
-        if (chatId == null || chatId.isBlank()) {
-            return List.of();
-        }
-        final int safeLimit = safeLimit(limit, MAX_LIMIT);
-        return queryMessages(
-            "SELECT " + MESSAGE_COLUMNS + " FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
-            Tuple.of(chatId, safeLimit, offset(page, safeLimit))
-        );
-    }
-
-    public void markAsRead(final String messageId) {
-        execute("UPDATE messages SET is_read = TRUE, updated_at = NOW() WHERE id = $1", Tuple.of(messageId));
     }
 
     @Override
-    public void markMessagesAsRead(final String chatId, final List<String> messageIds) {
+    public Future<List<Message>> findAll(final int page, final int limit) {
+        final int safeLimit = safeLimit(limit, MAX_LIMIT);
+        return queryList(
+            "SELECT " + MESSAGE_COLUMNS + " FROM messages ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+            Tuple.of(safeLimit, offset(page, safeLimit)),
+            this::mapMessage
+        );
+    }
+
+    @Override
+    public Future<List<Message>> findByChatId(final String chatId, final int page, final int limit) {
+        if (chatId == null || chatId.isBlank()) {
+            return Future.succeededFuture(List.of());
+        }
+        final int safeLimit = safeLimit(limit, MAX_LIMIT);
+        return queryList(
+            "SELECT " + MESSAGE_COLUMNS + " FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+            Tuple.of(chatId, safeLimit, offset(page, safeLimit)),
+            this::mapMessage
+        );
+    }
+
+    @Override
+    public Future<Void> markAsRead(final String messageId) {
+        return execute("UPDATE messages SET is_read = TRUE, updated_at = NOW() WHERE id = $1", Tuple.of(messageId)).mapEmpty();
+    }
+
+    @Override
+    public Future<Void> markMessagesAsRead(final String chatId, final List<String> messageIds) {
         if (chatId == null || messageIds == null || messageIds.isEmpty()) {
-            return;
+            return Future.succeededFuture();
         }
         final String[] ids = messageIds.toArray(String[]::new);
-        execute(
+        return execute(
             "UPDATE messages SET is_read = TRUE, updated_at = NOW() WHERE chat_id = $1 AND id = ANY($2)",
             Tuple.of(chatId, (Object) ids)
-        );
+        ).mapEmpty();
     }
 
     @Override
-    public long countUnreadMessagesByChatId(final String chatId) {
+    public Future<Long> countUnreadMessagesByChatId(final String chatId) {
         if (chatId == null || chatId.isBlank()) {
-            return 0L;
+            return Future.succeededFuture(0L);
         }
         return countRows(
             "SELECT COUNT(*) AS cnt FROM messages WHERE chat_id = $1 AND is_read = FALSE",
@@ -158,49 +166,41 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public long countMessagesByChatId(final String chatId) {
+    public Future<Long> countMessagesByChatId(final String chatId) {
         if (chatId == null || chatId.isBlank()) {
-            return 0L;
+            return Future.succeededFuture(0L);
         }
         return countRows("SELECT COUNT(*) AS cnt FROM messages WHERE chat_id = $1", Tuple.of(chatId));
     }
 
     @Override
-    public List<Message> findRecentByChatId(final String chatId, final int limit) {
+    public Future<List<Message>> findRecentByChatId(final String chatId, final int limit) {
         if (chatId == null || chatId.isBlank() || limit <= 0) {
-            return List.of();
+            return Future.succeededFuture(List.of());
         }
-        return queryMessages(
+        return queryList(
             "SELECT " + MESSAGE_COLUMNS + " FROM messages WHERE chat_id = $1 ORDER BY created_at DESC LIMIT $2",
-            Tuple.of(chatId, safeLimit(limit, MAX_LIMIT))
+            Tuple.of(chatId, safeLimit(limit, MAX_LIMIT)),
+            this::mapMessage
         );
     }
 
     @Override
-    public void deleteById(final String id) {
-        execute("DELETE FROM messages WHERE id = $1", Tuple.of(id));
+    public Future<Void> deleteById(final String id) {
+        return execute("DELETE FROM messages WHERE id = $1", Tuple.of(id)).mapEmpty();
     }
 
     @Override
-    public boolean existsById(final String id) {
+    public Future<Boolean> existsById(final String id) {
+        if (id == null || id.isBlank()) {
+            return Future.succeededFuture(false);
+        }
         return exists("SELECT 1 FROM messages WHERE id = $1 LIMIT 1", Tuple.of(id));
     }
 
     @Override
-    public long count() {
+    public Future<Long> count() {
         return countRows("SELECT COUNT(*) AS cnt FROM messages");
-    }
-
-    private List<Message> queryMessages(final String sql, final Tuple params) {
-        final RowSet<Row> rows = execute(sql, params);
-        final List<Message> messages = new ArrayList<>();
-        for (final Row row : rows) {
-            final Message message = mapMessage(row);
-            if (message != null) {
-                messages.add(message);
-            }
-        }
-        return messages;
     }
 
     private Message mapMessage(final Row row) {
@@ -211,6 +211,7 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
         message.setId(row.getString("id"));
         message.setChatId(row.getString("chat_id"));
         message.setSenderId(row.getLong("sender_id"));
+        message.setClientMessageId(row.getString("client_message_id"));
         message.setText(row.getString("text"));
 
         final String type = row.getString("type");

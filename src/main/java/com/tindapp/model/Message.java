@@ -18,6 +18,7 @@ public class Message {
     private String id;
     private String chatId;
     private Long senderId;
+    private String clientMessageId;
     private String text;
     private MessageType type;
     private ReplyInfo replyTo;
@@ -204,6 +205,14 @@ public class Message {
 
     public void setText(final String text) {
         this.text = text;
+    }
+
+    public String getClientMessageId() {
+        return clientMessageId;
+    }
+
+    public void setClientMessageId(final String clientMessageId) {
+        this.clientMessageId = clientMessageId;
     }
 
     public MessageType getType() {

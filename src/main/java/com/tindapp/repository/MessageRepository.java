@@ -1,20 +1,21 @@
 package com.tindapp.repository;
 
 import com.tindapp.model.Message;
+import io.vertx.core.Future;
 
 import java.util.List;
 
 public interface MessageRepository extends Repository<Message, String> {
 
-    List<Message> findByChatId(String chatId, int page, int limit);
+    Future<List<Message>> findByChatId(String chatId, int page, int limit);
 
-    void markAsRead(String messageId);
+    Future<Void> markAsRead(String messageId);
 
-    void markMessagesAsRead(String chatId, List<String> messageIds);
+    Future<Void> markMessagesAsRead(String chatId, List<String> messageIds);
 
-    long countUnreadMessagesByChatId(String chatId);
+    Future<Long> countUnreadMessagesByChatId(String chatId);
 
-    long countMessagesByChatId(String chatId);
+    Future<Long> countMessagesByChatId(String chatId);
 
-    List<Message> findRecentByChatId(String chatId, int limit);
+    Future<List<Message>> findRecentByChatId(String chatId, int limit);
 }

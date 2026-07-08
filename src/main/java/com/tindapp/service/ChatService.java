@@ -1,15 +1,15 @@
 package com.tindapp.service;
 
-import com.tindapp.config.AppConfig;
 import com.tindapp.model.Chat;
 import com.tindapp.model.User;
 import com.tindapp.repository.ChatRepository;
 import com.tindapp.repository.UserRepository;
 import com.tindapp.util.DateTimeUtils;
+import com.tindapp.util.FutureUtils;
+import io.vertx.core.Future;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,7 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ChatService {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatService.class);
-
     private static final AtomicInteger anonymousChatCounter = new AtomicInteger(1000);
 
     private final ChatRepository chatRepository;
@@ -36,88 +35,96 @@ public class ChatService {
         companionQueue = new CompanionQueue(userService, chatRepository);
     }
 
-    public List<Chat> getUserChats(final Long userId, final int page, final int limit) {
+    public Future<List<Chat>> getUserChats(final Long userId, final int page, final int limit) {
         return chatRepository.findByParticipantId(userId, page, limit);
     }
 
-    public int countUserChats(final Long userId) {
-        return Math.toIntExact(chatRepository.countByParticipantId(userId));
+    public Future<Integer> countUserChats(final Long userId) {
+        return chatRepository.countByParticipantId(userId).map(Math::toIntExact);
     }
 
-    public Optional<Chat> getChatById(final String chatId) {
+    public Future<Optional<Chat>> getChatById(final String chatId) {
         return chatRepository.findById(chatId);
     }
 
-    public boolean isUserInChat(final String chatId, final Long userId) {
+    public Future<Boolean> isUserInChat(final String chatId, final Long userId) {
         return chatRepository.isParticipant(chatId, userId);
     }
 
-    public FindCompanionResult findCompanion(final Long userId, final SearchFilters filters) {
-        final User user = userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
+    public Future<FindCompanionResult> findCompanion(final Long userId, final SearchFilters filters) {
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .compose(user -> calculateChatCost()
+                .compose(chatCost -> {
+                    if (chatCost > 0 && user.getBalance() < chatCost) {
+                        return FutureUtils.failed("Insufficient balance");
+                    }
 
-        final int queueSize = companionQueue.getQueueSize();
-        final int chatCost = calculateChatCost();
+                    if (companionQueue.isInQueue(userId)) {
+                        companionQueue.removeFromQueue(userId);
+                    }
 
-        if (chatCost > 0 && user.getBalance() < chatCost) {
-            throw new RuntimeException("Insufficient balance");
-        }
+                    final int queueSize = companionQueue.getQueueSize();
+                    final CompanionQueue.SearchFilters queueFilters = new CompanionQueue.SearchFilters(
+                        filters.getGender(),
+                        filters.getAgeRange(),
+                        filters.getPreference(),
+                        filters.getCity()
+                    );
 
-        if (companionQueue.isInQueue(userId)) {
-            logger.info("User {} already in search queue, removing to start new search", userId);
-            companionQueue.removeFromQueue(userId);
-        }
-
-        final CompanionQueue.SearchFilters queueFilters = new CompanionQueue.SearchFilters(
-            filters.getGender(),
-            filters.getAgeRange(),
-            filters.getPreference(),
-            filters.getCity()
-        );
-
-        final CompanionQueue.MatchResult queueResult = companionQueue.addToQueue(userId, queueFilters);
-
-        if (queueResult != null) {
-            final String existingChatId = queueResult.chatId();
-            final Chat chat = chatRepository.findById(existingChatId)
-                .orElseThrow(() -> new RuntimeException("Chat not found after match creation"));
-
-            chat.getSettings().setCost(chatCost);
-            chat.getSettings().setAnonymousId(anonymousChatCounter.getAndIncrement());
-            chatRepository.save(chat);
-
-            if (chatCost > 0) {
-                user.setBalance(user.getBalance() - chatCost);
-                userRepository.save(user);
-            }
-
-            final MatchResult matchResult = new MatchResult(
-                chat.getId(),
-                new CompanionInfo(
-                    queueResult.companion().id(),
-                    queueResult.companion().nickname(),
-                    queueResult.companion().isVerified(),
-                    queueResult.companion().isOnline()
-                ),
-                chatCost
-            );
-
-            return new FindCompanionResult(matchResult, false, queueSize, null);
-        } else {
-            return new FindCompanionResult(
-                null,
-                true,
-                queueSize,
-                "Поиск собеседника начат. Ожидайте уведомления о найденном собеседнике."
-            );
-        }
+                    return companionQueue.addToQueue(userId, queueFilters)
+                        .compose(queueResult -> queueResult == null
+                            ? Future.succeededFuture(new FindCompanionResult(
+                                null,
+                                true,
+                                queueSize,
+                                "Поиск собеседника начат. Ожидайте уведомления о найденном собеседнике."
+                            ))
+                            : finalizeMatchedChat(user, chatCost, queueSize, queueResult));
+                }));
     }
 
-    private int calculateChatCost() {
-        return ChatPricingPolicy.calculateCost(userService.countOnlineUsers());
+    private Future<FindCompanionResult> finalizeMatchedChat(final User user, final int chatCost, final int queueSize,
+                                                            final CompanionQueue.MatchResult queueResult) {
+        return FutureUtils.requirePresent(chatRepository.findById(queueResult.chatId()), "Chat not found after match creation")
+            .compose(chat -> {
+                chat.getSettings().setCost(chatCost);
+                chat.getSettings().setAnonymousId(anonymousChatCounter.getAndIncrement());
+                final Future<User> balanceFuture = chatCost > 0
+                    ? updateUserBalanceForChat(user, chatCost)
+                    : Future.succeededFuture(user);
+                return chatRepository.save(chat)
+                    .compose(savedChat -> balanceFuture.map(updatedUser -> new FindCompanionResult(
+                        new MatchResult(
+                            savedChat.getId(),
+                            new CompanionInfo(
+                                queueResult.companion().id(),
+                                queueResult.companion().nickname(),
+                                queueResult.companion().isVerified(),
+                                queueResult.companion().isOnline()
+                            ),
+                            chatCost
+                        ),
+                        false,
+                        queueSize,
+                        null
+                    )));
+            });
     }
 
-    public int getChatCost() {
+    private Future<User> updateUserBalanceForChat(final User user, final int chatCost) {
+        user.setBalance(user.getBalance() - chatCost);
+        return userRepository.save(user);
+    }
+
+    private Future<Integer> calculateChatCost() {
+        return Future.succeededFuture(ChatPricingPolicy.calculateAnonymousChatCost(companionQueue.getQueueSize()));
+    }
+
+    private Future<Integer> calculateProfileChatCost() {
+        return userService.countOnlineUsers().map(ChatPricingPolicy::calculateProfileCost);
+    }
+
+    public Future<Integer> getChatCost() {
         return calculateChatCost();
     }
 
@@ -133,142 +140,124 @@ public class ChatService {
         return companionQueue.getQueueSize();
     }
 
-    public Chat endChat(final String chatId, final Long userId) {
-        final Chat chat = chatRepository.findById(chatId)
-            .orElseThrow(() -> new RuntimeException("Chat not found"));
-
-        if (!chat.hasParticipant(userId)) {
-            throw new RuntimeException("User is not a participant of this chat");
-        }
-
-        return closeChatInternal(chat, userId, Chat.ChatClosureReason.MANUAL);
-    }
-
-    public List<Chat> closeChatsBetween(final Long userId, final Long companionId, final Chat.ChatClosureReason reason) {
-        final List<Chat> closedChats = new ArrayList<>();
-        if (userId == null || companionId == null) {
-            return closedChats;
-        }
-
-        for (final Chat.ChatType type : Chat.ChatType.values()) {
-            chatRepository.findByParticipants(userId, companionId, type).ifPresent(chat -> {
-                if (Boolean.TRUE.equals(chat.getIsActive())) {
-                    final Chat closed = closeChatInternal(chat, userId, reason);
-                    closedChats.add(closed);
+    public Future<Chat> endChat(final String chatId, final Long userId) {
+        return FutureUtils.requirePresent(chatRepository.findById(chatId), "Chat not found")
+            .compose(chat -> {
+                if (!chat.hasParticipant(userId)) {
+                    return FutureUtils.failed("User is not a participant of this chat");
                 }
+                return closeChatInternal(chat, userId, Chat.ChatClosureReason.MANUAL);
             });
-        }
-
-        return closedChats;
     }
 
-    public List<Chat> reopenChatsBetween(final Long userId, final Long companionId) {
-        final List<Chat> reopenedChats = new ArrayList<>();
+    public Future<List<Chat>> closeChatsBetween(final Long userId, final Long companionId, final Chat.ChatClosureReason reason) {
         if (userId == null || companionId == null) {
-            return reopenedChats;
+            return Future.succeededFuture(List.of());
         }
-
-        final List<Chat> blockedChats = chatRepository.findByParticipants(userId, companionId, false, Chat.ChatClosureReason.BLOCKED);
-        for (final Chat chat : blockedChats) {
-            chat.setIsActive(true);
-            chat.setClosureReason(null);
-            chat.setClosedAt(null);
-            chat.setClosedByUserId(null);
-            final Chat reopened = chatRepository.save(chat);
-            reopenedChats.add(reopened);
-        }
-        return reopenedChats;
+        return FutureUtils.sequentialMap(List.of(Chat.ChatType.values()), type ->
+                chatRepository.findByParticipants(userId, companionId, type)
+                    .compose(chatOpt -> {
+                        if (chatOpt.isEmpty() || !Boolean.TRUE.equals(chatOpt.get().getIsActive())) {
+                            return Future.succeededFuture((Chat) null);
+                        }
+                        return closeChatInternal(chatOpt.get(), userId, reason);
+                    }))
+            .map(result -> result.stream().filter(java.util.Objects::nonNull).toList());
     }
 
-    public List<Chat> closeAllChatsForUser(final Long userId, final Chat.ChatClosureReason reason) {
-        final List<Chat> closedChats = new ArrayList<>();
+    public Future<List<Chat>> reopenChatsBetween(final Long userId, final Long companionId) {
+        if (userId == null || companionId == null) {
+            return Future.succeededFuture(List.of());
+        }
+        return chatRepository.findByParticipants(userId, companionId, false, Chat.ChatClosureReason.BLOCKED)
+            .compose(blockedChats -> FutureUtils.sequentialMap(blockedChats, chat -> {
+                chat.setIsActive(true);
+                chat.setClosureReason(null);
+                chat.setClosedAt(null);
+                chat.setClosedByUserId(null);
+                return chatRepository.save(chat);
+            }));
+    }
+
+    public Future<List<Chat>> closeAllChatsForUser(final Long userId, final Chat.ChatClosureReason reason) {
         if (userId == null) {
-            return closedChats;
+            return Future.succeededFuture(List.of());
         }
-
-        final List<Chat> activeChats = chatRepository.findByParticipantIdAndActive(userId, true);
-        for (final Chat chat : activeChats) {
-            final Chat closed = closeChatInternal(chat, userId, reason);
-            closedChats.add(closed);
-        }
-        return closedChats;
+        return chatRepository.findByParticipantIdAndActive(userId, true)
+            .compose(activeChats -> FutureUtils.sequentialMap(activeChats, chat -> closeChatInternal(chat, userId, reason)));
     }
 
-    public Chat startProfileChat(final Long initiatorId, final Long targetId) {
+    public Future<Chat> startProfileChat(final Long initiatorId, final Long targetId) {
         if (initiatorId.equals(targetId)) {
-            throw new RuntimeException("Нельзя начать чат с самим собой");
+            return FutureUtils.failed("Нельзя начать чат с самим собой");
         }
 
-        final User initiator = userRepository.findById(initiatorId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-        final User target = userRepository.findById(targetId)
-            .orElseThrow(() -> new RuntimeException("Target user not found"));
+        return FutureUtils.requirePresent(userRepository.findById(initiatorId), "User not found")
+            .compose(initiator -> FutureUtils.requirePresent(userRepository.findById(targetId), "Target user not found")
+                .compose(target -> {
+                    if (!Boolean.TRUE.equals(target.getIsVisible())) {
+                        return FutureUtils.failed("Target user is not available");
+                    }
+                    if (target.getSettings() != null && Boolean.FALSE.equals(target.getSettings().getAllowMessages())) {
+                        return FutureUtils.failed("Target user disabled messages");
+                    }
 
-        if (!Boolean.TRUE.equals(target.getIsVisible())) {
-            throw new RuntimeException("Target user is not available");
-        }
-        if (target.getSettings() != null && Boolean.FALSE.equals(target.getSettings().getAllowMessages())) {
-            throw new RuntimeException("Target user disabled messages");
-        }
+                    return chatRepository.findByParticipants(initiatorId, targetId, Chat.ChatType.REGULAR)
+                        .compose(existing -> existing.isPresent()
+                            ? Future.succeededFuture(existing.get())
+                            : createProfileChat(initiator, target));
+                }));
+    }
 
-        final Optional<Chat> existing = chatRepository.findByParticipants(initiatorId, targetId, Chat.ChatType.REGULAR);
-        if (existing.isPresent()) {
-            return existing.get();
-        }
-
+    private Future<Chat> createProfileChat(final User initiator, final User target) {
         final boolean initiatorHasSubscription = initiator.getSubscription() != null
             && Boolean.TRUE.equals(initiator.getSubscription().getIsActive());
-        final int cost = initiatorHasSubscription ? 0 : calculateChatCost();
-        if (cost > 0) {
-            userService.deductCoins(initiatorId, cost);
-        }
+        final Future<Integer> costFuture = initiatorHasSubscription ? Future.succeededFuture(0) : calculateProfileChatCost();
 
-        final Chat chat = new Chat(UUID.randomUUID().toString(), Chat.ChatType.REGULAR, initiatorId, targetId);
-        chat.getSettings().setCost(cost);
-        chatRepository.save(chat);
-
-        notificationService.sendProfileChatCreatedNotification(
-            targetId,
-            buildDisplayName(initiator)
-        );
-
-        return chat;
+        return costFuture.compose(cost -> {
+            final Future<?> balanceFuture = cost > 0 ? userService.deductCoins(initiator.getId(), cost) : Future.succeededFuture();
+            final Chat chat = new Chat(UUID.randomUUID().toString(), Chat.ChatType.REGULAR, initiator.getId(), target.getId());
+            chat.getSettings().setCost(cost);
+            return balanceFuture
+                .compose(v -> chatRepository.save(chat))
+                .compose(savedChat -> notificationService.sendProfileChatCreatedNotification(target.getId(), buildDisplayName(initiator))
+                    .map(notification -> savedChat));
+        });
     }
 
-    public boolean hasRegularChatBetween(final Long userId, final Long targetUserId) {
+    public Future<Boolean> hasRegularChatBetween(final Long userId, final Long targetUserId) {
         if (userId == null || targetUserId == null) {
-            return false;
+            return Future.succeededFuture(false);
         }
-        return chatRepository.findByParticipants(userId, targetUserId, Chat.ChatType.REGULAR).isPresent();
+        return chatRepository.findByParticipants(userId, targetUserId, Chat.ChatType.REGULAR).map(Optional::isPresent);
     }
 
-    public int getActiveAnonymousChatsCount() {
-        return Math.toIntExact(chatRepository.countActiveByType(Chat.ChatType.ANONYMOUS));
-    }
-
-    private Chat closeChatInternal(final Chat chat, final Long closedByUserId, final Chat.ChatClosureReason reason) {
+    private Future<Chat> closeChatInternal(final Chat chat, final Long closedByUserId, final Chat.ChatClosureReason reason) {
         if (!Boolean.TRUE.equals(chat.getIsActive())) {
-            return chat;
+            return Future.succeededFuture(chat);
         }
 
         chat.setIsActive(false);
         chat.setClosedByUserId(closedByUserId);
         chat.setClosureReason(reason);
         chat.setClosedAt(DateTimeUtils.nowAsIso());
-        final Chat savedChat = chatRepository.save(chat);
 
-        if (closedByUserId != null) {
-            final Long companionId = chat.getCompanionId(closedByUserId);
-            if (companionId != null) {
-                final String closedByName =
-                    chat.getType() == Chat.ChatType.ANONYMOUS
-                        ? "Собеседник"
-                        : buildDisplayName(userService.getUserById(closedByUserId).orElse(null));
-                notificationService.sendDialogClosedNotification(companionId, chat.getType(), closedByName);
-            }
-        }
-
-        return savedChat;
+        return chatRepository.save(chat)
+            .compose(savedChat -> {
+                if (closedByUserId == null) {
+                    return Future.succeededFuture(savedChat);
+                }
+                final Long companionId = chat.getCompanionId(closedByUserId);
+                if (companionId == null) {
+                    return Future.succeededFuture(savedChat);
+                }
+                final Future<String> closedByNameFuture = chat.getType() == Chat.ChatType.ANONYMOUS
+                    ? Future.succeededFuture("Собеседник")
+                    : userService.getUserById(closedByUserId).map(user -> buildDisplayName(user.orElse(null)));
+                return closedByNameFuture
+                    .compose(closedByName -> notificationService.sendDialogClosedNotification(companionId, chat.getType(), closedByName))
+                    .map(notification -> savedChat);
+            });
     }
 
     private String buildDisplayName(final User user) {
@@ -306,37 +295,14 @@ public class ChatService {
             this.city = city;
         }
 
-        public String getGender() {
-            return gender;
-        }
-
-        public void setGender(final String gender) {
-            this.gender = gender;
-        }
-
-        public int[] getAgeRange() {
-            return ageRange;
-        }
-
-        public void setAgeRange(final int[] ageRange) {
-            this.ageRange = ageRange;
-        }
-
-        public String getPreference() {
-            return preference;
-        }
-
-        public void setPreference(final String preference) {
-            this.preference = preference;
-        }
-
-        public String getCity() {
-            return city;
-        }
-
-        public void setCity(final String city) {
-            this.city = city;
-        }
+        public String getGender() { return gender; }
+        public void setGender(final String gender) { this.gender = gender; }
+        public int[] getAgeRange() { return ageRange; }
+        public void setAgeRange(final int[] ageRange) { this.ageRange = ageRange; }
+        public String getPreference() { return preference; }
+        public void setPreference(final String preference) { this.preference = preference; }
+        public String getCity() { return city; }
+        public void setCity(final String city) { this.city = city; }
     }
 
     public record MatchResult(String chatId, CompanionInfo companion, int cost) {
@@ -345,6 +311,6 @@ public class ChatService {
     public record CompanionInfo(Long id, String nickname, boolean isVerified, boolean isOnline) {
     }
 
-        public record FindCompanionResult(MatchResult matchResult, boolean inQueue, int queueSize, String message) {
+    public record FindCompanionResult(MatchResult matchResult, boolean inQueue, int queueSize, String message) {
     }
 }

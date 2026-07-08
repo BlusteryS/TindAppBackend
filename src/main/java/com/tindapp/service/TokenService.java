@@ -2,6 +2,7 @@ package com.tindapp.service;
 
 import com.tindapp.config.AppConfig;
 import com.tindapp.model.User;
+import io.vertx.core.Future;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
@@ -36,50 +37,46 @@ public class TokenService {
         if (user == null || user.getId() == null) {
             throw new IllegalArgumentException("User or user ID is null");
         }
-
         final long expiresAt = Instant.now().plus(TOKEN_EXPIRY_HOURS, ChronoUnit.HOURS).getEpochSecond();
         final String nonce = UUID.randomUUID().toString().replace("-", "");
         final String payload = user.getId() + ":" + expiresAt + ':' + nonce;
         final String signature = sign(payload);
-
         return BASE64_ENCODER.encodeToString(payload.getBytes(StandardCharsets.UTF_8)) + '.' + signature;
     }
 
-    public User validateToken(final String token) {
+    public Future<User> validateToken(final String token) {
         if (token == null || token.isEmpty()) {
-            return null;
+            return Future.succeededFuture((User) null);
         }
 
         try {
             final String[] parts = token.split("\\.");
             if (parts.length != 2) {
-                return null;
+                return Future.succeededFuture((User) null);
             }
 
             final String payload = new String(BASE64_DECODER.decode(parts[0]), StandardCharsets.UTF_8);
             final String providedSignature = parts[1];
             final String expectedSignature = sign(payload);
-
             if (!MessageDigest.isEqual(expectedSignature.getBytes(StandardCharsets.UTF_8), providedSignature.getBytes(StandardCharsets.UTF_8))) {
-                return null;
+                return Future.succeededFuture((User) null);
             }
 
             final String[] payloadParts = payload.split(":");
             if (payloadParts.length != 3) {
-                return null;
+                return Future.succeededFuture((User) null);
             }
 
             final long userId = Long.parseLong(payloadParts[0]);
             final long expiresAt = Long.parseLong(payloadParts[1]);
-
             if (Instant.now().getEpochSecond() > expiresAt) {
-                return null;
+                return Future.succeededFuture((User) null);
             }
 
-            return userService.getUserById(userId).orElse(null);
+            return userService.getUserById(userId).map(optional -> optional.orElse(null));
         } catch (final Exception e) {
             logger.warn("Token validation error", e);
-            return null;
+            return Future.succeededFuture((User) null);
         }
     }
 

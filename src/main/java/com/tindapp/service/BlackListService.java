@@ -3,6 +3,8 @@ package com.tindapp.service;
 import com.tindapp.model.BlackListItem;
 import com.tindapp.repository.BlackListRepository;
 import com.tindapp.repository.UserRepository;
+import com.tindapp.util.FutureUtils;
+import io.vertx.core.Future;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,86 +24,89 @@ public class BlackListService {
         this.userRepository = userRepository;
     }
 
-    public BlackListItem blockUser(final Long userId, final Long blockedUserId, final String reason) {
-        userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-        userRepository.findById(blockedUserId)
-            .orElseThrow(() -> new RuntimeException("Blocked user not found"));
-
+    public Future<BlackListItem> blockUser(final Long userId, final Long blockedUserId, final String reason) {
+        if (userId == null || blockedUserId == null) {
+            return FutureUtils.failed("User not found");
+        }
         if (userId.equals(blockedUserId)) {
-            throw new RuntimeException("Cannot block yourself");
+            return FutureUtils.failed("Cannot block yourself");
         }
 
-        if (isUserBlocked(userId, blockedUserId)) {
-            throw new RuntimeException("User is already blocked");
-        }
-
-        final String blackListId = UUID.randomUUID().toString();
-        final BlackListItem blackListItem = new BlackListItem(blackListId, userId, blockedUserId, reason);
-
-        return blackListRepository.save(blackListItem);
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .compose(user -> FutureUtils.requirePresent(userRepository.findById(blockedUserId), "Blocked user not found"))
+            .compose(user -> isUserBlocked(userId, blockedUserId))
+            .compose(blocked -> {
+                if (blocked) {
+                    return FutureUtils.failed("User is already blocked");
+                }
+                final BlackListItem blackListItem = new BlackListItem(UUID.randomUUID().toString(), userId, blockedUserId, reason);
+                return blackListRepository.save(blackListItem);
+            });
     }
 
-    public void unblockUser(final Long userId, final Long blockedUserId) {
-        userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-        userRepository.findById(blockedUserId)
-            .orElseThrow(() -> new RuntimeException("Blocked user not found"));
-
-        final Optional<BlackListItem> blackListItem = blackListRepository.findByUserIdAndBlockedUserId(userId, blockedUserId);
-        if (blackListItem.isPresent()) {
-            blackListRepository.deleteById(blackListItem.get().getId());
-        } else {
-            throw new RuntimeException("User is not blocked");
-        }
+    public Future<Void> unblockUser(final Long userId, final Long blockedUserId) {
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .compose(user -> FutureUtils.requirePresent(userRepository.findById(blockedUserId), "Blocked user not found"))
+            .compose(user -> blackListRepository.findByUserIdAndBlockedUserId(userId, blockedUserId))
+            .compose(blackListItem -> {
+                if (blackListItem.isEmpty()) {
+                    return FutureUtils.failed("User is not blocked");
+                }
+                return blackListRepository.deleteById(blackListItem.get().getId());
+            });
     }
 
-    public List<BlackListItem> getUserBlackList(final Long userId, final int page, final int limit) {
+    public Future<List<BlackListItem>> getUserBlackList(final Long userId, final int page, final int limit) {
         return blackListRepository.findByUserId(userId, page, limit);
     }
 
-    public boolean isUserBlocked(final Long userId, final Long blockedUserId) {
+    public Future<Boolean> isUserBlocked(final Long userId, final Long blockedUserId) {
         return blackListRepository.isBlocked(userId, blockedUserId);
     }
 
-    public boolean isUserBlockedByAnyone(final Long userId) {
+    public Future<Boolean> isUserBlockedByAnyone(final Long userId) {
         return blackListRepository.existsByBlockedUserId(userId);
     }
 
-    public long getBlockedUsersCount(final Long userId) {
+    public Future<Long> getBlockedUsersCount(final Long userId) {
         return blackListRepository.countByUserId(userId);
     }
 
-    public long getBlockersCount(final Long userId) {
+    public Future<Long> getBlockersCount(final Long userId) {
         return blackListRepository.countByBlockedUserId(userId);
     }
 
-    public Optional<BlackListItem> getBlockInfo(final Long userId, final Long blockedUserId) {
+    public Future<Optional<BlackListItem>> getBlockInfo(final Long userId, final Long blockedUserId) {
         return blackListRepository.findByUserIdAndBlockedUserId(userId, blockedUserId);
     }
 
-    public void deleteAllUserBlocks(final Long userId) {
-        blackListRepository.deleteByUserId(userId);
+    public Future<Void> deleteAllUserBlocks(final Long userId) {
+        return blackListRepository.deleteByUserId(userId);
     }
 
-    public boolean canUsersInteract(final Long userId1, final Long userId2) {
-        return !isUserBlocked(userId1, userId2) && !isUserBlocked(userId2, userId1);
+    public Future<Boolean> canUsersInteract(final Long userId1, final Long userId2) {
+        return isUserBlocked(userId1, userId2)
+            .compose(blocked -> blocked ? Future.succeededFuture(false) : isUserBlocked(userId2, userId1).map(otherBlocked -> !otherBlocked));
     }
 
-    public List<Long> filterBlockedUsers(final Long userId, final List<Long> userIds) {
-        return userIds.stream()
-            .filter(targetUserId -> canUsersInteract(userId, targetUserId))
-            .collect(java.util.stream.Collectors.toList());
+    public Future<List<Long>> filterBlockedUsers(final Long userId, final List<Long> userIds) {
+        return FutureUtils.sequentialMap(userIds, targetUserId ->
+                canUsersInteract(userId, targetUserId).map(canInteract -> canInteract ? targetUserId : null))
+            .map(result -> result.stream().filter(java.util.Objects::nonNull).toList());
     }
 
-    public boolean shouldHideUser(final Long viewerId, final Long targetUserId) {
-        return isUserBlocked(viewerId, targetUserId) || isUserBlocked(targetUserId, viewerId);
+    public Future<Boolean> shouldHideUser(final Long viewerId, final Long targetUserId) {
+        return canUsersInteract(viewerId, targetUserId).map(canInteract -> !canInteract);
     }
 
-    public void processUserReport(final Long reporterId, final Long targetId, final int reportCount) {
-        if (reportCount >= 5) {
-            blockUser(1L, targetId, "Automatic block due to multiple reports");
-            logger.info("User {} automatically blocked due to {} reports", targetId, reportCount);
+    public Future<Void> processUserReport(final Long reporterId, final Long targetId, final int reportCount) {
+        if (reportCount < 5) {
+            return Future.succeededFuture();
         }
+        return blockUser(1L, targetId, "Automatic block due to multiple reports")
+            .map(item -> {
+                logger.info("User {} automatically blocked due to {} reports", targetId, reportCount);
+                return (Void) null;
+            });
     }
 }

@@ -1,25 +1,26 @@
 package com.tindapp.repository;
 
 import com.tindapp.model.Subscription;
+import io.vertx.core.Future;
 
 import java.util.List;
 import java.util.Optional;
 
 public interface SubscriptionRepository extends Repository<Subscription, String> {
 
-    Optional<Subscription> findActiveByUserId(Long userId);
+    Future<Optional<Subscription>> findActiveByUserId(Long userId);
 
-    List<Subscription> findExpiring();
+    Future<List<Subscription>> findExpiring();
 
-    void cancelByUserId(Long userId);
+    Future<Void> cancelByUserId(Long userId);
 
-    void expireById(String subscriptionId);
+    Future<Void> expireById(String subscriptionId);
 
-    boolean hasActiveSubscription(Long userId);
+    Future<Boolean> hasActiveSubscription(Long userId);
 
-    Optional<Subscription> findByVkSubscriptionId(String vkSubscriptionId);
+    Future<Optional<Subscription>> findByVkSubscriptionId(String vkSubscriptionId);
 
-    void cancelByVkSubscriptionId(String vkSubscriptionId);
+    Future<Void> cancelByVkSubscriptionId(String vkSubscriptionId);
 
-    long countActiveSubscriptions();
+    Future<Long> countActiveSubscriptions();
 }

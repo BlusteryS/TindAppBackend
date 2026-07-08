@@ -6,6 +6,7 @@ import com.tindapp.model.User;
 import com.tindapp.service.NotificationService;
 import com.tindapp.service.SubscriptionService;
 import com.tindapp.service.UserService;
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
@@ -149,76 +150,111 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
             return;
         }
 
-        final User user = userService.getOrCreateUser(vkUserId);
         final boolean pendingCancel = isPendingCancel(params.get("pending_cancel"));
         final LocalDateTime nextBillDate = parseEpochSeconds(params.get("next_bill_time"));
         final String cancelReason = params.getOrDefault("cancel_reason", "unknown");
         final Integer itemPrice = parseInteger(params.get("item_price"));
         final String itemId = resolveItemId(params);
         final int appOrderId = generateAppOrderId(subscriptionId, vkUserId);
-
-        switch (status.toLowerCase(Locale.ROOT)) {
-            case "chargeable": {
-                if (itemId == null) {
-                    sendError(ctx, 11, "Missing subscription item", true);
+        userService.getOrCreateUser(vkUserId)
+            .compose(user -> processSubscriptionStatusChange(
+                user,
+                status,
+                subscriptionId,
+                itemId,
+                nextBillDate,
+                pendingCancel,
+                cancelReason,
+                itemPrice,
+                appOrderId
+            ))
+            .onSuccess(response -> sendSuccess(ctx, response))
+            .onFailure(error -> {
+                if (error instanceof PaymentException paymentError) {
+                    if (paymentError.logAsError()) {
+                        logger.error("VK payment processing failed: {}", paymentError.getMessage(), paymentError);
+                    } else {
+                        logger.warn("VK payment processing rejected: {}", paymentError.getMessage());
+                    }
+                    sendError(ctx, paymentError.errorCode(), paymentError.getMessage(), paymentError.critical());
                     return;
                 }
+                logger.error("Failed to process VK subscription {}", subscriptionId, error);
+                sendError(ctx, 2, "Internal server error", false);
+            });
+    }
 
-                final Optional<SubscriptionService.SubscriptionPlan> planOpt = subscriptionService.findPlanById(itemId);
-                if (planOpt.isEmpty()) {
-                    sendError(ctx, 20, "Subscription plan not found", true);
-                    return;
-                }
-
-                try {
-                    final Subscription subscription = subscriptionService.processChargeableStatus(
-                        user.getId(),
-                        planOpt.get(),
+    private Future<JsonObject> processSubscriptionStatusChange(final User user,
+                                                               final String status,
+                                                               final String subscriptionId,
+                                                               final String itemId,
+                                                               final LocalDateTime nextBillDate,
+                                                               final boolean pendingCancel,
+                                                               final String cancelReason,
+                                                               final Integer itemPrice,
+                                                               final int appOrderId) {
+        return switch (status.toLowerCase(Locale.ROOT)) {
+            case "chargeable" -> processChargeableStatus(
+                user,
+                subscriptionId,
+                itemId,
+                nextBillDate,
+                pendingCancel,
+                cancelReason,
+                itemPrice,
+                appOrderId
+            );
+            case "active" -> subscriptionService.markSubscriptionActive(
+                    subscriptionId,
+                    nextBillDate,
+                    pendingCancel,
+                    cancelReason
+                )
+                .compose(subscription -> notifySubscriptionUpdate(user, subscription, "Подписка активирована")
+                    .map(v -> buildSubscriptionResponse(
                         subscriptionId,
-                        nextBillDate,
-                        pendingCancel,
-                        cancelReason,
-                        itemPrice,
-                        appOrderId
-                    );
-                    final JsonObject response = buildSubscriptionResponse(subscriptionId, subscription.getAppOrderId());
-                    sendSuccess(ctx, response);
-                } catch (final RuntimeException ex) {
-                    logger.error("Failed to process chargeable subscription {}", subscriptionId, ex);
-                    sendError(ctx, 1, "Unable to process subscription", false);
-                }
-                break;
-            }
-            case "active": {
-                try {
-                    final Subscription subscription = subscriptionService.markSubscriptionActive(
-                        subscriptionId,
-                        nextBillDate,
-                        pendingCancel,
-                        cancelReason
-                    );
-                    notifySubscriptionUpdate(user, subscription, "Подписка активирована");
-                    final Integer responseOrderId = subscription.getAppOrderId() != null
-                        ? subscription.getAppOrderId()
-                        : appOrderId;
-                    sendSuccess(ctx, buildSubscriptionResponse(subscriptionId, responseOrderId));
-                } catch (final RuntimeException ex) {
-                    logger.warn("Subscription {} not found for active status", subscriptionId, ex);
-                    sendError(ctx, 20, "Subscription not found", true);
-                }
-                break;
-            }
-            case "cancelled": {
-                final Optional<Subscription> cancelled = subscriptionService.cancelSubscriptionByVkId(subscriptionId, cancelReason);
-                notifySubscriptionUpdate(user, cancelled.orElse(null), "Подписка отменена");
-                sendSuccess(ctx, buildSubscriptionResponse(subscriptionId, appOrderId));
-                break;
-            }
-            default:
+                        subscription.getAppOrderId() != null ? subscription.getAppOrderId() : appOrderId
+                    )))
+                .recover(error -> paymentFailure(20, "Subscription not found", true, false, error));
+            case "cancelled" -> subscriptionService.cancelSubscriptionByVkId(subscriptionId, cancelReason)
+                .compose(cancelled -> notifySubscriptionUpdate(user, cancelled.orElse(null), "Подписка отменена")
+                    .map(v -> buildSubscriptionResponse(subscriptionId, appOrderId)));
+            default -> {
                 logger.warn("Unsupported subscription status: {}", status);
-                sendError(ctx, 100, "Unsupported subscription status", true);
-                break;
+                yield paymentFailure(100, "Unsupported subscription status", true, false, null);
+            }
+        };
+    }
+
+    private Future<JsonObject> processChargeableStatus(final User user,
+                                                       final String subscriptionId,
+                                                       final String itemId,
+                                                       final LocalDateTime nextBillDate,
+                                                       final boolean pendingCancel,
+                                                       final String cancelReason,
+                                                       final Integer itemPrice,
+                                                       final int appOrderId) {
+        if (itemId == null) {
+            return paymentFailure(11, "Missing subscription item", true, false, null);
         }
+
+        final Optional<SubscriptionService.SubscriptionPlan> planOpt = subscriptionService.findPlanById(itemId);
+        if (planOpt.isEmpty()) {
+            return paymentFailure(20, "Subscription plan not found", true, false, null);
+        }
+
+        return subscriptionService.processChargeableStatus(
+                user.getId(),
+                planOpt.get(),
+                subscriptionId,
+                nextBillDate,
+                pendingCancel,
+                cancelReason,
+                itemPrice,
+                appOrderId
+            )
+            .map(subscription -> buildSubscriptionResponse(subscriptionId, subscription.getAppOrderId()))
+            .recover(error -> paymentFailure(1, "Unable to process subscription", false, true, error));
     }
 
     private String resolveItemId(final Map<String, String> params) {
@@ -276,23 +312,34 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
         return response;
     }
 
-    private void notifySubscriptionUpdate(final User user, final Subscription subscription, final String message) {
+    private Future<Void> notifySubscriptionUpdate(final User user, final Subscription subscription, final String message) {
         if (user == null || notificationService == null || webSocketHandler == null) {
-            return;
+            return Future.succeededFuture();
         }
         final JsonObject subscriptionJson = subscription != null ? JsonObject.mapFrom(subscription) : null;
         final Map<String, Object> data = new HashMap<>();
         if (subscriptionJson != null) {
             data.put("subscription", subscriptionJson.getMap());
         }
-        final Notification notification = notificationService.createNotification(
-            user.getId(),
-            Notification.NotificationType.SYSTEM,
-            "Подписка",
-            message,
-            data.isEmpty() ? null : data
-        );
-        webSocketHandler.sendNotificationToUser(user.getId(), JsonObject.mapFrom(notification));
+        return notificationService.createNotification(
+                user.getId(),
+                Notification.NotificationType.SYSTEM,
+                "Подписка",
+                message,
+                data.isEmpty() ? null : data
+            )
+            .map(notification -> {
+                webSocketHandler.sendNotificationToUser(user.getId(), JsonObject.mapFrom(notification));
+                return (Void) null;
+            });
+    }
+
+    private Future<JsonObject> paymentFailure(final int errorCode,
+                                              final String message,
+                                              final boolean critical,
+                                              final boolean logAsError,
+                                              final Throwable cause) {
+        return Future.failedFuture(new PaymentException(errorCode, message, critical, logAsError, cause));
     }
 
     private Map<String, String> parseFormBody(final String rawBody) {
@@ -356,5 +403,34 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
             .setStatusCode(200)
             .putHeader("Content-Type", "application/json; charset=utf-8")
             .end(json.encode());
+    }
+
+    private static final class PaymentException extends RuntimeException {
+        private final int errorCode;
+        private final boolean critical;
+        private final boolean logAsError;
+
+        private PaymentException(final int errorCode,
+                                 final String message,
+                                 final boolean critical,
+                                 final boolean logAsError,
+                                 final Throwable cause) {
+            super(message, cause);
+            this.errorCode = errorCode;
+            this.critical = critical;
+            this.logAsError = logAsError;
+        }
+
+        private int errorCode() {
+            return errorCode;
+        }
+
+        private boolean critical() {
+            return critical;
+        }
+
+        private boolean logAsError() {
+            return logAsError;
+        }
     }
 }

@@ -1,19 +1,21 @@
 package com.tindapp.repository.postgres;
 
+import com.tindapp.config.AppConfig;
 import com.tindapp.model.User;
 import com.tindapp.repository.UserRepository;
 import com.tindapp.util.JacksonUtils;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import io.vertx.pgclient.PgPool;
 import io.vertx.sqlclient.Row;
-import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 public class PostgresUserRepository extends AbstractPostgresRepository implements UserRepository {
@@ -25,9 +27,9 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
     }
 
     @Override
-    public User save(final User user) {
+    public Future<User> save(final User user) {
         if (user == null) {
-            throw new IllegalArgumentException("User is null");
+            return Future.failedFuture(new IllegalArgumentException("User is null"));
         }
 
         if (user.getCreatedAtDateTime() == null) {
@@ -61,7 +63,6 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
                 city = EXCLUDED.city,
                 is_verified = EXCLUDED.is_verified,
                 was_verified = EXCLUDED.was_verified,
-                is_online = EXCLUDED.is_online,
                 last_seen = EXCLUDED.last_seen,
                 bio = EXCLUDED.bio,
                 gender = EXCLUDED.gender,
@@ -116,52 +117,56 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
             toOffset(user.getCreatedAtDateTime())
         );
 
-        final RowSet<Row> rows = execute(sql, params);
-        final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
-        if (row != null) {
-            final Long generatedId = row.getLong("id");
-            if (user.getId() == null) {
-                user.setId(generatedId);
+        return execute(sql, params).map(rows -> {
+            final Row row = rows.iterator().hasNext() ? rows.iterator().next() : null;
+            if (row != null) {
+                final Long generatedId = row.getLong("id");
+                if (user.getId() == null) {
+                    user.setId(generatedId);
+                }
+                if (row.getOffsetDateTime("created_at") != null) {
+                    user.setCreatedAtDateTime(row.getOffsetDateTime("created_at").toLocalDateTime());
+                }
             }
-            user.setCreatedAtDateTime(row.getOffsetDateTime("created_at") != null ? row.getOffsetDateTime("created_at").toLocalDateTime() : user.getCreatedAtDateTime());
-        }
-        return user;
+            return user;
+        });
     }
 
     @Override
-    public Optional<User> findById(final Long id) {
+    public Future<Optional<User>> findById(final Long id) {
         if (id == null) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
-        return firstRow("SELECT * FROM users WHERE id = $1 LIMIT 1", Tuple.of(id))
-            .map(this::mapUser);
+        return queryOptional("SELECT * FROM users WHERE id = $1 LIMIT 1", Tuple.of(id), this::mapUser);
     }
 
     @Override
-    public Optional<User> findByVkId(final Long vkId) {
+    public Future<Optional<User>> findByVkId(final Long vkId) {
         if (vkId == null) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
-        return firstRow("SELECT * FROM users WHERE vk_id = $1 LIMIT 1", Tuple.of(vkId))
-            .map(this::mapUser);
-    }
-
-    public List<User> findAll(final int page, final int limit) {
-        final int safeLimit = safeLimit(limit, MAX_LIMIT);
-        final RowSet<Row> rows = execute(
-            "SELECT * FROM users ORDER BY updated_at DESC LIMIT $1 OFFSET $2",
-            Tuple.of(safeLimit, offset(page, safeLimit))
-        );
-        return mapUsers(rows);
-    }
-
-    public long countOnlineUsers() {
-        return countRows("SELECT COUNT(*) AS cnt FROM users WHERE is_online = TRUE");
+        return queryOptional("SELECT * FROM users WHERE vk_id = $1 LIMIT 1", Tuple.of(vkId), this::mapUser);
     }
 
     @Override
-    public List<User> findForMatching(final Long viewerId, final User.Gender gender, final Integer minAge, final Integer maxAge,
-                                      final String city, final Boolean verifiedOnly, final int page, final int limit) {
+    public Future<List<User>> findAll(final int page, final int limit) {
+        final int safeLimit = safeLimit(limit, MAX_LIMIT);
+        return queryList(
+            "SELECT * FROM users ORDER BY updated_at DESC LIMIT $1 OFFSET $2",
+            Tuple.of(safeLimit, offset(page, safeLimit)),
+            this::mapUser
+        );
+    }
+
+    @Override
+    public Future<Long> countOnlineUsers() {
+        return markStaleOnlineUsersOffline(AppConfig.ONLINE_STATUS_TTL)
+            .compose(ignored -> countRows("SELECT COUNT(*) AS cnt FROM users WHERE is_online = TRUE"));
+    }
+
+    @Override
+    public Future<List<User>> findForMatching(final Long viewerId, final User.Gender gender, final Integer minAge, final Integer maxAge,
+                                              final String city, final Boolean verifiedOnly, final int page, final int limit) {
         final List<Object> params = new ArrayList<>();
         final StringBuilder sql = new StringBuilder("SELECT * FROM users");
         appendMatchingFilters(sql, params, viewerId, gender, minAge, maxAge, city, verifiedOnly);
@@ -172,48 +177,102 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
         params.add(safeLimit);
         params.add(offset(page, safeLimit));
 
-        final RowSet<Row> rows = execute(sql.toString(), Tuple.tuple(params));
-        return mapUsers(rows);
+        return markStaleOnlineUsersOffline(AppConfig.ONLINE_STATUS_TTL)
+            .compose(ignored -> queryList(sql.toString(), Tuple.tuple(params), this::mapUser));
     }
 
     @Override
-    public long countForMatching(final Long viewerId, final User.Gender gender, final Integer minAge, final Integer maxAge,
-                                 final String city, final Boolean verifiedOnly) {
+    public Future<Long> countForMatching(final Long viewerId, final User.Gender gender, final Integer minAge, final Integer maxAge,
+                                         final String city, final Boolean verifiedOnly) {
         final List<Object> params = new ArrayList<>();
         final StringBuilder sql = new StringBuilder("SELECT COUNT(*) AS cnt FROM users");
         appendMatchingFilters(sql, params, viewerId, gender, minAge, maxAge, city, verifiedOnly);
-
         return countRows(sql.toString(), Tuple.tuple(params));
     }
 
     @Override
-    public void updateOnlineStatus(final Long userId, final boolean isOnline) {
-        execute(
-            "UPDATE users SET " +
-                "is_online = $2, " +
-                "last_seen = CASE WHEN $2 = false THEN NOW() ELSE last_seen END, " +
-                "updated_at = NOW() " +
-                "WHERE id = $1",
-            Tuple.of(userId, isOnline));
+    public Future<Void> updateOnlineStatus(final Long userId, final boolean isOnline) {
+        return execute(
+            """
+                UPDATE users
+                SET is_online = $2,
+                    online_refreshed_at = CASE WHEN $2 = true THEN NOW() ELSE NULL END,
+                    last_seen = CASE WHEN $2 = false THEN NOW() ELSE last_seen END,
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+            Tuple.of(userId, isOnline)
+        ).mapEmpty();
     }
 
     @Override
-    public void updateBalance(final Long userId, final Integer balance) {
-        execute("UPDATE users SET balance = $2, updated_at = NOW() WHERE id = $1", Tuple.of(userId, balance));
+    public Future<Void> refreshOnlineUsers(final Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Future.succeededFuture();
+        }
+
+        final Long[] ids = userIds.stream()
+            .filter(Objects::nonNull)
+            .distinct()
+            .toArray(Long[]::new);
+        if (ids.length == 0) {
+            return Future.succeededFuture();
+        }
+
+        return execute(
+            "UPDATE users SET is_online = TRUE, online_refreshed_at = NOW(), updated_at = NOW() WHERE id = ANY($1)",
+            Tuple.of(ids)
+        ).mapEmpty();
     }
 
     @Override
-    public void deleteById(final Long id) {
-        execute("DELETE FROM users WHERE id = $1", Tuple.of(id));
+    public Future<Void> markStaleOnlineUsersOffline(final Duration ttl) {
+        final long ttlMillis = Math.max(1, ttl.toMillis());
+        return execute(
+            """
+                UPDATE users
+                SET is_online = FALSE,
+                    online_refreshed_at = NULL,
+                    last_seen = NOW(),
+                    updated_at = NOW()
+                WHERE is_online = TRUE
+                  AND (
+                    online_refreshed_at IS NULL
+                    OR online_refreshed_at < NOW() - ($1::bigint * INTERVAL '1 millisecond')
+                  )
+                """,
+            Tuple.of(ttlMillis)
+        ).mapEmpty();
     }
 
     @Override
-    public boolean existsById(final Long id) {
+    public Future<Void> markAllOffline() {
+        return execute(
+            "UPDATE users SET is_online = FALSE, online_refreshed_at = NULL, last_seen = NOW(), updated_at = NOW() WHERE is_online = TRUE",
+            Tuple.tuple()
+        ).mapEmpty();
+    }
+
+    @Override
+    public Future<Void> updateBalance(final Long userId, final Integer balance) {
+        return execute("UPDATE users SET balance = $2, updated_at = NOW() WHERE id = $1", Tuple.of(userId, balance)).mapEmpty();
+    }
+
+    @Override
+    public Future<Void> deleteById(final Long id) {
+        return execute("DELETE FROM users WHERE id = $1", Tuple.of(id)).mapEmpty();
+    }
+
+    @Override
+    public Future<Boolean> existsById(final Long id) {
+        if (id == null) {
+            return Future.succeededFuture(false);
+        }
         return exists("SELECT 1 FROM users WHERE id = $1 LIMIT 1", Tuple.of(id));
     }
 
     @Override
-    public long count() {
+    public Future<Long> count() {
         return countRows("SELECT COUNT(*) as cnt FROM users");
     }
 
@@ -234,41 +293,16 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
             params.add(gender.toString().toLowerCase());
         }
         if (minAge != null) {
-            sql
-                .append(" AND (")
-                .append("age")
-                .append(" IS NULL OR ")
-                .append("age")
-                .append(" >= $")
-                .append(params.size() + 1)
-                .append(')');
+            sql.append(" AND (age IS NULL OR age >= $").append(params.size() + 1).append(')');
             params.add(minAge);
         }
         if (maxAge != null) {
-            sql
-                .append(" AND (")
-                .append("age")
-                .append(" IS NULL OR ")
-                .append("age")
-                .append(" <= $")
-                .append(params.size() + 1)
-                .append(')');
+            sql.append(" AND (age IS NULL OR age <= $").append(params.size() + 1).append(')');
             params.add(maxAge);
         }
         if (Boolean.TRUE.equals(verifiedOnly)) {
             sql.append(" AND is_verified = TRUE");
         }
-    }
-
-    private List<User> mapUsers(final RowSet<Row> rows) {
-        final List<User> result = new ArrayList<>();
-        for (final Row row : rows) {
-            final User user = mapUser(row);
-            if (user != null) {
-                result.add(user);
-            }
-        }
-        return result;
     }
 
     private User mapUser(final Row row) {
@@ -309,14 +343,12 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
 
         final JsonObject settingsJson = row.getJsonObject("settings");
         if (settingsJson != null) {
-            final User.UserSettings settings = JacksonUtils.fromJson(settingsJson, User.UserSettings.class);
-            user.setSettings(settings);
+            user.setSettings(JacksonUtils.fromJson(settingsJson, User.UserSettings.class));
         }
 
         final JsonObject rewardsJson = row.getJsonObject("rewards");
         if (rewardsJson != null) {
-            final User.UserRewards rewards = JacksonUtils.fromJson(rewardsJson, User.UserRewards.class);
-            user.setRewards(rewards);
+            user.setRewards(JacksonUtils.fromJson(rewardsJson, User.UserRewards.class));
         }
 
         user.setProfileCost(row.getInteger("profile_cost"));

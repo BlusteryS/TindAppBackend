@@ -1,9 +1,10 @@
 package com.tindapp.repository.postgres;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.tindapp.util.JacksonUtils;
 import com.tindapp.util.DateTimeUtils;
-import io.vertx.core.Context;
+import com.tindapp.util.JacksonUtils;
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.pgclient.PgPool;
@@ -14,7 +15,10 @@ import io.vertx.sqlclient.Tuple;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
 public abstract class AbstractPostgresRepository {
 
@@ -24,31 +28,29 @@ public abstract class AbstractPostgresRepository {
         this.client = client;
     }
 
-    protected RowSet<Row> execute(final String sql) {
+    protected Future<RowSet<Row>> execute(final String sql) {
         return execute(sql, Tuple.tuple());
     }
 
-    protected RowSet<Row> execute(final String sql, final Tuple params) {
-        if (Context.isOnEventLoopThread()) {
-            throw new IllegalStateException("Blocking database access from Vert.x event loop is forbidden");
-        }
-        try {
-            return client.preparedQuery(sql)
-                .execute(params == null ? Tuple.tuple() : params)
-                .toCompletionStage()
-                .toCompletableFuture()
-                .join();
-        } catch (final Exception e) {
-            throw new RuntimeException("Database query failed: " + e.getMessage(), e);
-        }
+    protected Future<RowSet<Row>> execute(final String sql, final Tuple params) {
+        final Promise<RowSet<Row>> promise = Promise.promise();
+        client.preparedQuery(sql)
+            .execute(params == null ? Tuple.tuple() : params, ar -> {
+                if (ar.succeeded()) {
+                    promise.complete(ar.result());
+                } else {
+                    promise.fail(new RuntimeException("Database query failed: " + ar.cause().getMessage(), ar.cause()));
+                }
+            });
+        return promise.future();
     }
 
-    protected Optional<Row> firstRow(final String sql, final Tuple params) {
-        return firstRow(execute(sql, params));
+    protected Future<Optional<Row>> firstRow(final String sql, final Tuple params) {
+        return execute(sql, params).map(this::firstRow);
     }
 
-    protected Optional<Row> firstRow(final String sql) {
-        return firstRow(execute(sql));
+    protected Future<Optional<Row>> firstRow(final String sql) {
+        return execute(sql).map(this::firstRow);
     }
 
     protected Optional<Row> firstRow(final RowSet<Row> rows) {
@@ -59,24 +61,47 @@ public abstract class AbstractPostgresRepository {
         return iterator.hasNext() ? Optional.ofNullable(iterator.next()) : Optional.empty();
     }
 
-    protected boolean exists(final String sql, final Tuple params) {
-        return firstRow(sql, params).isPresent();
+    protected Future<Boolean> exists(final String sql, final Tuple params) {
+        return firstRow(sql, params).map(Optional::isPresent);
     }
 
-    protected boolean exists(final String sql) {
-        return firstRow(sql).isPresent();
+    protected Future<Boolean> exists(final String sql) {
+        return firstRow(sql).map(Optional::isPresent);
     }
 
-    protected long countRows(final String sql, final Tuple params) {
+    protected Future<Long> countRows(final String sql, final Tuple params) {
         return firstRow(sql, params)
-            .map(row -> row.getLong("cnt"))
-            .orElse(0L);
+            .map(row -> row.map(value -> value.getLong("cnt")).orElse(0L));
     }
 
-    protected long countRows(final String sql) {
+    protected Future<Long> countRows(final String sql) {
         return firstRow(sql)
-            .map(row -> row.getLong("cnt"))
-            .orElse(0L);
+            .map(row -> row.map(value -> value.getLong("cnt")).orElse(0L));
+    }
+
+    protected <T> Future<List<T>> queryList(final String sql, final Tuple params, final Function<Row, T> mapper) {
+        return execute(sql, params).map(rows -> {
+            final List<T> items = new ArrayList<>();
+            for (final Row row : rows) {
+                final T item = mapper.apply(row);
+                if (item != null) {
+                    items.add(item);
+                }
+            }
+            return items;
+        });
+    }
+
+    protected <T> Future<List<T>> queryList(final String sql, final Function<Row, T> mapper) {
+        return queryList(sql, Tuple.tuple(), mapper);
+    }
+
+    protected <T> Future<Optional<T>> queryOptional(final String sql, final Tuple params, final Function<Row, T> mapper) {
+        return firstRow(sql, params).map(row -> row.map(mapper));
+    }
+
+    protected <T> Future<Optional<T>> queryOptional(final String sql, final Function<Row, T> mapper) {
+        return firstRow(sql).map(row -> row.map(mapper));
     }
 
     protected <T> JsonObject toJson(final T entity) {

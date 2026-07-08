@@ -1,5 +1,7 @@
 package com.tindapp.config;
 
+import java.time.Duration;
+
 public class AppConfig {
 
     public static final int HTTP_PORT = 8012;
@@ -31,6 +33,10 @@ public class AppConfig {
     public static final int VOTES_COIN_RATE = 10;   // 1 голос = 10 фиан
 
     public static final int TYPING_CLEANUP_INTERVAL = 10000; // 10 seconds
+    public static final Duration ONLINE_STATUS_TTL = Duration.ofMinutes(3);
+    public static final long ONLINE_STATUS_CLEANUP_INTERVAL_MS = Duration.ofMinutes(1).toMillis();
+    public static final Duration EXTERNAL_HTTP_CONNECT_TIMEOUT = Duration.ofSeconds(4);
+    public static final Duration EXTERNAL_HTTP_REQUEST_TIMEOUT = Duration.ofSeconds(8);
 
     public static final String[] ALLOWED_ORIGINS = System.getenv("CORS_ALLOWED_ORIGINS").split(",");
     public static final String[] ALLOWED_METHODS = {"GET", "POST", "PUT", "DELETE", "OPTIONS"};

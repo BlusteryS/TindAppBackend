@@ -1,6 +1,7 @@
 package com.tindapp.service;
 
 import com.tindapp.config.AppConfig;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,7 +32,6 @@ public class VkGroupNotificationService {
                         .put("owner_id", AppConfig.VK_COMMUNITY_GROUP_ID)
                         .put("label", "Открыть TindApp")
                         .put("hash", "from=vk_notifications"))
-                    .put("color", "primary")
             )
         ))
         .encode();
@@ -52,56 +52,46 @@ public class VkGroupNotificationService {
         this.groupId = groupId;
     }
 
-    public VkSendResult sendMessage(final Long vkUserId, final String message) {
-        if (vkUserId == null) {
-            logger.warn("Cannot send VK notification: vkUserId is null");
-            return VkSendResult.FAILED;
-        }
-        if (message == null || message.isBlank()) {
-            logger.warn("Cannot send VK notification: message is blank");
-            return VkSendResult.FAILED;
+    public Future<VkSendResult> sendMessage(final Long vkUserId, final String message) {
+        if (vkUserId == null || message == null || message.isBlank()) {
+            return Future.succeededFuture(VkSendResult.FAILED);
         }
 
-        try {
-            final long randomId = ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
-            final String payload = buildPayload(vkUserId, message, randomId);
+        final long randomId = ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
+        final HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(API_URL))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .POST(HttpRequest.BodyPublishers.ofString(buildPayload(vkUserId, message, randomId)))
+            .build();
 
-            final HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(API_URL))
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString(payload))
-                .build();
-
-            final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            final String body = response.body();
-            if (body == null || body.isBlank()) {
-                logger.warn("Empty response from VK API when sending message");
+        return Future.fromCompletionStage(httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString()))
+            .map(response -> parseResponse(response.body()))
+            .otherwise(error -> {
+                logger.error("Failed to send VK community notification", error);
                 return VkSendResult.FAILED;
-            }
+            });
+    }
 
-            final JsonObject json = new JsonObject(body);
-            if (json.containsKey("error")) {
-                final JsonObject error = json.getJsonObject("error");
-                final int errorCode = error.getInteger("error_code", -1);
-                final String errorMessage = error.getString("error_msg", "Unknown error");
-                logger.warn("VK API error (code={}): {}", errorCode, errorMessage);
-
-                if (PERMISSION_ERRORS.contains(errorCode)) {
-                    return VkSendResult.PERMISSION_ERROR;
-                }
-                return VkSendResult.FAILED;
-            }
-
-            if (json.containsKey("response")) {
-                return VkSendResult.SUCCESS;
-            }
-
-            logger.warn("Unexpected VK API response: {}", body);
-            return VkSendResult.FAILED;
-        } catch (final Exception e) {
-            logger.error("Failed to send VK community notification", e);
+    private VkSendResult parseResponse(final String body) {
+        if (body == null || body.isBlank()) {
+            logger.warn("Empty response from VK API when sending message");
             return VkSendResult.FAILED;
         }
+
+        final JsonObject json = new JsonObject(body);
+        if (json.containsKey("error")) {
+            final JsonObject error = json.getJsonObject("error");
+            final int errorCode = error.getInteger("error_code", -1);
+            logger.warn("VK API error (code={}): {}", errorCode, error.getString("error_msg", "Unknown error"));
+            return PERMISSION_ERRORS.contains(errorCode) ? VkSendResult.PERMISSION_ERROR : VkSendResult.FAILED;
+        }
+
+        if (json.containsKey("response")) {
+            return VkSendResult.SUCCESS;
+        }
+
+        logger.warn("Unexpected VK API response: {}", body);
+        return VkSendResult.FAILED;
     }
 
     private String buildPayload(final Long vkUserId, final String message, final long randomId) {
@@ -120,8 +110,6 @@ public class VkGroupNotificationService {
         if (sb.length() > 0) {
             sb.append('&');
         }
-        sb.append(key)
-            .append('=')
-            .append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+        sb.append(key).append('=').append(URLEncoder.encode(value, StandardCharsets.UTF_8));
     }
 }

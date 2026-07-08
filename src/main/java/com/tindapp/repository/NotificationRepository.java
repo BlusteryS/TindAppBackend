@@ -1,22 +1,23 @@
 package com.tindapp.repository;
 
 import com.tindapp.model.Notification;
+import io.vertx.core.Future;
 
 import java.util.List;
 
 public interface NotificationRepository extends Repository<Notification, String> {
 
-    List<Notification> findByUserId(Long userId, int page, int limit);
+    Future<List<Notification>> findByUserId(Long userId, int page, int limit);
 
-    void markAsRead(String notificationId);
+    Future<Void> markAsRead(String notificationId);
 
-    void markAllAsReadByUserId(Long userId);
+    Future<Void> markAllAsReadByUserId(Long userId);
 
-    void markAsReadByIds(List<String> notificationIds);
+    Future<Void> markAsReadByIds(List<String> notificationIds);
 
-    long countUnreadByUserId(Long userId);
+    Future<Long> countUnreadByUserId(Long userId);
 
-    long countByUserId(Long userId);
+    Future<Long> countByUserId(Long userId);
 
-    void deleteByUserId(Long userId);
+    Future<Void> deleteByUserId(Long userId);
 }

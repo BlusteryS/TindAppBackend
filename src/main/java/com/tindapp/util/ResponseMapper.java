@@ -116,6 +116,7 @@ public final class ResponseMapper {
             .put("id", message.getId())
             .put("chatId", message.getChatId())
             .put("senderId", message.getSenderId())
+            .put("clientMessageId", message.getClientMessageId())
             .put("text", message.getText())
             .put("type", message.getType() != null ? message.getType().name().toLowerCase() : "text")
             .put("isRead", message.getIsRead())

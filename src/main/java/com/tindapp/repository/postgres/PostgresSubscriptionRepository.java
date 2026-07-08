@@ -2,14 +2,13 @@ package com.tindapp.repository.postgres;
 
 import com.tindapp.model.Subscription;
 import com.tindapp.repository.SubscriptionRepository;
+import io.vertx.core.Future;
 import io.vertx.pgclient.PgPool;
 import io.vertx.sqlclient.Row;
-import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,9 +26,9 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public Subscription save(final Subscription subscription) {
+    public Future<Subscription> save(final Subscription subscription) {
         if (subscription == null) {
-            throw new IllegalArgumentException("Subscription is null");
+            return Future.failedFuture(new IllegalArgumentException("Subscription is null"));
         }
         if (subscription.getId() == null || subscription.getId().isBlank()) {
             subscription.setId(UUID.randomUUID().toString());
@@ -47,7 +46,7 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
             subscription.setPendingCancel(false);
         }
 
-        execute("""
+        return execute("""
             INSERT INTO subscriptions (
                 id, user_id, type, status, start_date, end_date, price, payment_method, auto_renew,
                 plan_id, vk_subscription_id, price_in_votes, next_bill_date, pending_cancel, cancel_reason, app_order_id
@@ -86,51 +85,55 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
             subscription.getPendingCancel(),
             subscription.getCancelReason(),
             subscription.getAppOrderId()
-        ));
-        return subscription;
+        )).map(subscription);
     }
 
     @Override
-    public Optional<Subscription> findById(final String id) {
+    public Future<Optional<Subscription>> findById(final String id) {
         if (id == null || id.isBlank()) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
-        return firstRow(
+        return queryOptional(
             "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions WHERE id = $1 LIMIT 1",
-            Tuple.of(id)
-        ).map(this::mapSubscription);
+            Tuple.of(id),
+            this::mapSubscription
+        );
     }
 
-    public List<Subscription> findAll(final int page, final int limit) {
+    @Override
+    public Future<List<Subscription>> findAll(final int page, final int limit) {
         final int safeLimit = safeLimit(limit, MAX_LIMIT);
-        return querySubscriptions(
+        return queryList(
             "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions ORDER BY start_date DESC LIMIT $1 OFFSET $2",
-            Tuple.of(safeLimit, offset(page, safeLimit))
+            Tuple.of(safeLimit, offset(page, safeLimit)),
+            this::mapSubscription
         );
     }
 
     @Override
-    public Optional<Subscription> findActiveByUserId(final Long userId) {
+    public Future<Optional<Subscription>> findActiveByUserId(final Long userId) {
         if (userId == null) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
-        return firstRow(
+        return queryOptional(
             "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions WHERE user_id = $1 AND status = 'ACTIVE' AND (end_date IS NULL OR end_date > NOW()) ORDER BY start_date DESC LIMIT 1",
-            Tuple.of(userId)
-        ).map(this::mapSubscription);
-    }
-
-    @Override
-    public List<Subscription> findExpiring() {
-        return querySubscriptions(
-            "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions WHERE status = 'ACTIVE' AND end_date IS NOT NULL AND end_date < NOW() + INTERVAL '1 day' ORDER BY end_date ASC",
-            Tuple.tuple()
+            Tuple.of(userId),
+            this::mapSubscription
         );
     }
 
     @Override
-    public void cancelByUserId(final Long userId) {
-        execute("""
+    public Future<List<Subscription>> findExpiring() {
+        return queryList(
+            "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions WHERE status = 'ACTIVE' AND end_date IS NOT NULL AND end_date < NOW() + INTERVAL '1 day' ORDER BY end_date ASC",
+            Tuple.tuple(),
+            this::mapSubscription
+        );
+    }
+
+    @Override
+    public Future<Void> cancelByUserId(final Long userId) {
+        return execute("""
             UPDATE subscriptions
             SET status = 'CANCELLED',
                 auto_renew = FALSE,
@@ -138,24 +141,24 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
                 end_date = NOW(),
                 next_bill_date = NULL
             WHERE user_id = $1 AND status = 'ACTIVE'
-            """, Tuple.of(userId));
+            """, Tuple.of(userId)).mapEmpty();
     }
 
     @Override
-    public void expireById(final String subscriptionId) {
-        execute("""
+    public Future<Void> expireById(final String subscriptionId) {
+        return execute("""
             UPDATE subscriptions
             SET status = 'EXPIRED',
                 auto_renew = FALSE,
                 pending_cancel = FALSE
             WHERE id = $1
-            """, Tuple.of(subscriptionId));
+            """, Tuple.of(subscriptionId)).mapEmpty();
     }
 
     @Override
-    public boolean hasActiveSubscription(final Long userId) {
+    public Future<Boolean> hasActiveSubscription(final Long userId) {
         if (userId == null) {
-            return false;
+            return Future.succeededFuture(false);
         }
         return exists(
             "SELECT 1 FROM subscriptions WHERE user_id = $1 AND status = 'ACTIVE' AND (end_date IS NULL OR end_date > NOW()) LIMIT 1",
@@ -164,19 +167,20 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
     }
 
     @Override
-    public Optional<Subscription> findByVkSubscriptionId(final String vkSubscriptionId) {
+    public Future<Optional<Subscription>> findByVkSubscriptionId(final String vkSubscriptionId) {
         if (vkSubscriptionId == null || vkSubscriptionId.isBlank()) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
-        return firstRow(
+        return queryOptional(
             "SELECT " + SUBSCRIPTION_COLUMNS + " FROM subscriptions WHERE vk_subscription_id = $1 LIMIT 1",
-            Tuple.of(vkSubscriptionId)
-        ).map(this::mapSubscription);
+            Tuple.of(vkSubscriptionId),
+            this::mapSubscription
+        );
     }
 
     @Override
-    public void cancelByVkSubscriptionId(final String vkSubscriptionId) {
-        execute("""
+    public Future<Void> cancelByVkSubscriptionId(final String vkSubscriptionId) {
+        return execute("""
             UPDATE subscriptions
             SET status = 'CANCELLED',
                 auto_renew = FALSE,
@@ -184,39 +188,30 @@ public class PostgresSubscriptionRepository extends AbstractPostgresRepository i
                 end_date = NOW(),
                 next_bill_date = NULL
             WHERE vk_subscription_id = $1
-            """, Tuple.of(vkSubscriptionId));
+            """, Tuple.of(vkSubscriptionId)).mapEmpty();
     }
 
     @Override
-    public long countActiveSubscriptions() {
+    public Future<Long> countActiveSubscriptions() {
         return countRows("SELECT COUNT(*) AS cnt FROM subscriptions WHERE status = 'ACTIVE' AND (end_date IS NULL OR end_date > NOW())");
     }
 
     @Override
-    public void deleteById(final String id) {
-        execute("DELETE FROM subscriptions WHERE id = $1", Tuple.of(id));
+    public Future<Void> deleteById(final String id) {
+        return execute("DELETE FROM subscriptions WHERE id = $1", Tuple.of(id)).mapEmpty();
     }
 
     @Override
-    public boolean existsById(final String id) {
+    public Future<Boolean> existsById(final String id) {
+        if (id == null || id.isBlank()) {
+            return Future.succeededFuture(false);
+        }
         return exists("SELECT 1 FROM subscriptions WHERE id = $1 LIMIT 1", Tuple.of(id));
     }
 
     @Override
-    public long count() {
+    public Future<Long> count() {
         return countRows("SELECT COUNT(*) AS cnt FROM subscriptions");
-    }
-
-    private List<Subscription> querySubscriptions(final String sql, final Tuple params) {
-        final RowSet<Row> rows = execute(sql, params);
-        final List<Subscription> subscriptions = new ArrayList<>();
-        for (final Row row : rows) {
-            final Subscription subscription = mapSubscription(row);
-            if (subscription != null) {
-                subscriptions.add(subscription);
-            }
-        }
-        return subscriptions;
     }
 
     private Subscription mapSubscription(final Row row) {

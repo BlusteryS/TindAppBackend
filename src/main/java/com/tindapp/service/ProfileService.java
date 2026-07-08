@@ -1,9 +1,10 @@
 package com.tindapp.service;
 
-import com.tindapp.config.AppConfig;
 import com.tindapp.model.User;
 import com.tindapp.repository.UserRepository;
 import com.tindapp.util.DateTimeUtils;
+import com.tindapp.util.FutureUtils;
+import io.vertx.core.Future;
 import io.vertx.core.MultiMap;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -24,13 +25,12 @@ public class ProfileService {
         this.userRepository = userRepository;
     }
 
-    public ProfileSearchResult searchProfiles(final Long viewerId, final ProfileFilters rawFilters, final int page, final int limit) {
-        final User viewer = userRepository.findById(viewerId)
-            .orElseThrow(() -> new RuntimeException("Viewer not found"));
-        return searchProfiles(viewer, rawFilters, page, limit);
+    public Future<ProfileSearchResult> searchProfiles(final Long viewerId, final ProfileFilters rawFilters, final int page, final int limit) {
+        return FutureUtils.requirePresent(userRepository.findById(viewerId), "Viewer not found")
+            .compose(viewer -> searchProfiles(viewer, rawFilters, page, limit));
     }
 
-    public ProfileSearchResult searchProfiles(final User viewer, final ProfileFilters rawFilters, int page, int limit) {
+    public Future<ProfileSearchResult> searchProfiles(final User viewer, final ProfileFilters rawFilters, int page, int limit) {
         if (page < 1) {
             page = 1;
         }
@@ -39,33 +39,32 @@ public class ProfileService {
         }
 
         final ProfileFilters filters = normalizeFilters(rawFilters, viewer);
-
         final User.Gender genderEnum = toGenderEnum(filters.getGender());
-        final List<User> candidates = userRepository.findForMatching(
-            viewer.getId(),
-            genderEnum,
-            filters.getMinAge(),
-            filters.getMaxAge(),
-            filters.getCity(),
-            filters.isVerifiedOnly(),
-            page,
-            limit
-        );
-        final int total = Math.toIntExact(userRepository.countForMatching(
-            viewer.getId(),
-            genderEnum,
-            filters.getMinAge(),
-            filters.getMaxAge(),
-            filters.getCity(),
-            filters.isVerifiedOnly()
-        ));
 
-        final int chatCost = hasActiveSubscription(viewer) ? 0 : ChatPricingPolicy.calculateCost((int) userRepository.countOnlineUsers());
-        final List<ProfileCard> cards = candidates.stream()
-            .map(candidate -> toProfileCard(viewer, candidate, chatCost))
-            .toList();
-
-        return new ProfileSearchResult(cards, total);
+        return userRepository.findForMatching(
+                viewer.getId(),
+                genderEnum,
+                filters.getMinAge(),
+                filters.getMaxAge(),
+                filters.getCity(),
+                filters.isVerifiedOnly(),
+                page,
+                limit
+            )
+            .compose(candidates -> userRepository.countForMatching(
+                viewer.getId(),
+                genderEnum,
+                filters.getMinAge(),
+                filters.getMaxAge(),
+                filters.getCity(),
+                filters.isVerifiedOnly()
+            ).compose(total -> userRepository.countOnlineUsers().map(onlineUsers -> {
+                final int chatCost = hasActiveSubscription(viewer) ? 0 : ChatPricingPolicy.calculateProfileCost(Math.toIntExact(onlineUsers));
+                final List<ProfileCard> cards = candidates.stream()
+                    .map(candidate -> toProfileCard(viewer, candidate, chatCost))
+                    .toList();
+                return new ProfileSearchResult(cards, Math.toIntExact(total));
+            })));
     }
 
     public ProfileFilters parseFilters(final MultiMap params, final User viewer) {
@@ -105,32 +104,29 @@ public class ProfileService {
     }
 
     private User.Gender toGenderEnum(final String gender) {
-        if (gender == null) {
+        if (gender == null || "any".equalsIgnoreCase(gender)) {
             return null;
         }
-        if ("any".equalsIgnoreCase(gender)) {
-            return null; // no gender filter
-        }
-        switch (gender.toLowerCase()) {
-            case "male":
-                return User.Gender.MALE;
-            case "female":
-                return User.Gender.FEMALE;
-            default:
-                return User.Gender.OTHER;
-        }
+        return switch (gender.toLowerCase()) {
+            case "male" -> User.Gender.MALE;
+            case "female" -> User.Gender.FEMALE;
+            default -> User.Gender.OTHER;
+        };
     }
 
-    public ProfileCard toProfileCard(final User viewer, final User candidate) {
-        final int chatCost = hasActiveSubscription(viewer) ? 0 : ChatPricingPolicy.calculateCost((int) userRepository.countOnlineUsers());
-        return toProfileCard(viewer, candidate, chatCost);
+    public Future<ProfileCard> toProfileCard(final User viewer, final User candidate) {
+        if (hasActiveSubscription(viewer)) {
+            return Future.succeededFuture(toProfileCard(viewer, candidate, 0));
+        }
+        return userRepository.countOnlineUsers()
+            .map(onlineUsers -> toProfileCard(viewer, candidate, ChatPricingPolicy.calculateProfileCost(Math.toIntExact(onlineUsers))));
     }
 
     private ProfileCard toProfileCard(final User viewer, final User candidate, final int cost) {
         final boolean sameCity = isSameCity(viewer, candidate);
-        final String lastSeen = candidate.getLastSeenDateTime() != null ?
-            DateTimeUtils.formatToIso(candidate.getLastSeenDateTime()) :
-            null;
+        final String lastSeen = candidate.getLastSeenDateTime() != null
+            ? DateTimeUtils.formatToIso(candidate.getLastSeenDateTime())
+            : null;
 
         final boolean hasActiveSubscription = candidate.getSubscription() != null
             && Boolean.TRUE.equals(candidate.getSubscription().getIsActive());
@@ -164,23 +160,14 @@ public class ProfileService {
         if (filters == null) {
             return true;
         }
-
-        if (filters.getGender() != null && !"any".equals(filters.getGender())) {
-            if (!Objects.equals(filters.getGender(), safeLower(candidate.getGender()))) {
-                return false;
-            }
+        if (filters.getGender() != null && !"any".equals(filters.getGender()) && !Objects.equals(filters.getGender(), safeLower(candidate.getGender()))) {
+            return false;
         }
-
         if (filters.isVerifiedOnly() && !candidate.isVerified()) {
             return false;
         }
-
         final Integer age = resolveAge(candidate);
-        if (age != null) {
-            return age >= filters.getMinAge() && age <= filters.getMaxAge();
-        }
-
-        return true;
+        return age == null || (age >= filters.getMinAge() && age <= filters.getMaxAge());
     }
 
     public ProfileFilters normalizeFilters(final ProfileFilters filters, final User viewer) {
@@ -321,21 +308,11 @@ public class ProfileService {
         public void setPrioritizeCity(final boolean prioritizeCity) {
             this.prioritizeCity = prioritizeCity;
         }
-
-        @Override
-        public String toString() {
-            return "ProfileFilters{" +
-                "gender='" + gender + '\'' +
-                ", minAge=" + minAge +
-                ", maxAge=" + maxAge +
-                ", city='" + city + '\'' +
-                ", verifiedOnly=" + verifiedOnly +
-                ", prioritizeCity=" + prioritizeCity +
-                '}';
-        }
     }
 
-    public record ProfileCard(Long id, String firstName, String lastName, Integer age, String city, String country, String avatarUrl, boolean isVerified, boolean isOnline, String lastSeen, String bio, String gender, int cost, boolean sameCity, boolean hasActiveSubscription) {
+    public record ProfileCard(Long id, String firstName, String lastName, Integer age, String city, String country, String avatarUrl,
+                              boolean isVerified, boolean isOnline, String lastSeen, String bio, String gender, int cost,
+                              boolean sameCity, boolean hasActiveSubscription) {
     }
 
     public record ProfileSearchResult(List<ProfileCard> profiles, int total) {

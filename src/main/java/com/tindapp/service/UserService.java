@@ -3,6 +3,10 @@ package com.tindapp.service;
 import com.tindapp.config.AppConfig;
 import com.tindapp.model.User;
 import com.tindapp.repository.UserRepository;
+import com.tindapp.util.FutureUtils;
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,9 +14,8 @@ import org.slf4j.LoggerFactory;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 import java.net.URI;
-import java.net.URL;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -20,78 +23,66 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Callable;
 
 public class UserService {
 
     private static final Logger logger = LoggerFactory.getLogger(UserService.class);
-
-    private final UserRepository userRepository;
     private static final Set<Long> ADMIN_VK_IDS = java.util.Arrays.stream(System.getenv("ADMIN_VK_IDS").split(","))
         .map(Long::parseLong)
         .collect(java.util.stream.Collectors.toUnmodifiableSet());
     private static final double VERIFICATION_THRESHOLD = 0.55;
     private static final double MIN_SKIN_COVERAGE = 0.12;
     private static final double MAX_SKIN_COVERAGE = 0.65;
-    private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    public UserService(final UserRepository userRepository) {
+    private final Vertx vertx;
+    private final UserRepository userRepository;
+    private final HttpClient httpClient = HttpClient.newBuilder()
+        .connectTimeout(AppConfig.EXTERNAL_HTTP_CONNECT_TIMEOUT)
+        .build();
+
+    public UserService(final Vertx vertx, final UserRepository userRepository) {
+        this.vertx = vertx;
         this.userRepository = userRepository;
     }
 
-    public User createOrUpdateUser(final Long vkId) {
-        final Optional<User> existingUser = userRepository.findByVkId(vkId);
+    public Future<User> getOrCreateUser(final Long vkId) {
+        return userRepository.findByVkId(vkId)
+            .compose(existingUser -> {
+                if (existingUser.isPresent()) {
+                    final User user = existingUser.get();
+                    user.updateLastSeen();
+                    ensureProfileCost(user);
+                    ensureRewards(user);
+                    applySpecialPrivileges(user);
+                    return userRepository.save(user);
+                }
 
-        if (existingUser.isPresent()) {
-            final User user = existingUser.get();
-            user.updateLastSeen();
-            ensureProfileCost(user);
-            ensureRewards(user);
-            applySpecialPrivileges(user);
-            return userRepository.save(user);
-        } else {
-            final User newUser = new User(vkId);
-            newUser.setBalance(AppConfig.INITIAL_USER_BALANCE); // начальный баланс
-            ensureProfileCost(newUser);
-            ensureRewards(newUser);
-            applySpecialPrivileges(newUser);
-            return userRepository.save(newUser);
-        }
+                final User newUser = new User(vkId);
+                ensureProfileCost(newUser);
+                ensureRewards(newUser);
+                applySpecialPrivileges(newUser);
+                return userRepository.save(newUser);
+            });
     }
 
-    public User getOrCreateUser(final Long vkId) {
-        final Optional<User> existingUser = userRepository.findByVkId(vkId);
-
-        if (existingUser.isPresent()) {
-            final User user = existingUser.get();
-            user.updateLastSeen();
-            ensureProfileCost(user);
-            ensureRewards(user);
-            applySpecialPrivileges(user);
-            return userRepository.save(user);
-        } else {
-            final User newUser = new User(vkId);
-            ensureProfileCost(newUser);
-            ensureRewards(newUser);
-            applySpecialPrivileges(newUser);
-            return userRepository.save(newUser);
-        }
-    }
-
-    public Optional<User> getUserById(final Long userId) {
+    public Future<Optional<User>> getUserById(final Long userId) {
         return userRepository.findById(userId);
     }
 
-    public Optional<User> getUserByVkId(final Long vkId) {
+    public Future<Optional<User>> getUserByVkId(final Long vkId) {
         return userRepository.findByVkId(vkId);
     }
 
-    public User createUser(final User user) {
+    public Future<User> createUser(final User user) {
         user.setCreatedAtDateTime(LocalDateTime.now());
         user.setUpdatedAtDateTime(LocalDateTime.now());
         ensureProfileCost(user);
@@ -100,14 +91,14 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public User updateUser(final User user) {
+    public Future<User> updateUser(final User user) {
         user.setUpdatedAtDateTime(LocalDateTime.now());
         ensureRewards(user);
         applySpecialPrivileges(user);
         return userRepository.save(user);
     }
 
-    public User updateProfile(
+    public Future<User> updateProfile(
         final Long userId,
         final String firstName,
         final String lastName,
@@ -123,120 +114,348 @@ public class UserService {
         final Integer profileCost,
         final String nativeLanguage
     ) {
-        final User user = userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-        ensureRewards(user);
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .compose(user -> {
+                ensureRewards(user);
+                final String previousAvatar = user.getAvatarUrl();
 
-        final String previousAvatar = user.getAvatarUrl();
+                if (firstName != null) {
+                    user.setFirstName(firstName);
+                }
+                if (lastName != null) {
+                    user.setLastName(lastName);
+                }
+                if (avatarUrl != null) {
+                    user.setAvatarUrl(avatarUrl);
+                    if (user.isVerified() && (previousAvatar == null || !previousAvatar.equals(avatarUrl))) {
+                        user.setWasVerified(true);
+                        user.setIsVerified(false);
+                    }
+                }
+                if (gender != null) {
+                    user.setGender(gender);
+                }
+                if (bio != null) {
+                    user.setBio(bio);
+                }
+                if (country != null) {
+                    user.setCountry(country);
+                }
+                if (city != null) {
+                    user.setCity(city);
+                }
 
-        if (firstName != null) {
-            user.setFirstName(firstName);
-        }
-        if (lastName != null) {
-            user.setLastName(lastName);
-        }
-        if (avatarUrl != null) {
-            user.setAvatarUrl(avatarUrl);
-            if (user.isVerified() && (previousAvatar == null || !previousAvatar.equals(avatarUrl))) {
-                user.setWasVerified(true);
-                user.setIsVerified(false);
-            }
-        }
-        if (gender != null) {
-            user.setGender(gender);
-        }
-        if (bio != null) {
-            user.setBio(bio);
-        }
-        if (country != null) {
-            user.setCountry(country);
-        }
-        if (city != null) {
-            user.setCity(city);
-        }
-        final LocalDate parsedBirthDate = parseBirthDate(birthDate);
-        if (parsedBirthDate != null) {
-            user.setBirthDate(parsedBirthDate);
-            user.setAge(calculateAge(parsedBirthDate));
-        } else if (age != null) {
-            user.setAge(age);
-        }
-        if (isVisible != null) {
-            user.setIsVisible(isVisible);
-        }
-        if (settings != null) {
-            User.UserSettings currentSettings = user.getSettings();
-            if (currentSettings == null) {
-                currentSettings = new User.UserSettings();
-            }
+                final LocalDate parsedBirthDate = parseBirthDate(birthDate);
+                if (parsedBirthDate != null) {
+                    user.setBirthDate(parsedBirthDate);
+                    user.setAge(calculateAge(parsedBirthDate));
+                } else if (age != null) {
+                    user.setAge(age);
+                }
+                if (isVisible != null) {
+                    user.setIsVisible(isVisible);
+                }
+                if (settings != null) {
+                    mergeSettings(user, settings);
+                }
+                if (profileCost != null) {
+                    user.setProfileCost(Math.max(0, profileCost));
+                } else {
+                    ensureProfileCost(user);
+                }
+                if (nativeLanguage != null) {
+                    user.setNativeLanguage(nativeLanguage);
+                }
 
-            if (settings.getShowAge() != null) {
-                currentSettings.setShowAge(settings.getShowAge());
-            }
-            if (settings.getShowCity() != null) {
-                currentSettings.setShowCity(settings.getShowCity());
-            }
-            if (settings.getAllowMessages() != null) {
-                currentSettings.setAllowMessages(settings.getAllowMessages());
-            }
-            if (settings.getAllowCommunityMessages() != null) {
-                currentSettings.setAllowCommunityMessages(settings.getAllowCommunityMessages());
-            }
-            if (settings.getNotifyAnonMessages() != null) {
-                currentSettings.setNotifyAnonMessages(settings.getNotifyAnonMessages());
-            }
-            if (settings.getNotifyAnonDialogClosed() != null) {
-                currentSettings.setNotifyAnonDialogClosed(settings.getNotifyAnonDialogClosed());
-            }
-            if (settings.getNotifyProfileNewChat() != null) {
-                currentSettings.setNotifyProfileNewChat(settings.getNotifyProfileNewChat());
-            }
-            if (settings.getNotifyProfileMessages() != null) {
-                currentSettings.setNotifyProfileMessages(settings.getNotifyProfileMessages());
-            }
-            if (settings.getNotifyProfileDialogClosed() != null) {
-                currentSettings.setNotifyProfileDialogClosed(settings.getNotifyProfileDialogClosed());
-            }
-            if (settings.getNotifySubscriptionProblems() != null) {
-                currentSettings.setNotifySubscriptionProblems(settings.getNotifySubscriptionProblems());
-            }
-
-            user.setSettings(currentSettings);
-        }
-        if (profileCost != null) {
-            final int normalized = Math.max(0, profileCost);
-            user.setProfileCost(normalized);
-        } else {
-            ensureProfileCost(user);
-        }
-        if (nativeLanguage != null) {
-            user.setNativeLanguage(nativeLanguage);
-        }
-
-        applySpecialPrivileges(user);
-        return userRepository.save(user);
+                applySpecialPrivileges(user);
+                return userRepository.save(user);
+            });
     }
 
-    public UserVerificationResult verifyUserWithSelfie(final Long userId, final Path selfiePath) {
+    public Future<UserVerificationResult> verifyUserWithSelfie(final Long userId, final Path selfiePath) {
         if (selfiePath == null || !Files.exists(selfiePath)) {
-            throw new IllegalArgumentException("Selfie file not found");
+            return Future.failedFuture(new IllegalArgumentException("Selfie file not found"));
         }
 
-        final User user = userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .compose(user -> {
+                if (!hasActiveSubscription(user)) {
+                    return FutureUtils.failed("Subscription required");
+                }
+                if (Boolean.TRUE.equals(user.getIsVerified())) {
+                    return Future.succeededFuture(new UserVerificationResult(true, 1.0, null));
+                }
+                if (user.getAvatarUrl() == null || user.getAvatarUrl().isBlank()) {
+                    return Future.failedFuture(new IllegalArgumentException("Avatar is required for verification"));
+                }
+                return blocking(() -> verifyUserWithSelfieBlocking(user, selfiePath))
+                    .compose(result -> {
+                        if (!result.verified()) {
+                            return Future.succeededFuture(result);
+                        }
+                        user.setIsVerified(true);
+                        user.setWasVerified(true);
+                        return userRepository.save(user).map(saved -> result);
+                    });
+            });
+    }
 
-        if (!hasActiveSubscription(user)) {
-            throw new RuntimeException("Subscription required");
+    public Future<Integer> getUserBalance(final Long userId) {
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .map(User::getBalance);
+    }
+
+    public Future<User> purchaseCoins(final Long userId, final Integer amount) {
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .compose(user -> {
+                user.setBalance(user.getBalance() + calculateCoinsForPayment(amount));
+                return userRepository.save(user);
+            });
+    }
+
+    public Future<Void> updateUserBalance(final Long userId, final Integer newBalance) {
+        return userRepository.updateBalance(userId, newBalance);
+    }
+
+    public Future<User> updateCommunityNotifications(final Long userId, final boolean enabled) {
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .compose(user -> {
+                if (user.getSettings() == null) {
+                    user.setSettings(new User.UserSettings());
+                }
+                user.getSettings().setAllowCommunityMessages(enabled);
+                return userRepository.save(user);
+            });
+    }
+
+    public Future<User> deductCoins(final Long userId, final Integer amount) {
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .compose(user -> {
+                if (user.getBalance() < amount) {
+                    return FutureUtils.failed("Insufficient balance");
+                }
+                user.setBalance(user.getBalance() - amount);
+                return userRepository.save(user);
+            });
+    }
+
+    public Future<Void> updateOnlineStatus(final Long userId, final Boolean isOnline) {
+        return userRepository.updateOnlineStatus(userId, Boolean.TRUE.equals(isOnline));
+    }
+
+    public Future<Void> refreshOnlineUsers(final Collection<Long> userIds) {
+        return userRepository.refreshOnlineUsers(userIds);
+    }
+
+    public Future<Void> markStaleOnlineUsersOffline(final Duration ttl) {
+        return userRepository.markStaleOnlineUsersOffline(ttl);
+    }
+
+    public Future<Void> markAllOffline() {
+        return userRepository.markAllOffline();
+    }
+
+    public Future<User> banUser(final Long targetUserId, final String reason) {
+        return FutureUtils.requirePresent(userRepository.findById(targetUserId), "User not found")
+            .compose(user -> {
+                user.setIsBanned(true);
+                user.setBanReason(reason != null ? reason : "Блокировка администрацией");
+                user.setBannedAt(LocalDateTime.now());
+                return userRepository.save(user);
+            });
+    }
+
+    public Future<User> unbanUser(final Long targetUserId) {
+        return FutureUtils.requirePresent(userRepository.findById(targetUserId), "User not found")
+            .compose(user -> {
+                user.setIsBanned(false);
+                user.setBanReason(null);
+                user.setBannedAt(null);
+                return userRepository.save(user);
+            });
+    }
+
+    public Future<String> mirrorExternalAvatar(final String source) {
+        if (source == null || source.trim().isEmpty()) {
+            return Future.succeededFuture((String) null);
+        }
+        final String trimmed = source.trim();
+        if (trimmed.contains(AppConfig.UPLOAD_DIR)) {
+            return Future.succeededFuture(trimmed);
         }
 
-        if (Boolean.TRUE.equals(user.getIsVerified())) {
-            return new UserVerificationResult(true, 1.0, null);
+        final HttpRequest request;
+        try {
+            request = buildExternalImageRequest(trimmed);
+        } catch (final Exception e) {
+            logger.warn("Invalid external avatar URL {}", source, e);
+            return Future.succeededFuture((String) null);
         }
 
-        if (user.getAvatarUrl() == null || user.getAvatarUrl().isBlank()) {
-            throw new IllegalArgumentException("Avatar is required for verification");
+        return Future.fromCompletionStage(httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray()))
+            .compose(response -> blocking(() -> storeMirroredAvatar(trimmed, response)))
+            .otherwise(error -> {
+                logger.warn("Failed to mirror external avatar {}", source, error);
+                return null;
+            });
+    }
+
+    public Future<Integer> countOnlineUsers() {
+        return userRepository.countOnlineUsers().map(Math::toIntExact);
+    }
+
+    public Future<UserStats> getUserStats(final Long userId) {
+        return Future.succeededFuture(new UserStats(0, 0, 0, 0, 0, 0));
+    }
+
+    public Future<OnlineStats> getOnlineStats() {
+        return userRepository.count()
+            .compose(totalUsers -> userRepository.countOnlineUsers()
+                .map(activeUsers -> new OnlineStats(Math.toIntExact(totalUsers), Math.toIntExact(activeUsers))));
+    }
+
+    public Future<RewardStatus> getRewardStatus(final Long userId) {
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .map(user -> {
+                ensureRewards(user);
+                return buildRewardStatus(user);
+            });
+    }
+
+    public Future<RewardClaimResult> claimReward(final Long userId, final RewardType type, final boolean confirmed) {
+        if (type == null) {
+            return FutureUtils.failed("Unknown reward type");
+        }
+        return FutureUtils.requirePresent(userRepository.findById(userId), "User not found")
+            .compose(user -> {
+                ensureRewards(user);
+                return switch (type) {
+                    case AD -> claimAdReward(user, confirmed);
+                    case COMMUNITY -> claimCommunityReward(user);
+                };
+            });
+    }
+
+    private Future<RewardClaimResult> claimAdReward(final User user, final boolean confirmed) {
+        if (!confirmed) {
+            return FutureUtils.failed("Ad was not confirmed");
+        }
+        user.getRewards().setLastAdRewardAt(LocalDateTime.now());
+        user.setBalance((user.getBalance() == null ? 0 : user.getBalance()) + AppConfig.AD_REWARD_AMOUNT);
+        return userRepository.save(user)
+            .map(saved -> new RewardClaimResult(saved.getBalance(), AppConfig.AD_REWARD_AMOUNT, buildRewardStatus(saved)));
+    }
+
+    private Future<RewardClaimResult> claimCommunityReward(final User user) {
+        if (Boolean.TRUE.equals(user.getRewards().getSubscriptionBonusClaimed())) {
+            return Future.succeededFuture(new RewardClaimResult(user.getBalance(), 0, buildRewardStatus(user)));
+        }
+        if (user.getVkId() == null) {
+            return FutureUtils.failed("VK id is required");
+        }
+        return isCommunityMember(user.getVkId()).compose(isMember -> {
+            if (!isMember) {
+                return FutureUtils.failed("Community subscription required");
+            }
+            user.getRewards().setSubscriptionBonusClaimed(true);
+            user.setBalance((user.getBalance() == null ? 0 : user.getBalance()) + AppConfig.SUBSCRIPTION_REWARD_AMOUNT);
+            return userRepository.save(user)
+                .map(saved -> new RewardClaimResult(saved.getBalance(), AppConfig.SUBSCRIPTION_REWARD_AMOUNT, buildRewardStatus(saved)));
+        });
+    }
+
+    private void mergeSettings(final User user, final User.UserSettings settings) {
+        User.UserSettings currentSettings = user.getSettings();
+        if (currentSettings == null) {
+            currentSettings = new User.UserSettings();
+        }
+        if (settings.getShowAge() != null) {
+            currentSettings.setShowAge(settings.getShowAge());
+        }
+        if (settings.getShowCity() != null) {
+            currentSettings.setShowCity(settings.getShowCity());
+        }
+        if (settings.getAllowMessages() != null) {
+            currentSettings.setAllowMessages(settings.getAllowMessages());
+        }
+        if (settings.getAllowCommunityMessages() != null) {
+            currentSettings.setAllowCommunityMessages(settings.getAllowCommunityMessages());
+        }
+        if (settings.getNotifyAnonMessages() != null) {
+            currentSettings.setNotifyAnonMessages(settings.getNotifyAnonMessages());
+        }
+        if (settings.getNotifyAnonDialogClosed() != null) {
+            currentSettings.setNotifyAnonDialogClosed(settings.getNotifyAnonDialogClosed());
+        }
+        if (settings.getNotifyProfileNewChat() != null) {
+            currentSettings.setNotifyProfileNewChat(settings.getNotifyProfileNewChat());
+        }
+        if (settings.getNotifyProfileMessages() != null) {
+            currentSettings.setNotifyProfileMessages(settings.getNotifyProfileMessages());
+        }
+        if (settings.getNotifyProfileDialogClosed() != null) {
+            currentSettings.setNotifyProfileDialogClosed(settings.getNotifyProfileDialogClosed());
+        }
+        if (settings.getNotifySubscriptionProblems() != null) {
+            currentSettings.setNotifySubscriptionProblems(settings.getNotifySubscriptionProblems());
+        }
+        user.setSettings(currentSettings);
+    }
+
+    private Future<Boolean> isCommunityMember(final Long vkId) {
+        if (vkId == null) {
+            return Future.succeededFuture(false);
         }
 
+        final String url = "https://api.vk.com/method/groups.isMember"
+            + "?group_id=" + AppConfig.VK_COMMUNITY_GROUP_ID
+            + "&user_id=" + URLEncoder.encode(String.valueOf(vkId), java.nio.charset.StandardCharsets.UTF_8)
+            + "&extended=0"
+            + "&v=" + AppConfig.VK_API_VERSION
+            + "&access_token=" + URLEncoder.encode(AppConfig.VK_COMMUNITY_ACCESS_TOKEN, java.nio.charset.StandardCharsets.UTF_8);
+
+        final HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+        return Future.fromCompletionStage(httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString()))
+            .map(response -> {
+                final String body = response.body();
+                if (body == null || body.isBlank()) {
+                    return false;
+                }
+                final io.vertx.core.json.JsonObject json = new io.vertx.core.json.JsonObject(body);
+                if (json.containsKey("error")) {
+                    logger.warn("VK groups.isMember error: {}", json.getJsonObject("error"));
+                    return false;
+                }
+                if (json.containsKey("response")) {
+                    final Object resp = json.getValue("response");
+                    if (resp instanceof Number number) {
+                        return number.intValue() == 1;
+                    }
+                    if (resp instanceof io.vertx.core.json.JsonObject respObj) {
+                        return respObj.getInteger("member", 0) == 1;
+                    }
+                }
+                return false;
+            })
+            .otherwise(error -> {
+                logger.warn("Failed to check VK community membership for {}", vkId, error);
+                return false;
+            });
+    }
+
+    private <T> Future<T> blocking(final Callable<T> action) {
+        final Promise<T> promise = Promise.promise();
+        vertx.executeBlocking(task -> {
+            try {
+                task.complete(action.call());
+            } catch (final Exception e) {
+                task.fail(e);
+            }
+        }, false, promise);
+        return promise.future();
+    }
+
+    private UserVerificationResult verifyUserWithSelfieBlocking(final User user, final Path selfiePath) {
         try {
             final BufferedImage avatarImage = loadImageFromSource(user.getAvatarUrl());
             final BufferedImage selfieImage = ImageIO.read(selfiePath.toFile());
@@ -260,82 +479,65 @@ public class UserService {
                 return new UserVerificationResult(false, 0.0, "Вы не похожи на того человека");
             }
 
-            user.setIsVerified(true);
-            user.setWasVerified(true);
-            userRepository.save(user);
-
             return new UserVerificationResult(true, 1, null);
         } catch (final IllegalArgumentException ex) {
             throw ex;
         } catch (final Exception ex) {
-            logger.error("Failed to verify user {} using selfie {}", userId, selfiePath, ex);
+            logger.error("Failed to verify user {} using selfie {}", user.getId(), selfiePath, ex);
             throw new RuntimeException("Unable to verify user at this time");
         }
     }
 
-    public Integer getUserBalance(final Long userId) {
-        final User user = userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-        return user.getBalance();
+    private HttpRequest buildExternalImageRequest(final String source) {
+        return HttpRequest.newBuilder(URI.create(source))
+            .timeout(AppConfig.EXTERNAL_HTTP_REQUEST_TIMEOUT)
+            .GET()
+            .build();
     }
 
-    public User purchaseCoins(final Long userId, final Integer amount) {
-        final User user = userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-
-        final int coinsToAdd = calculateCoinsForPayment(amount);
-        user.setBalance(user.getBalance() + coinsToAdd);
-
-        return userRepository.save(user);
+    private String storeMirroredAvatar(final String source, final HttpResponse<byte[]> response) throws Exception {
+        final byte[] body = requireSuccessfulImageBody(source, response);
+        final String fileName = "vk-avatar-" + System.currentTimeMillis() + '-' + Math.abs(source.hashCode()) + resolveImageExtension(source, response);
+        final Path uploadDir = Paths.get(AppConfig.UPLOAD_DIR);
+        Files.createDirectories(uploadDir);
+        final Path target = uploadDir.resolve(fileName);
+        Files.write(target, body);
+        return "/uploads/" + fileName;
     }
 
-    public void updateUserBalance(final Long userId, final Integer newBalance) {
-        userRepository.updateBalance(userId, newBalance);
-    }
-
-    public User updateCommunityNotifications(final Long userId, final boolean enabled) {
-        final User user = userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-
-        if (user.getSettings() == null) {
-            user.setSettings(new User.UserSettings());
-        }
-        user.getSettings().setAllowCommunityMessages(enabled);
-        return userRepository.save(user);
-    }
-
-    public void deductCoins(final Long userId, final Integer amount) {
-        final User user = userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-
-        if (user.getBalance() < amount) {
-            throw new RuntimeException("Insufficient balance");
+    private byte[] requireSuccessfulImageBody(final String source, final HttpResponse<byte[]> response) {
+        final int statusCode = response.statusCode();
+        if (statusCode < 200 || statusCode >= 300) {
+            throw new IllegalArgumentException("Image request failed with status " + statusCode);
         }
 
-        user.setBalance(user.getBalance() - amount);
-        userRepository.save(user);
+        final byte[] body = response.body();
+        if (body == null || body.length == 0) {
+            throw new IllegalArgumentException("Image response is empty");
+        }
+        if (body.length > AppConfig.MAX_UPLOAD_SIZE_BYTES) {
+            throw new IllegalArgumentException("Image response is too large: " + body.length);
+        }
+        return body;
     }
 
-    public void updateOnlineStatus(final Long userId, final Boolean isOnline) {
-        userRepository.updateOnlineStatus(userId, isOnline);
-    }
+    private String resolveImageExtension(final String source, final HttpResponse<byte[]> response) {
+        final String lowerSource = source.toLowerCase();
+        if (lowerSource.contains(".png")) {
+            return ".png";
+        }
+        if (lowerSource.contains(".webp")) {
+            return ".webp";
+        }
 
-    public User banUser(final Long targetUserId, final String reason) {
-        final User user = userRepository.findById(targetUserId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-        user.setIsBanned(true);
-        user.setBanReason(reason != null ? reason : "Блокировка администрацией");
-        user.setBannedAt(LocalDateTime.now());
-        return userRepository.save(user);
-    }
-
-    public User unbanUser(final Long targetUserId) {
-        final User user = userRepository.findById(targetUserId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-        user.setIsBanned(false);
-        user.setBanReason(null);
-        user.setBannedAt(null);
-        return userRepository.save(user);
+        final String contentType = response.headers().firstValue("content-type").orElse("").toLowerCase();
+        if (contentType.contains("png")) {
+            return ".png";
+        }
+        if (contentType.contains("webp")) {
+            return ".webp";
+        }
+        return ".jpg";
     }
 
     private User.UserRewards ensureRewards(final User user) {
@@ -380,9 +582,11 @@ public class UserService {
 
         try {
             if (source.startsWith("http://") || source.startsWith("https://")) {
-                try (final InputStream stream = new URL(source).openStream()) {
-                    return ImageIO.read(stream);
-                }
+                final HttpResponse<byte[]> response = httpClient.send(
+                    buildExternalImageRequest(source.trim()),
+                    HttpResponse.BodyHandlers.ofByteArray()
+                );
+                return ImageIO.read(new ByteArrayInputStream(requireSuccessfulImageBody(source, response)));
             }
 
             final String normalized = source.startsWith("/") ? source.substring(1) : source;
@@ -412,35 +616,6 @@ public class UserService {
         return null;
     }
 
-    public String mirrorExternalAvatar(final String source) {
-        if (source == null || source.trim().isEmpty()) {
-            return null;
-        }
-
-        final String trimmed = source.trim();
-        if (trimmed.contains(AppConfig.UPLOAD_DIR)) {
-            return trimmed;
-        }
-
-        try (final InputStream in = new URL(trimmed).openStream()) {
-            String extension = ".jpg";
-            final String lower = trimmed.toLowerCase();
-            if (lower.contains(".png")) {
-                extension = ".png";
-            } else if (lower.contains(".webp")) {
-                extension = ".webp";
-            }
-
-            final String fileName = "vk-avatar-" + System.currentTimeMillis() + '-' + Math.abs(trimmed.hashCode()) + extension;
-            final Path target = Paths.get(AppConfig.UPLOAD_DIR, fileName);
-            Files.copy(in, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-            return "/uploads/" + fileName;
-        } catch (final Exception e) {
-            logger.warn("Failed to mirror external avatar {}", source, e);
-            return null;
-        }
-    }
-
     private double calculateSimilarity(final BufferedImage first, final BufferedImage second) {
         final int size = 64;
         final BufferedImage normalizedFirst = resizeImage(first, size, size);
@@ -453,7 +628,6 @@ public class UserService {
         final double pixelSimilarity = pixelSimilarity(normalizedFirst, normalizedSecond);
         final double hashSimilarity = dhashSimilarity(normalizedFirst, normalizedSecond);
         final double histogramSimilarity = histogramCosineSimilarity(normalizedFirst, normalizedSecond);
-
         final double combined = (hashSimilarity * 0.5) + (histogramSimilarity * 0.3) + (pixelSimilarity * 0.2);
         return Math.max(0.0, Math.min(1.0, combined));
     }
@@ -497,8 +671,7 @@ public class UserService {
             for (int x = 0; x < 8; x++) {
                 final int left = rgbToGray(resized.getRGB(x, y));
                 final int right = rgbToGray(resized.getRGB(x + 1, y));
-                final boolean bit = left > right;
-                hash = (hash << 1) | (bit ? 1L : 0L);
+                hash = (hash << 1) | (left > right ? 1L : 0L);
             }
         }
         return hash;
@@ -524,11 +697,7 @@ public class UserService {
     }
 
     private boolean hasActiveSubscription(final User user) {
-        if (user == null || user.getSubscription() == null) {
-            return false;
-        }
-        final Boolean active = user.getSubscription().getIsActive();
-        return Boolean.TRUE.equals(active);
+        return user != null && user.getSubscription() != null && Boolean.TRUE.equals(user.getSubscription().getIsActive());
     }
 
     private double[] grayscaleHistogram(final BufferedImage image) {
@@ -537,8 +706,7 @@ public class UserService {
         final int height = image.getHeight();
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                final int gray = rgbToGray(image.getRGB(x, y));
-                hist[gray] += 1.0;
+                hist[rgbToGray(image.getRGB(x, y))] += 1.0;
             }
         }
         final double total = width * height;
@@ -551,8 +719,7 @@ public class UserService {
     }
 
     private boolean isTooBlurry(final BufferedImage image) {
-        final double variance = laplacianVariance(image);
-        return variance < 35.0;
+        return laplacianVariance(image) < 35.0;
     }
 
     private String validateHumanPresence(final BufferedImage image, final boolean isAvatar) {
@@ -562,39 +729,30 @@ public class UserService {
         if (stats.coverage < MIN_SKIN_COVERAGE || stats.coverage > MAX_SKIN_COVERAGE) {
             return isAvatar ? "Аватар не похож на лицо" : "На селфи не найдено лицо";
         }
-
         if (stats.boundingBoxCoverage < 0.02) {
             return isAvatar ? "Аватар не похож на лицо" : "На селфи не найдено лицо";
         }
-
         if (stats.aspectRatio < 0.6 || stats.aspectRatio > 1.8) {
             return isAvatar ? "Аватар имеет некорректные пропорции" : "Лицо имеет некорректные пропорции";
         }
-
         if (stats.darkOnSkin < 0.01 || stats.darkOnSkin > 0.25) {
             return isAvatar ? "На аватаре не видно черт лица" : "На селфи не видно черт лица";
         }
-
         if (stats.centerCoverage < 0.3) {
             return isAvatar ? "Аватар не похож на лицо" : "Лицо должно быть ближе к центру кадра";
         }
-
         if (stats.edgeSkinRatio > 0.35) {
             return isAvatar ? "Аватар не похож на лицо" : "Камера смотрит не на лицо (слишком много кожи по краям)";
         }
-
         if (isTooBlurry(normalized)) {
             return isAvatar ? "Аватар слишком размытый" : "Селфи слишком размыто";
         }
-
         if (calculateEntropy(normalized) < 3.0) {
             return isAvatar ? "Аватар слишком однотонный" : "Селфи слишком однотонное";
         }
-
         if (looksLikeScreen(normalized)) {
             return "Похоже, камера смотрит на экран, а не на человека";
         }
-
         return null;
     }
 
@@ -607,7 +765,10 @@ public class UserService {
         int centerSkin = 0;
         int edgeSkin = 0;
 
-        int minX = width, minY = height, maxX = -1, maxY = -1;
+        int minX = width;
+        int minY = height;
+        int maxX = -1;
+        int maxY = -1;
 
         final int centerStartX = (int) (width * 0.25);
         final int centerEndX = (int) (width * 0.75);
@@ -624,12 +785,11 @@ public class UserService {
                 final double cb = (-0.168736 * r) + (-0.331264 * g) + (0.5 * b) + 128;
                 final double cr = (0.5 * r) + (-0.418688 * g) + (-0.081312 * b) + 128;
 
-                final boolean skin =
-                    r > 60 && g > 40 && b > 20 &&
-                        (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) > 15) &&
-                        r > g && r > b &&
-                        cr > 135 && cr < 180 &&
-                        cb > 85 && cb < 135;
+                final boolean skin = r > 60 && g > 40 && b > 20
+                    && (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) > 15)
+                    && r > g && r > b
+                    && cr > 135 && cr < 180
+                    && cb > 85 && cb < 135;
 
                 if (skin) {
                     skinPixels++;
@@ -682,9 +842,7 @@ public class UserService {
     }
 
     private boolean looksLikeScreen(final BufferedImage image) {
-        final double gridScore = pixelGridScore(image);
-        final double saturation = averageSaturation(image);
-        return gridScore > 22.0 && saturation < 0.25;
+        return pixelGridScore(image) > 22.0 && averageSaturation(image) < 0.25;
     }
 
     private double pixelGridScore(final BufferedImage image) {
@@ -696,23 +854,16 @@ public class UserService {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 final int current = rgbToGray(image.getRGB(x, y));
-                if (x + 1 < width) {
-                    final int right = rgbToGray(image.getRGB(x + 1, y));
-                    if ((x & 1) == 0) {
-                        accum += Math.abs(current - right);
-                        count++;
-                    }
+                if (x + 1 < width && (x & 1) == 0) {
+                    accum += Math.abs(current - rgbToGray(image.getRGB(x + 1, y)));
+                    count++;
                 }
-                if (y + 1 < height) {
-                    final int down = rgbToGray(image.getRGB(x, y + 1));
-                    if ((y & 1) == 0) {
-                        accum += Math.abs(current - down);
-                        count++;
-                    }
+                if (y + 1 < height && (y & 1) == 0) {
+                    accum += Math.abs(current - rgbToGray(image.getRGB(x, y + 1)));
+                    count++;
                 }
             }
         }
-
         return count > 0 ? accum / count : 0.0;
     }
 
@@ -728,15 +879,12 @@ public class UserService {
                 final int r = (rgb >> 16) & 0xFF;
                 final int g = (rgb >> 8) & 0xFF;
                 final int b = rgb & 0xFF;
-
                 final double max = Math.max(r, Math.max(g, b));
                 final double min = Math.min(r, Math.min(g, b));
-                final double s = max == 0 ? 0 : (max - min) / max;
-                total += s;
+                total += max == 0 ? 0 : (max - min) / max;
                 count++;
             }
         }
-
         return count > 0 ? total / count : 0.0;
     }
 
@@ -746,20 +894,14 @@ public class UserService {
         double sum = 0.0;
         double sumSq = 0.0;
         int count = 0;
-
-        final int[][] kernel = {
-            {0, 1, 0},
-            {1, -4, 1},
-            {0, 1, 0}
-        };
+        final int[][] kernel = {{0, 1, 0}, {1, -4, 1}, {0, 1, 0}};
 
         for (int y = 1; y < height - 1; y++) {
             for (int x = 1; x < width - 1; x++) {
                 double lap = 0.0;
                 for (int ky = -1; ky <= 1; ky++) {
                     for (int kx = -1; kx <= 1; kx++) {
-                        final int gray = rgbToGray(image.getRGB(x + kx, y + ky));
-                        lap += gray * kernel[ky + 1][kx + 1];
+                        lap += rgbToGray(image.getRGB(x + kx, y + ky)) * kernel[ky + 1][kx + 1];
                     }
                 }
                 sum += lap;
@@ -767,7 +909,6 @@ public class UserService {
                 count++;
             }
         }
-
         if (count == 0) {
             return 0.0;
         }
@@ -780,52 +921,6 @@ public class UserService {
         final int g = (rgb >> 8) & 0xFF;
         final int b = rgb & 0xFF;
         return (r + g + b) / 3;
-    }
-
-    private record SkinStats(double coverage, double boundingBoxCoverage, double aspectRatio, double darkOnSkin, double centerCoverage, double edgeSkinRatio) {
-    }
-
-    private boolean isCommunityMember(final Long vkId) {
-        if (vkId == null) {
-            return false;
-        }
-        try {
-            final String url = "https://api.vk.com/method/groups.isMember"
-                + "?group_id=" + AppConfig.VK_COMMUNITY_GROUP_ID
-                + "&user_id=" + URLEncoder.encode(String.valueOf(vkId), java.nio.charset.StandardCharsets.UTF_8)
-                + "&extended=0"
-                + "&v=" + AppConfig.VK_API_VERSION
-                + "&access_token=" + URLEncoder.encode(AppConfig.VK_COMMUNITY_ACCESS_TOKEN, java.nio.charset.StandardCharsets.UTF_8);
-
-            final HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .GET()
-                .build();
-
-            final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            final String body = response.body();
-            if (body == null || body.isBlank()) {
-                logger.warn("Empty response from VK groups.isMember");
-                return false;
-            }
-            final io.vertx.core.json.JsonObject json = new io.vertx.core.json.JsonObject(body);
-            if (json.containsKey("error")) {
-                logger.warn("VK groups.isMember error: {}", json.getJsonObject("error"));
-                return false;
-            }
-            if (json.containsKey("response")) {
-                final Object resp = json.getValue("response");
-                if (resp instanceof Number) {
-                    return ((Number) resp).intValue() == 1;
-                }
-                if (resp instanceof io.vertx.core.json.JsonObject respObj) {
-                    return respObj.getInteger("member", 0) == 1;
-                }
-            }
-        } catch (final Exception e) {
-            logger.warn("Failed to check VK community membership for {}", vkId, e);
-        }
-        return false;
     }
 
     private void ensureProfileCost(final User user) {
@@ -846,101 +941,12 @@ public class UserService {
         }
     }
 
-    public int countOnlineUsers() {
-        return (int) userRepository.countOnlineUsers();
-    }
-
-    public UserStats getUserStats(final Long userId) {
-        return new UserStats(
-            0, // totalChats
-            0, // activeChats
-            0, // totalMessages
-            0, // likesReceived
-            0, // profileViews
-            0  // matchesFound
-        );
-    }
-
-    public OnlineStats getOnlineStats() {
-        final long totalUsers = userRepository.count();
-        final long activeUsers = userRepository.countOnlineUsers();
-
-        return new OnlineStats(
-            0, // anonymousChats - будет подсчитываться в ChatService
-            (int) totalUsers,
-            (int) activeUsers
-        );
-    }
-
-    public RewardStatus getRewardStatus(final Long userId) {
-        final User user = userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-        ensureRewards(user);
-        return buildRewardStatus(user);
-    }
-
-    public RewardClaimResult claimReward(final Long userId, final RewardType type, final boolean confirmed) {
-        if (type == null) {
-            throw new RuntimeException("Unknown reward type");
-        }
-        final User user = userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-        ensureRewards(user);
-
-        final int rewardAmount;
-        switch (type) {
-            case AD:
-                if (!confirmed) {
-                    throw new RuntimeException("Ad was not confirmed");
-                }
-                rewardAmount = AppConfig.AD_REWARD_AMOUNT;
-                user.getRewards().setLastAdRewardAt(LocalDateTime.now());
-                break;
-            case COMMUNITY:
-                if (Boolean.TRUE.equals(user.getRewards().getSubscriptionBonusClaimed())) {
-                    return new RewardClaimResult(
-                        user.getBalance(),
-                        0,
-                        buildRewardStatus(user)
-                    );
-                }
-                if (user.getVkId() == null) {
-                    throw new RuntimeException("VK id is required");
-                }
-                if (!isCommunityMember(user.getVkId())) {
-                    throw new RuntimeException("Community subscription required");
-                }
-                rewardAmount = AppConfig.SUBSCRIPTION_REWARD_AMOUNT;
-                user.getRewards().setSubscriptionBonusClaimed(true);
-                break;
-            default:
-                throw new RuntimeException("Unsupported reward type");
-        }
-
-        if (user.getBalance() == null) {
-            user.setBalance(0);
-        }
-        user.setBalance(user.getBalance() + rewardAmount);
-        final User saved = userRepository.save(user);
-
-        return new RewardClaimResult(
-            saved.getBalance(),
-            rewardAmount,
-            buildRewardStatus(saved)
-        );
-    }
-
     private RewardStatus buildRewardStatus(final User user) {
         ensureRewards(user);
         final boolean subscriptionClaimed = user.getRewards() != null
             && Boolean.TRUE.equals(user.getRewards().getSubscriptionBonusClaimed());
 
-        return new RewardStatus(
-            true,
-            null,
-            !subscriptionClaimed,
-            subscriptionClaimed
-        );
+        return new RewardStatus(true, null, !subscriptionClaimed, subscriptionClaimed);
     }
 
     public record UserVerificationResult(boolean verified, double similarity, String reason) {
@@ -971,6 +977,10 @@ public class UserService {
     public record UserStats(int totalChats, int activeChats, int totalMessages, int likesReceived, int profileViews, int matchesFound) {
     }
 
-    public record OnlineStats(int anonymousChats, int totalUsers, int activeUsers) {
+    public record OnlineStats(int totalUsers, int activeUsers) {
+    }
+
+    private record SkinStats(double coverage, double boundingBoxCoverage, double aspectRatio, double darkOnSkin, double centerCoverage,
+                             double edgeSkinRatio) {
     }
 }

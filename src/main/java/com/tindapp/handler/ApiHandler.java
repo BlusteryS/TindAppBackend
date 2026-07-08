@@ -4,10 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.tindapp.config.AppConfig;
-import com.tindapp.model.BlackListItem;
 import com.tindapp.model.Chat;
 import com.tindapp.model.Message;
-import com.tindapp.model.Notification;
 import com.tindapp.model.Report;
 import com.tindapp.model.Subscription;
 import com.tindapp.model.User;
@@ -21,6 +19,7 @@ import com.tindapp.service.ReportService;
 import com.tindapp.service.SubscriptionService;
 import com.tindapp.service.UserService;
 import com.tindapp.util.ResponseMapper;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.FileUpload;
@@ -35,7 +34,6 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -162,69 +160,76 @@ public class ApiHandler {
             final Long userId = getUserIdFromContext(ctx);
             final int page = parseIntParam(ctx.request().getParam("page"), 1);
             final int limit = parseIntParam(ctx.request().getParam("limit"), 12);
-
-            final User viewer = userService.getUserById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-            final ProfileService.ProfileFilters filters = profileService.parseFilters(ctx.request().params(), viewer);
-            final ProfileService.ProfileSearchResult result = profileService.searchProfiles(viewer, filters, page, limit);
-
-            sendPaginatedSuccess(ctx, result.profiles(), page, limit, result.total());
+            userService.getUserById(userId)
+                .compose(userOpt -> {
+                    if (userOpt.isEmpty()) {
+                        return Future.failedFuture(new RuntimeException("User not found"));
+                    }
+                    final User viewer = userOpt.get();
+                    final ProfileService.ProfileFilters filters = profileService.parseFilters(ctx.request().params(), viewer);
+                    return profileService.searchProfiles(viewer, filters, page, limit);
+                })
+                .onSuccess(result -> sendPaginatedSuccess(ctx, result.profiles(), page, limit, result.total()))
+                .onFailure(e -> {
+                    if (e instanceof RuntimeException && e.getMessage() != null && e.getMessage().contains("User not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, e.getMessage());
+                    } else {
+                        logger.error("Error getting profiles", e);
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final NumberFormatException e) {
             sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Invalid pagination parameters");
-        } catch (final RuntimeException e) {
-            if (e.getMessage().contains("User not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, e.getMessage());
-            } else {
-                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, e.getMessage());
-            }
-        } catch (final Exception e) {
-            logger.error("Error getting profiles", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
     public void getCurrentUser(final RoutingContext ctx) {
-        try {
-            final Long userId = getUserIdFromContext(ctx);
-            final Optional<User> user = userService.getUserById(userId);
-
-            if (user.isPresent()) {
+        final Long userId = getUserIdFromContext(ctx);
+        userService.getUserById(userId)
+            .onSuccess(user -> {
+                if (user.isEmpty()) {
+                    sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
+                    return;
+                }
                 final JsonObject payload = ResponseMapper.toUserResponse(user.get());
                 payload.put("isAnonymousForViewer", false);
                 sendSuccess(ctx, payload.getMap());
-            } else {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
-            }
-        } catch (final Exception e) {
-            logger.error("Error getting current user", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-        }
+            })
+            .onFailure(e -> {
+                logger.error("Error getting current user", e);
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+            });
     }
 
     public void getUser(final RoutingContext ctx) {
         try {
             final Long userId = Long.valueOf(ctx.pathParam("userId"));
             final Long viewerId = getUserIdFromContext(ctx);
-            final Optional<User> user = userService.getUserById(userId);
-
-            if (user.isPresent()) {
-                final User target = user.get();
-                final JsonObject payload = ResponseMapper.toUserResponse(target);
-                final boolean isAnonymous = shouldMaskUser(viewerId, target);
-                if (isAnonymous) {
-                    payload
-                        .put("firstName", "")
-                        .put("lastName", "")
-                        .put("avatarUrl", "")
-                        .put("isAnonymousForViewer", true);
-                } else {
-                    payload.put("isAnonymousForViewer", false);
-                }
-                sendSuccess(ctx, payload.getMap());
-            } else {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
-            }
+            userService.getUserById(userId)
+                .compose(user -> {
+                    if (user.isEmpty()) {
+                        return Future.failedFuture(new RuntimeException("User not found"));
+                    }
+                    final User target = user.get();
+                    return shouldMaskUser(viewerId, target).map(isAnonymous -> {
+                        final JsonObject payload = ResponseMapper.toUserResponse(target);
+                        if (isAnonymous) {
+                            payload.put("firstName", "").put("lastName", "").put("avatarUrl", "").put("isAnonymousForViewer", true);
+                        } else {
+                            payload.put("isAnonymousForViewer", false);
+                        }
+                        return payload;
+                    });
+                })
+                .onSuccess(payload -> sendSuccess(ctx, payload.getMap()))
+                .onFailure(e -> {
+                    if (e.getMessage() != null && e.getMessage().contains("User not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
+                    } else {
+                        logger.error("Error getting user", e);
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error getting user", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -285,7 +290,7 @@ public class ApiHandler {
                 }
             }
 
-            final User updatedUser = userService.updateProfile(
+            userService.updateProfile(
                 userId,
                 firstName,
                 lastName,
@@ -300,9 +305,13 @@ public class ApiHandler {
                 settings,
                 profileCost,
                 nativeLanguage
-            );
-            sendSuccess(ctx, ResponseMapper.toUserResponse(updatedUser).getMap());
-            webSocketHandler.notifyProfileUpdated(updatedUser);
+            ).onSuccess(updatedUser -> {
+                sendSuccess(ctx, ResponseMapper.toUserResponse(updatedUser).getMap());
+                webSocketHandler.notifyProfileUpdated(updatedUser);
+            }).onFailure(e -> {
+                logger.error("Error updating profile", e);
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, e.getMessage());
+            });
         } catch (final Exception e) {
             logger.error("Error updating profile", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, e.getMessage());
@@ -354,27 +363,31 @@ public class ApiHandler {
 
             Files.move(Paths.get(upload.uploadedFileName()), selfiePath, StandardCopyOption.REPLACE_EXISTING);
 
-            final UserService.UserVerificationResult result = userService.verifyUserWithSelfie(userId, selfiePath);
-
-            final JsonObject response = new JsonObject()
-                .put("isVerified", result.verified())
-                .put("similarity", result.similarity())
-                .put("reason", result.reason());
-            sendSuccess(ctx, response);
+            userService.verifyUserWithSelfie(userId, selfiePath)
+                .onSuccess(result -> {
+                    final JsonObject response = new JsonObject()
+                        .put("isVerified", result.verified())
+                        .put("similarity", result.similarity())
+                        .put("reason", result.reason());
+                    sendSuccess(ctx, response);
+                })
+                .onFailure(e -> {
+                    logger.error("Error verifying user", e);
+                    final String message = e.getMessage() != null ? e.getMessage() : "Verification failed";
+                    final String lower = message.toLowerCase();
+                    if (e instanceof IllegalArgumentException) {
+                        sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, message);
+                    } else if (lower.contains("subscription required")) {
+                        sendError(ctx, 403, ErrorCodes.SUBSCRIPTION_REQUIRED, message);
+                    } else if (lower.contains("not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, message);
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, message);
+                    }
+                });
         } catch (final IllegalArgumentException e) {
             logger.warn("Verification validation error", e);
             sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, e.getMessage());
-        } catch (final RuntimeException e) {
-            logger.error("Error verifying user", e);
-            final String message = e.getMessage() != null ? e.getMessage() : "Verification failed";
-            final String lower = message.toLowerCase();
-            if (lower.contains("subscription required")) {
-                sendError(ctx, 403, ErrorCodes.SUBSCRIPTION_REQUIRED, message);
-            } else if (lower.contains("not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, message);
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, message);
-            }
         } catch (final Exception e) {
             logger.error("Unexpected error verifying user", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -450,40 +463,36 @@ public class ApiHandler {
     }
 
     public void getBalance(final RoutingContext ctx) {
-        try {
-            final Long userId = getUserIdFromContext(ctx);
-            final Integer balance = userService.getUserBalance(userId);
-
-            final JsonObject response = new JsonObject().put("balance", balance);
-            sendSuccess(ctx, response);
-        } catch (final Exception e) {
-            logger.error("Error getting user balance", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-        }
+        final Long userId = getUserIdFromContext(ctx);
+        userService.getUserBalance(userId)
+            .onSuccess(balance -> sendSuccess(ctx, new JsonObject().put("balance", balance)))
+            .onFailure(e -> {
+                logger.error("Error getting user balance", e);
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+            });
     }
 
     public void getRewards(final RoutingContext ctx) {
-        try {
-            final Long userId = getUserIdFromContext(ctx);
-            final UserService.RewardStatus status = userService.getRewardStatus(userId);
-            sendSuccess(ctx, toRewardsJson(status));
-        } catch (final Exception e) {
-            logger.error("Error getting rewards status", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-        }
+        final Long userId = getUserIdFromContext(ctx);
+        userService.getRewardStatus(userId)
+            .onSuccess(status -> sendSuccess(ctx, toRewardsJson(status)))
+            .onFailure(e -> {
+                logger.error("Error getting rewards status", e);
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+            });
     }
 
     public void purchaseCoins(final RoutingContext ctx) {
         try {
             final Long userId = getUserIdFromContext(ctx);
             final JsonObject body = ctx.getBodyAsJson();
-
             final Integer amount = body.getInteger("amount");
-
-            final User updatedUser = userService.purchaseCoins(userId, amount);
-
-            final JsonObject response = new JsonObject().put("balance", updatedUser.getBalance());
-            sendSuccess(ctx, response);
+            userService.purchaseCoins(userId, amount)
+                .onSuccess(updatedUser -> sendSuccess(ctx, new JsonObject().put("balance", updatedUser.getBalance())))
+                .onFailure(e -> {
+                    logger.error("Error purchasing coins", e);
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                });
         } catch (final Exception e) {
             logger.error("Error purchasing coins", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -502,15 +511,18 @@ public class ApiHandler {
             final boolean success = body.getBoolean("success", false);
             final UserService.RewardType rewardType = parseRewardType(type);
 
-            final UserService.RewardClaimResult result = userService.claimReward(userId, rewardType, success);
-            final JsonObject response = new JsonObject()
-                .put("balance", result.balance())
-                .put("rewarded", result.rewardedAmount())
-                .put("rewards", toRewardsJson(result.rewards()));
-            sendSuccess(ctx, response);
-        } catch (final RuntimeException e) {
-            logger.error("Error claiming reward", e);
-            sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, e.getMessage());
+            userService.claimReward(userId, rewardType, success)
+                .onSuccess(result -> {
+                    final JsonObject response = new JsonObject()
+                        .put("balance", result.balance())
+                        .put("rewarded", result.rewardedAmount())
+                        .put("rewards", toRewardsJson(result.rewards()));
+                    sendSuccess(ctx, response);
+                })
+                .onFailure(e -> {
+                    logger.error("Error claiming reward", e);
+                    sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, e.getMessage());
+                });
         } catch (final Exception e) {
             logger.error("Unexpected error claiming reward", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -518,25 +530,22 @@ public class ApiHandler {
     }
 
     public void getUserStats(final RoutingContext ctx) {
-        try {
-            final Long userId = getUserIdFromContext(ctx);
-            final UserService.UserStats stats = userService.getUserStats(userId);
-            sendSuccess(ctx, stats);
-        } catch (final Exception e) {
-            logger.error("Error getting user stats", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-        }
+        final Long userId = getUserIdFromContext(ctx);
+        userService.getUserStats(userId)
+            .onSuccess(stats -> sendSuccess(ctx, stats))
+            .onFailure(e -> {
+                logger.error("Error getting user stats", e);
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+            });
     }
 
     public void getChatCost(final RoutingContext ctx) {
-        try {
-            final int cost = chatService.getChatCost();
-            final JsonObject response = new JsonObject().put("cost", cost);
-            sendSuccess(ctx, response);
-        } catch (final Exception e) {
-            logger.error("Error getting chat cost", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-        }
+        chatService.getChatCost()
+            .onSuccess(cost -> sendSuccess(ctx, new JsonObject().put("cost", cost)))
+            .onFailure(e -> {
+                logger.error("Error getting chat cost", e);
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+            });
     }
 
     public void startProfileChat(final RoutingContext ctx) {
@@ -544,76 +553,75 @@ public class ApiHandler {
             final Long userId = getUserIdFromContext(ctx);
             final Long profileId = Long.valueOf(ctx.pathParam("profileId"));
 
-            final Chat chat = chatService.startProfileChat(userId, profileId);
-            final JsonObject response = new JsonObject()
-                .put("chat", ResponseMapper.toChatResponse(chat).getMap())
-                .put("cost", chat.getSettings() != null ? chat.getSettings().getCost() : 0);
-
-            userService.getUserById(userId).ifPresent(user -> response.put("balance", user.getBalance()));
-
-            sendSuccess(ctx, response);
+            chatService.startProfileChat(userId, profileId)
+                .compose(chat -> userService.getUserById(userId).map(user -> {
+                    final JsonObject response = new JsonObject()
+                        .put("chat", ResponseMapper.toChatResponse(chat).getMap())
+                        .put("cost", chat.getSettings() != null ? chat.getSettings().getCost() : 0);
+                    user.ifPresent(value -> response.put("balance", value.getBalance()));
+                    return response;
+                }))
+                .onSuccess(response -> sendSuccess(ctx, response))
+                .onFailure(e -> {
+                    final String message = e.getMessage() != null ? e.getMessage() : "Unable to start chat";
+                    final String lower = message.toLowerCase();
+                    if (lower.contains("insufficient")) {
+                        sendError(ctx, 402, ErrorCodes.INSUFFICIENT_BALANCE, message);
+                    } else if (lower.contains("not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, message);
+                    } else {
+                        sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, message);
+                    }
+                });
         } catch (final NumberFormatException e) {
             sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Invalid profileId");
-        } catch (final RuntimeException e) {
-            final String message = e.getMessage() != null ? e.getMessage() : "Unable to start chat";
-            final String lower = message.toLowerCase();
-            if (lower.contains("insufficient")) {
-                sendError(ctx, 402, ErrorCodes.INSUFFICIENT_BALANCE, message);
-            } else if (lower.contains("not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, message);
-            } else {
-                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, message);
-            }
-        } catch (final Exception e) {
-            logger.error("Error starting profile chat", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
     public void getChats(final RoutingContext ctx) {
-        try {
-            final Long userId = getUserIdFromContext(ctx);
-            final int page = parseIntParam(ctx.request().getParam("page"), 1);
-            final int limit = parseIntParam(ctx.request().getParam("limit"), 20);
+        final Long userId = getUserIdFromContext(ctx);
+        final int page = parseIntParam(ctx.request().getParam("page"), 1);
+        final int limit = parseIntParam(ctx.request().getParam("limit"), 20);
 
-            final List<Chat> chats = chatService.getUserChats(userId, page, limit);
-            final int total = chatService.countUserChats(userId);
-            final List<Map<String, Object>> chatResponses = chats.stream()
-                .map(chat -> ResponseMapper.toChatResponse(chat).getMap())
-                .collect(Collectors.toList());
-
-            sendPaginatedSuccess(ctx, chatResponses, page, limit, total);
-        } catch (final Exception e) {
-            logger.error("Error getting chats", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-        }
+        chatService.getUserChats(userId, page, limit)
+            .compose(chats -> chatService.countUserChats(userId).map(total -> Map.entry(chats, total)))
+            .onSuccess(result -> {
+                final List<Map<String, Object>> chatResponses = result.getKey().stream()
+                    .map(chat -> ResponseMapper.toChatResponse(chat).getMap())
+                    .collect(Collectors.toList());
+                sendPaginatedSuccess(ctx, chatResponses, page, limit, result.getValue());
+            })
+            .onFailure(e -> {
+                logger.error("Error getting chats", e);
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+            });
     }
 
     public void getChat(final RoutingContext ctx) {
-        try {
-            final String chatId = ctx.pathParam("chatId");
-            final Long userId = getUserIdFromContext(ctx);
-
-            logger.info("Getting chat: chatId={}, userId={}", chatId, userId);
-
-            if (!chatService.isUserInChat(chatId, userId)) {
-                logger.warn("User {} denied access to chat {}", userId, chatId);
-                sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
-                return;
-            }
-
-            final Optional<Chat> chat = chatService.getChatById(chatId);
-            if (chat.isPresent()) {
-                logger.info("Chat found and returned: chatId={}", chatId);
-                sendSuccess(ctx, ResponseMapper.toChatResponse(chat.get()).getMap());
-            } else {
-                logger.warn("Chat not found: chatId={}", chatId);
-                sendError(ctx, 404, ErrorCodes.CHAT_NOT_FOUND, "Chat not found");
-            }
-        } catch (final Exception e) {
-            logger.error("Error getting chat: chatId={}", ctx.pathParam("chatId"), e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-        }
+        final String chatId = ctx.pathParam("chatId");
+        final Long userId = getUserIdFromContext(ctx);
+        chatService.isUserInChat(chatId, userId)
+            .compose(inChat -> {
+                if (!inChat) {
+                    return Future.failedFuture(new RuntimeException("Access denied"));
+                }
+                return chatService.getChatById(chatId);
+            })
+            .onSuccess(chat -> {
+                if (chat.isEmpty()) {
+                    sendError(ctx, 404, ErrorCodes.CHAT_NOT_FOUND, "Chat not found");
+                } else {
+                    sendSuccess(ctx, ResponseMapper.toChatResponse(chat.get()).getMap());
+                }
+            })
+            .onFailure(e -> {
+                if (e.getMessage() != null && e.getMessage().contains("Access denied")) {
+                    sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
+                } else {
+                    logger.error("Error getting chat: chatId={}", chatId, e);
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                }
+            });
     }
 
     public void getSearchStatus(final RoutingContext ctx) {
@@ -648,53 +656,55 @@ public class ApiHandler {
     }
 
     public void endChat(final RoutingContext ctx) {
-        try {
-            final String chatId = ctx.pathParam("chatId");
-            final Long userId = getUserIdFromContext(ctx);
+        final String chatId = ctx.pathParam("chatId");
+        final Long userId = getUserIdFromContext(ctx);
 
-            final Chat closedChat = chatService.endChat(chatId, userId);
-            if (closedChat != null) {
+        chatService.endChat(chatId, userId)
+            .onSuccess(closedChat -> {
                 webSocketHandler.notifyChatClosed(
                     closedChat.getId(),
                     closedChat.getClosedByUserId(),
                     closedChat.getClosureReason(),
                     closedChat.getClosedAt()
                 );
-            }
-
-            final JsonObject response = new JsonObject()
-                .put("success", true)
-                .put("chat", ResponseMapper.toChatResponse(closedChat).getMap());
-            sendSuccess(ctx, response);
-        } catch (final Exception e) {
-            logger.error("Error ending chat", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-        }
+                sendSuccess(ctx, new JsonObject()
+                    .put("success", true)
+                    .put("chat", ResponseMapper.toChatResponse(closedChat).getMap()));
+            })
+            .onFailure(e -> {
+                logger.error("Error ending chat", e);
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+            });
     }
 
     public void getMessages(final RoutingContext ctx) {
-        try {
-            final String chatId = ctx.pathParam("chatId");
-            final Long userId = getUserIdFromContext(ctx);
-            final int page = parseIntParam(ctx.request().getParam("page"), 1);
-            final int limit = parseIntParam(ctx.request().getParam("limit"), 50);
+        final String chatId = ctx.pathParam("chatId");
+        final Long userId = getUserIdFromContext(ctx);
+        final int page = parseIntParam(ctx.request().getParam("page"), 1);
+        final int limit = parseIntParam(ctx.request().getParam("limit"), 50);
 
-            if (!chatService.isUserInChat(chatId, userId)) {
-                sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
-                return;
-            }
-
-            final List<Message> messages = messageService.getChatMessages(chatId, page, limit);
-            final int total = (int) messageService.countMessages(chatId);
-            final List<Map<String, Object>> messageResponses = messages.stream()
-                .map(message -> ResponseMapper.toMessageResponse(message).getMap())
-                .collect(Collectors.toList());
-
-            sendPaginatedSuccess(ctx, messageResponses, page, limit, total);
-        } catch (final Exception e) {
-            logger.error("Error getting messages", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-        }
+        chatService.isUserInChat(chatId, userId)
+            .compose(inChat -> {
+                if (!inChat) {
+                    return Future.failedFuture(new RuntimeException("Access denied"));
+                }
+                return messageService.getChatMessages(chatId, page, limit)
+                    .compose(messages -> messageService.countMessages(chatId).map(total -> Map.entry(messages, total)));
+            })
+            .onSuccess(result -> {
+                final List<Map<String, Object>> messageResponses = result.getKey().stream()
+                    .map(message -> ResponseMapper.toMessageResponse(message).getMap())
+                    .collect(Collectors.toList());
+                sendPaginatedSuccess(ctx, messageResponses, page, limit, Math.toIntExact(result.getValue()));
+            })
+            .onFailure(e -> {
+                if (e.getMessage() != null && e.getMessage().contains("Access denied")) {
+                    sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
+                } else {
+                    logger.error("Error getting messages", e);
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                }
+            });
     }
 
     public void uploadImage(final RoutingContext ctx) {
@@ -764,40 +774,45 @@ public class ApiHandler {
             final String chatId = body.getString("chatId");
             final String text = body.getString("text", "");
             final String replyToMessageId = body.getString("replyToMessageId");
+            final String clientMessageId = body.getString("clientMessageId");
             final JsonArray attachmentsJson = body.getJsonArray("attachments");
             final List<Message.MessageAttachment> attachments = parseAttachments(attachmentsJson);
 
-            final Message message = messageService.sendMessage(userId, chatId, text, replyToMessageId, attachments);
-            final JsonObject messageJson = ResponseMapper.toMessageResponse(message);
-            final String senderName = resolveUserDisplayName(userId);
-
-            logger.info("Broadcasting message via WebSocket: chatId={}, messageId={}", chatId, message.getId());
-            webSocketHandler.sendMessageToUser(userId, "message", messageJson.copy());
-
-            final Optional<Chat> chatOpt = chatService.getChatById(chatId);
-            if (chatOpt.isPresent()) {
-                final Chat chat = chatOpt.get();
-                final Long companionId = chat.getCompanionId(userId);
-                if (companionId != null) {
-                    webSocketHandler.sendMessageToUser(companionId, "message", messageJson.copy());
-                    final String senderDisplayName =
-                        chat.getType() == Chat.ChatType.ANONYMOUS
-                            ? "Собеседник"
-                            : senderName;
-                    notificationService.sendNewMessageNotification(companionId, chat.getType(), senderDisplayName);
-                }
-            }
-
-            sendSuccess(ctx, messageJson.getMap());
+            messageService.sendMessage(userId, chatId, text, replyToMessageId, attachments, clientMessageId)
+                .compose(message -> {
+                    final JsonObject messageJson = ResponseMapper.toMessageResponse(message);
+                    return chatService.getChatById(chatId).compose(chatOpt -> {
+                        if (chatOpt.isEmpty()) {
+                            return Future.succeededFuture(messageJson);
+                        }
+                        final Chat chat = chatOpt.get();
+                        final Long companionId = chat.getCompanionId(userId);
+                        if (companionId == null) {
+                            return Future.succeededFuture(messageJson);
+                        }
+                        webSocketHandler.sendMessageToUser(companionId, "message", messageJson.copy());
+                        final Future<String> senderNameFuture = chat.getType() == Chat.ChatType.ANONYMOUS
+                            ? Future.succeededFuture("Собеседник")
+                            : resolveUserDisplayName(userId);
+                        return senderNameFuture
+                            .compose(senderDisplayName -> notificationService.sendNewMessageNotification(companionId, chat.getType(), senderDisplayName))
+                            .map(notification -> messageJson);
+                    });
+                })
+                .onSuccess(messageJson -> sendSuccess(ctx, messageJson.getMap()))
+                .onFailure(e -> {
+                    logger.error("Error sending message", e);
+                    if (e.getMessage() != null && e.getMessage().contains("Insufficient balance")) {
+                        sendError(ctx, 400, ErrorCodes.INSUFFICIENT_BALANCE, "Insufficient balance");
+                    } else if (e.getMessage() != null && e.getMessage().contains("blocked")) {
+                        sendError(ctx, 403, ErrorCodes.USER_BLOCKED, "User is blocked");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error sending message", e);
-            if (e.getMessage().contains("Insufficient balance")) {
-                sendError(ctx, 400, ErrorCodes.INSUFFICIENT_BALANCE, "Insufficient balance");
-            } else if (e.getMessage().contains("blocked")) {
-                sendError(ctx, 403, ErrorCodes.USER_BLOCKED, "User is blocked");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
@@ -808,17 +823,21 @@ public class ApiHandler {
             final JsonObject body = ctx.getBodyAsJson();
 
             final String text = body.getString("text");
-            final Message editedMessage = messageService.editMessage(messageId, userId, text);
-            sendSuccess(ctx, ResponseMapper.toMessageResponse(editedMessage).getMap());
+            messageService.editMessage(messageId, userId, text)
+                .onSuccess(editedMessage -> sendSuccess(ctx, ResponseMapper.toMessageResponse(editedMessage).getMap()))
+                .onFailure(e -> {
+                    logger.error("Error editing message", e);
+                    if (e.getMessage() != null && e.getMessage().contains("not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Message not found");
+                    } else if (e.getMessage() != null && e.getMessage().contains("only edit")) {
+                        sendError(ctx, 403, ErrorCodes.FORBIDDEN, "No permission to edit message");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error editing message", e);
-            if (e.getMessage().contains("not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Message not found");
-            } else if (e.getMessage().contains("permission")) {
-                sendError(ctx, 403, ErrorCodes.FORBIDDEN, "No permission to edit message");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
@@ -827,19 +846,21 @@ public class ApiHandler {
             final String messageId = ctx.pathParam("messageId");
             final Long userId = getUserIdFromContext(ctx);
 
-            messageService.deleteMessage(messageId, userId);
-
-            final JsonObject response = new JsonObject().put("success", true);
-            sendSuccess(ctx, response);
+            messageService.deleteMessage(messageId, userId)
+                .onSuccess(v -> sendSuccess(ctx, new JsonObject().put("success", true)))
+                .onFailure(e -> {
+                    logger.error("Error deleting message", e);
+                    if (e.getMessage() != null && e.getMessage().contains("not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Message not found");
+                    } else if (e.getMessage() != null && e.getMessage().contains("only delete")) {
+                        sendError(ctx, 403, ErrorCodes.FORBIDDEN, "No permission to delete message");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error deleting message", e);
-            if (e.getMessage().contains("not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Message not found");
-            } else if (e.getMessage().contains("permission")) {
-                sendError(ctx, 403, ErrorCodes.FORBIDDEN, "No permission to delete message");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
@@ -863,18 +884,22 @@ public class ApiHandler {
                 }
             }
 
-            final Report report = reportService.createReport(reporterId, targetId, chatId, messageId, reason, description);
-            sendSuccess(ctx, ResponseMapper.toReportResponse(report).getMap());
+            reportService.createReport(reporterId, targetId, chatId, messageId, reason, description)
+                .onSuccess(report -> sendSuccess(ctx, ResponseMapper.toReportResponse(report).getMap()))
+                .onFailure(e -> {
+                    logger.error("Error creating report", e);
+                    final String message = e.getMessage() != null ? e.getMessage() : "";
+                    if (message.contains("not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User or resource not found");
+                    } else if (message.contains("Report already exists")) {
+                        sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Вы уже отправили жалобу");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error creating report", e);
-            final String message = e.getMessage() != null ? e.getMessage() : "";
-            if (message.contains("not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User or resource not found");
-            } else if (message.contains("Report already exists")) {
-                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Вы уже отправили жалобу");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
@@ -884,33 +909,26 @@ public class ApiHandler {
             final int page = parseIntParam(ctx.request().getParam("page"), 1);
             final int limit = parseIntParam(ctx.request().getParam("limit"), 20);
 
-            final User currentUser = userService.getUserById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-            final List<Report> reports;
-            final int total;
-            if (currentUser.isAdmin()) {
-                reports = reportService.getAllReports(page, limit);
-                total = (int) reportService.countReports();
-            } else {
-                reports = reportService.getUserReports(userId, page, limit);
-                total = (int) reportService.countUserReports(userId);
-            }
-
-            final List<Map<String, Object>> payload = new ArrayList<>();
-            for (final Report report : reports) {
-                final JsonObject reportJson = ResponseMapper.toReportResponse(report);
-                if (report.getChatId() != null) {
-                    final List<Message> lastMessages = messageService.getRecentMessages(report.getChatId(), 5);
-                    final List<Map<String, Object>> mappedMessages = lastMessages.stream()
-                        .map(message -> ResponseMapper.toMessageResponse(message).getMap())
-                        .collect(Collectors.toList());
-                    reportJson.put("lastMessages", mappedMessages);
-                }
-                payload.add(reportJson.getMap());
-            }
-
-            sendPaginatedSuccess(ctx, payload, page, limit, total);
+            userService.getUserById(userId)
+                .compose(currentUser -> {
+                    if (currentUser.isEmpty()) {
+                        return Future.failedFuture(new RuntimeException("User not found"));
+                    }
+                    final Future<List<Report>> reportsFuture = currentUser.get().isAdmin()
+                        ? reportService.getAllReports(page, limit)
+                        : reportService.getUserReports(userId, page, limit);
+                    final Future<Long> totalFuture = currentUser.get().isAdmin()
+                        ? reportService.countReports()
+                        : reportService.countUserReports(userId);
+                    return reportsFuture.compose(reports ->
+                        totalFuture.compose(total ->
+                            buildReportPayload(reports).map(payload -> new ReportsResult(payload, Math.toIntExact(total)))));
+                })
+                .onSuccess(result -> sendPaginatedSuccess(ctx, result.payload(), page, limit, result.total()))
+                .onFailure(e -> {
+                    logger.error("Error getting reports", e);
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                });
         } catch (final Exception e) {
             logger.error("Error getting reports", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -920,14 +938,6 @@ public class ApiHandler {
     public void updateReportStatus(final RoutingContext ctx) {
         try {
             final Long userId = getUserIdFromContext(ctx);
-            final User currentUser = userService.getUserById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-            if (!currentUser.isAdmin()) {
-                sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
-                return;
-            }
-
             final String reportId = ctx.pathParam("reportId");
             final JsonObject body = ctx.getBodyAsJson();
             if (body == null || !body.containsKey("status")) {
@@ -944,19 +954,34 @@ public class ApiHandler {
                 return;
             }
 
-            reportService.updateReportStatus(reportId, status);
-            final Report updatedReport = reportService.getReportById(reportId)
-                .orElseThrow(() -> new RuntimeException("Report not found"));
-
-            final JsonObject payload = ResponseMapper.toReportResponse(updatedReport);
-            sendSuccess(ctx, payload.getMap());
+            userService.getUserById(userId)
+                .compose(currentUser -> {
+                    if (currentUser.isEmpty() || !currentUser.get().isAdmin()) {
+                        return Future.failedFuture(new RuntimeException("Access denied"));
+                    }
+                    return reportService.updateReportStatus(reportId, status)
+                        .compose(v -> reportService.getReportById(reportId));
+                })
+                .onSuccess(updatedReport -> {
+                    if (updatedReport.isEmpty()) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Report not found");
+                    } else {
+                        sendSuccess(ctx, ResponseMapper.toReportResponse(updatedReport.get()).getMap());
+                    }
+                })
+                .onFailure(e -> {
+                    logger.error("Error updating report status", e);
+                    if (e.getMessage() != null && e.getMessage().contains("Access denied")) {
+                        sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
+                    } else if (e.getMessage() != null && e.getMessage().contains("Report not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Report not found");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error updating report status", e);
-            if (e.getMessage() != null && e.getMessage().contains("Report not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Report not found");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
@@ -968,39 +993,35 @@ public class ApiHandler {
             final Long blockedUserId = body.getLong("userId");
             final String reason = body.getString("reason");
 
-            final BlackListItem blackListItem = blackListService.blockUser(userId, blockedUserId, reason);
-            final List<Chat> closedChats = chatService.closeChatsBetween(
-                userId,
-                blockedUserId,
-                Chat.ChatClosureReason.BLOCKED
-            );
-
-            for (final Chat closedChat : closedChats) {
-                webSocketHandler.notifyChatClosed(
-                    closedChat.getId(),
-                    closedChat.getClosedByUserId(),
-                    closedChat.getClosureReason(),
-                    closedChat.getClosedAt()
-                );
-            }
-
-            final JsonObject response = ResponseMapper.toBlackListItemResponse(blackListItem);
-            response.put(
-                "closedChats",
-                closedChats.stream()
-                    .map(chat -> ResponseMapper.toChatResponse(chat).getMap())
-                    .collect(Collectors.toList())
-            );
-            sendSuccess(ctx, response);
+            blackListService.blockUser(userId, blockedUserId, reason)
+                .compose(blackListItem -> chatService.closeChatsBetween(userId, blockedUserId, Chat.ChatClosureReason.BLOCKED)
+                    .map(closedChats -> Map.entry(blackListItem, closedChats)))
+                .onSuccess(result -> {
+                    result.getValue().forEach(closedChat -> webSocketHandler.notifyChatClosed(
+                        closedChat.getId(),
+                        closedChat.getClosedByUserId(),
+                        closedChat.getClosureReason(),
+                        closedChat.getClosedAt()
+                    ));
+                    final JsonObject response = ResponseMapper.toBlackListItemResponse(result.getKey());
+                    response.put("closedChats", result.getValue().stream()
+                        .map(chat -> ResponseMapper.toChatResponse(chat).getMap())
+                        .collect(Collectors.toList()));
+                    sendSuccess(ctx, response);
+                })
+                .onFailure(e -> {
+                    logger.error("Error blocking user", e);
+                    if (e.getMessage() != null && e.getMessage().contains("not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
+                    } else if (e.getMessage() != null && e.getMessage().contains("already blocked")) {
+                        sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "User already blocked");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error blocking user", e);
-            if (e.getMessage().contains("not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
-            } else if (e.getMessage().contains("already blocked")) {
-                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "User already blocked");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
@@ -1009,29 +1030,27 @@ public class ApiHandler {
             final Long userId = getUserIdFromContext(ctx);
             final Long blockedUserId = Long.valueOf(ctx.pathParam("userId"));
 
-            blackListService.unblockUser(userId, blockedUserId);
-
-            final List<Chat> reopenedChats = chatService.reopenChatsBetween(userId, blockedUserId);
-            for (final Chat reopened : reopenedChats) {
-                webSocketHandler.notifyChatReopened(reopened.getId());
-            }
-
-            final JsonObject response = new JsonObject()
-                .put("success", true)
-                .put(
-                    "reopenedChats",
-                    reopenedChats.stream()
-                        .map(chat -> ResponseMapper.toChatResponse(chat).getMap())
-                        .collect(Collectors.toList())
-                );
-            sendSuccess(ctx, response);
+            blackListService.unblockUser(userId, blockedUserId)
+                .compose(v -> chatService.reopenChatsBetween(userId, blockedUserId))
+                .onSuccess(reopenedChats -> {
+                    reopenedChats.forEach(reopened -> webSocketHandler.notifyChatReopened(reopened.getId()));
+                    sendSuccess(ctx, new JsonObject()
+                        .put("success", true)
+                        .put("reopenedChats", reopenedChats.stream()
+                            .map(chat -> ResponseMapper.toChatResponse(chat).getMap())
+                            .collect(Collectors.toList())));
+                })
+                .onFailure(e -> {
+                    logger.error("Error unblocking user", e);
+                    if (e.getMessage() != null && e.getMessage().contains("not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found in blacklist");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error unblocking user", e);
-            if (e.getMessage().contains("not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found in blacklist");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
@@ -1041,12 +1060,19 @@ public class ApiHandler {
             final int page = parseIntParam(ctx.request().getParam("page"), 1);
             final int limit = parseIntParam(ctx.request().getParam("limit"), 20);
 
-            final List<BlackListItem> blackList = blackListService.getUserBlackList(userId, page, limit);
-            final int total = (int) blackListService.getBlockedUsersCount(userId);
-            final List<Map<String, Object>> payload = blackList.stream()
-                .map(item -> ResponseMapper.toBlackListItemResponse(item).getMap())
-                .collect(Collectors.toList());
-            sendPaginatedSuccess(ctx, payload, page, limit, total);
+            blackListService.getUserBlackList(userId, page, limit)
+                .compose(blackList -> blackListService.getBlockedUsersCount(userId)
+                    .map(total -> Map.entry(blackList, Math.toIntExact(total))))
+                .onSuccess(result -> {
+                    final List<Map<String, Object>> payload = result.getKey().stream()
+                        .map(item -> ResponseMapper.toBlackListItemResponse(item).getMap())
+                        .collect(Collectors.toList());
+                    sendPaginatedSuccess(ctx, payload, page, limit, result.getValue());
+                })
+                .onFailure(e -> {
+                    logger.error("Error getting blacklist", e);
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                });
         } catch (final Exception e) {
             logger.error("Error getting blacklist", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -1057,9 +1083,12 @@ public class ApiHandler {
         try {
             final Long userId = getUserIdFromContext(ctx);
             final Long blockedUserId = Long.valueOf(ctx.pathParam("userId"));
-            final boolean blocked = blackListService.isUserBlocked(userId, blockedUserId);
-
-            sendSuccess(ctx, new JsonObject().put("blocked", blocked));
+            blackListService.isUserBlocked(userId, blockedUserId)
+                .onSuccess(blocked -> sendSuccess(ctx, new JsonObject().put("blocked", blocked)))
+                .onFailure(e -> {
+                    logger.error("Error getting blacklist status", e);
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                });
         } catch (final Exception e) {
             logger.error("Error getting blacklist status", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -1069,59 +1098,66 @@ public class ApiHandler {
     public void banUser(final RoutingContext ctx) {
         try {
             final Long adminId = getUserIdFromContext(ctx);
-            final User admin = userService.getUserById(adminId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-            if (!admin.isAdmin()) {
-                sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
-                return;
-            }
-
             final Long targetId = Long.valueOf(ctx.pathParam("userId"));
             final JsonObject body = ctx.getBodyAsJson();
             final String reason = body != null ? body.getString("reason") : null;
 
-            final User bannedUser = userService.banUser(targetId, reason);
-            final List<Chat> closedChats = chatService.closeAllChatsForUser(targetId, Chat.ChatClosureReason.SYSTEM);
-            for (final Chat chat : closedChats) {
-                webSocketHandler.notifyChatClosed(
-                    chat.getId(),
-                    chat.getClosedByUserId(),
-                    chat.getClosureReason(),
-                    chat.getClosedAt()
-                );
-            }
-
-            sendSuccess(ctx, ResponseMapper.toUserResponse(bannedUser).getMap());
+            userService.getUserById(adminId)
+                .compose(admin -> {
+                    if (admin.isEmpty() || !admin.get().isAdmin()) {
+                        return Future.failedFuture(new RuntimeException("Access denied"));
+                    }
+                    return userService.banUser(targetId, reason)
+                        .compose(bannedUser -> chatService.closeAllChatsForUser(targetId, Chat.ChatClosureReason.SYSTEM)
+                            .map(closedChats -> Map.entry(bannedUser, closedChats)));
+                })
+                .onSuccess(result -> {
+                    result.getValue().forEach(chat -> webSocketHandler.notifyChatClosed(
+                        chat.getId(), chat.getClosedByUserId(), chat.getClosureReason(), chat.getClosedAt()
+                    ));
+                    sendSuccess(ctx, ResponseMapper.toUserResponse(result.getKey()).getMap());
+                })
+                .onFailure(e -> {
+                    logger.error("Error banning user", e);
+                    if (e.getMessage() != null && e.getMessage().contains("Access denied")) {
+                        sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
+                    } else if (e.getMessage() != null && e.getMessage().contains("User not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error banning user", e);
-            if (e.getMessage() != null && e.getMessage().contains("User not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
     public void unbanUser(final RoutingContext ctx) {
         try {
             final Long adminId = getUserIdFromContext(ctx);
-            final User admin = userService.getUserById(adminId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-            if (!admin.isAdmin()) {
-                sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
-                return;
-            }
-
             final Long targetId = Long.valueOf(ctx.pathParam("userId"));
-            final User unbannedUser = userService.unbanUser(targetId);
-            sendSuccess(ctx, ResponseMapper.toUserResponse(unbannedUser).getMap());
+            userService.getUserById(adminId)
+                .compose(admin -> {
+                    if (admin.isEmpty() || !admin.get().isAdmin()) {
+                        return Future.failedFuture(new RuntimeException("Access denied"));
+                    }
+                    return userService.unbanUser(targetId);
+                })
+                .onSuccess(unbannedUser -> sendSuccess(ctx, ResponseMapper.toUserResponse(unbannedUser).getMap()))
+                .onFailure(e -> {
+                    logger.error("Error unbanning user", e);
+                    if (e.getMessage() != null && e.getMessage().contains("Access denied")) {
+                        sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
+                    } else if (e.getMessage() != null && e.getMessage().contains("User not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error unbanning user", e);
-            if (e.getMessage() != null && e.getMessage().contains("User not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "User not found");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
@@ -1136,19 +1172,13 @@ public class ApiHandler {
     }
 
     public void getActiveSubscription(final RoutingContext ctx) {
-        try {
-            final Long userId = getUserIdFromContext(ctx);
-            final Optional<Subscription> subscription = subscriptionService.getActiveSubscription(userId);
-
-            if (subscription.isPresent()) {
-                sendSuccess(ctx, subscription.get());
-            } else {
-                sendSuccess(ctx, null);
-            }
-        } catch (final Exception e) {
-            logger.error("Error getting active subscription", e);
-            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-        }
+        final Long userId = getUserIdFromContext(ctx);
+        subscriptionService.getActiveSubscription(userId)
+            .onSuccess(subscription -> sendSuccess(ctx, subscription.orElse(null)))
+            .onFailure(e -> {
+                logger.error("Error getting active subscription", e);
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+            });
     }
 
     public void purchaseSubscription(final RoutingContext ctx) {
@@ -1160,35 +1190,36 @@ public class ApiHandler {
             final String paymentMethodStr = body.getString("paymentMethod");
             final Subscription.PaymentMethod paymentMethod = Subscription.PaymentMethod.valueOf(paymentMethodStr.toUpperCase());
 
-            final Subscription subscription = subscriptionService.purchaseSubscription(userId, planId, paymentMethod);
-            sendSuccess(ctx, subscription);
+            subscriptionService.purchaseSubscription(userId, planId, paymentMethod)
+                .onSuccess(subscription -> sendSuccess(ctx, subscription))
+                .onFailure(e -> {
+                    logger.error("Error purchasing subscription", e);
+                    if (e.getMessage() != null && e.getMessage().contains("Insufficient balance")) {
+                        sendError(ctx, 400, ErrorCodes.INSUFFICIENT_BALANCE, "Insufficient balance");
+                    } else if (e.getMessage() != null && e.getMessage().contains("already active")) {
+                        sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Subscription already active");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error purchasing subscription", e);
-            if (e.getMessage().contains("Insufficient balance")) {
-                sendError(ctx, 400, ErrorCodes.INSUFFICIENT_BALANCE, "Insufficient balance");
-            } else if (e.getMessage().contains("already active")) {
-                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Subscription already active");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
     public void cancelSubscription(final RoutingContext ctx) {
-        try {
-            final Long userId = getUserIdFromContext(ctx);
-            subscriptionService.cancelSubscription(userId);
-
-            final JsonObject response = new JsonObject().put("success", true);
-            sendSuccess(ctx, response);
-        } catch (final Exception e) {
-            logger.error("Error cancelling subscription", e);
-            if (e.getMessage().contains("no active subscription")) {
-                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "No active subscription to cancel");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
-        }
+        final Long userId = getUserIdFromContext(ctx);
+        subscriptionService.cancelSubscription(userId)
+            .onSuccess(v -> sendSuccess(ctx, new JsonObject().put("success", true)))
+            .onFailure(e -> {
+                logger.error("Error cancelling subscription", e);
+                if (e.getMessage() != null && e.getMessage().contains("no active subscription")) {
+                    sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "No active subscription to cancel");
+                } else {
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                }
+            });
     }
 
     public void getNotifications(final RoutingContext ctx) {
@@ -1197,9 +1228,14 @@ public class ApiHandler {
             final int page = parseIntParam(ctx.request().getParam("page"), 1);
             final int limit = parseIntParam(ctx.request().getParam("limit"), 20);
 
-            final List<Notification> notifications = notificationService.getUserNotifications(userId, page, limit);
-            final int total = notificationService.countUserNotifications(userId);
-            sendPaginatedSuccess(ctx, notifications, page, limit, total);
+            notificationService.getUserNotifications(userId, page, limit)
+                .compose(notifications -> notificationService.countUserNotifications(userId)
+                    .map(total -> Map.entry(notifications, total)))
+                .onSuccess(result -> sendPaginatedSuccess(ctx, result.getKey(), page, limit, result.getValue()))
+                .onFailure(e -> {
+                    logger.error("Error getting notifications", e);
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                });
         } catch (final Exception e) {
             logger.error("Error getting notifications", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -1214,10 +1250,12 @@ public class ApiHandler {
                 .map(Object::toString)
                 .collect(Collectors.toList());
 
-            notificationService.markNotificationsAsRead(notificationIds);
-
-            final JsonObject response = new JsonObject().put("success", true);
-            sendSuccess(ctx, response);
+            notificationService.markNotificationsAsRead(notificationIds)
+                .onSuccess(v -> sendSuccess(ctx, new JsonObject().put("success", true)))
+                .onFailure(e -> {
+                    logger.error("Error marking notifications as read", e);
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                });
         } catch (final Exception e) {
             logger.error("Error marking notifications as read", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -1229,17 +1267,19 @@ public class ApiHandler {
             final String notificationId = ctx.pathParam("notificationId");
             final Long userId = getUserIdFromContext(ctx);
 
-            notificationService.deleteNotification(notificationId, userId);
-
-            final JsonObject response = new JsonObject().put("success", true);
-            sendSuccess(ctx, response);
+            notificationService.deleteNotification(notificationId, userId)
+                .onSuccess(v -> sendSuccess(ctx, new JsonObject().put("success", true)))
+                .onFailure(e -> {
+                    logger.error("Error deleting notification", e);
+                    if (e.getMessage() != null && e.getMessage().contains("not found")) {
+                        sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Notification not found");
+                    } else {
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
         } catch (final Exception e) {
             logger.error("Error deleting notification", e);
-            if (e.getMessage().contains("not found")) {
-                sendError(ctx, 404, ErrorCodes.NOT_FOUND, "Notification not found");
-            } else {
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
     }
 
@@ -1249,30 +1289,34 @@ public class ApiHandler {
             final JsonObject body = ctx.getBodyAsJson();
             final boolean enabled = body == null || body.getBoolean("enabled", true);
 
-            userService.updateCommunityNotifications(userId, enabled);
-            boolean testSent = false;
-            UserService.RewardClaimResult rewardResult = null;
-            if (enabled) {
-                testSent = notificationService.sendCommunityTestNotification(userId);
-                try {
-                    rewardResult = userService.claimReward(userId, UserService.RewardType.COMMUNITY, true);
-                } catch (final RuntimeException rewardException) {
-                    logger.info("Community reward not issued for user {}: {}", userId, rewardException.getMessage());
-                } catch (final Exception rewardException) {
-                    logger.warn("Failed to issue community reward for user {}", userId, rewardException);
-                }
-            }
-
-            final JsonObject response = new JsonObject()
-                .put("enabled", enabled)
-                .put("testSent", testSent);
-            if (rewardResult != null) {
-                response
-                    .put("rewarded", rewardResult.rewardedAmount())
-                    .put("balance", rewardResult.balance())
-                    .put("rewards", toRewardsJson(rewardResult.rewards()));
-            }
-            sendSuccess(ctx, response);
+            userService.updateCommunityNotifications(userId, enabled)
+                .compose(user -> {
+                    if (!enabled) {
+                        return Future.succeededFuture(new CommunityNotificationsResult(false, null));
+                    }
+                    return notificationService.sendCommunityTestNotification(userId)
+                        .compose(testSent -> userService.claimReward(userId, UserService.RewardType.COMMUNITY, true)
+                            .map(reward -> new CommunityNotificationsResult(testSent, reward))
+                            .otherwise(error -> {
+                                logger.info("Community reward not issued for user {}: {}", userId, error.getMessage());
+                                return new CommunityNotificationsResult(testSent, null);
+                            }));
+                })
+                .onSuccess(result -> {
+                    final JsonObject response = new JsonObject()
+                        .put("enabled", enabled)
+                        .put("testSent", result.testSent());
+                    if (result.rewardResult() != null) {
+                        response.put("rewarded", result.rewardResult().rewardedAmount())
+                            .put("balance", result.rewardResult().balance())
+                            .put("rewards", toRewardsJson(result.rewardResult().rewards()));
+                    }
+                    sendSuccess(ctx, response);
+                })
+                .onFailure(e -> {
+                    logger.error("Error updating community notifications", e);
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Failed to update community notifications");
+                });
         } catch (final Exception e) {
             logger.error("Error updating community notifications", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Failed to update community notifications");
@@ -1281,12 +1325,16 @@ public class ApiHandler {
 
     public void getOnlineStats(final RoutingContext ctx) {
         try {
-            final UserService.OnlineStats stats = userService.getOnlineStats();
-            final JsonObject response = new JsonObject()
-                .put("anonymousChats", chatService.getActiveAnonymousChatsCount())
-                .put("totalUsers", stats.totalUsers())
-                .put("activeUsers", stats.activeUsers());
-            sendSuccess(ctx, response);
+            userService.getOnlineStats()
+                .map(stats -> new JsonObject()
+                    .put("anonymousSearchUsers", chatService.getSearchQueueSize())
+                    .put("totalUsers", stats.totalUsers())
+                    .put("activeUsers", stats.activeUsers()))
+                .onSuccess(response -> sendSuccess(ctx, response))
+                .onFailure(e -> {
+                    logger.error("Error getting online stats", e);
+                    sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                });
         } catch (final Exception e) {
             logger.error("Error getting online stats", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
@@ -1395,14 +1443,14 @@ public class ApiHandler {
         }
     }
 
-    private String resolveUserDisplayName(final Long userId) {
+    private Future<String> resolveUserDisplayName(final Long userId) {
         if (userId == null) {
-            return "Пользователь";
+            return Future.succeededFuture("Пользователь");
         }
         return userService.getUserById(userId)
-            .map(user -> {
-                final String first = user.getFirstName() != null ? user.getFirstName().trim() : "";
-                final String last = user.getLastName() != null ? user.getLastName().trim() : "";
+            .map(user -> user.map(value -> {
+                final String first = value.getFirstName() != null ? value.getFirstName().trim() : "";
+                final String last = value.getLastName() != null ? value.getLastName().trim() : "";
                 final String full = (first + ' ' + last).trim();
                 if (!full.isEmpty()) {
                     return full;
@@ -1414,28 +1462,38 @@ public class ApiHandler {
                     return last;
                 }
                 return "Пользователь #" + userId;
-            })
-            .orElse("Пользователь #" + userId);
+            }).orElse("Пользователь #" + userId));
     }
 
-    private boolean shouldMaskUser(final Long viewerId, final User target) {
+    private Future<Boolean> shouldMaskUser(final Long viewerId, final User target) {
         if (target == null || target.getId() == null) {
-            return true;
+            return Future.succeededFuture(true);
         }
 
         if (target.getId().equals(viewerId)) {
-            return false;
+            return Future.succeededFuture(false);
         }
 
         if (viewerId != null) {
-            final Optional<User> viewer = userService.getUserById(viewerId);
-            if (viewer.isPresent() && viewer.get().isAdmin()) {
-                return false;
-            }
-            return !chatService.hasRegularChatBetween(viewerId, target.getId());
+            return userService.getUserById(viewerId)
+                .compose(viewer -> {
+                    if (viewer.isPresent() && viewer.get().isAdmin()) {
+                        return Future.succeededFuture(false);
+                    }
+                    return chatService.hasRegularChatBetween(viewerId, target.getId()).map(hasChat -> !hasChat);
+                });
         }
 
-        return true;
+        return Future.succeededFuture(true);
+    }
+
+    private Future<List<Map<String, Object>>> buildReportPayload(final List<Report> reports) {
+        if (reports == null || reports.isEmpty()) {
+            return Future.succeededFuture(List.of());
+        }
+        return Future.succeededFuture(reports.stream()
+            .map(report -> ResponseMapper.toReportResponse(report).getMap())
+            .toList());
     }
 
     private void sendSuccess(final RoutingContext ctx, final Object data) {
@@ -1525,6 +1583,12 @@ public class ApiHandler {
             .setStatusCode(statusCode)
             .putHeader("Content-Type", "application/json")
             .end(error.encode());
+    }
+
+    private record ReportsResult(List<Map<String, Object>> payload, int total) {
+    }
+
+    private record CommunityNotificationsResult(boolean testSent, UserService.RewardClaimResult rewardResult) {
     }
 
 }

@@ -1,19 +1,21 @@
 package com.tindapp.repository;
 
+import io.vertx.core.Future;
+
 import java.util.List;
 import java.util.Optional;
 
 public interface Repository<T, ID> {
 
-    T save(T entity);
+    Future<T> save(T entity);
 
-    Optional<T> findById(ID id);
+    Future<Optional<T>> findById(ID id);
 
-    List<T> findAll(int page, int limit);
+    Future<List<T>> findAll(int page, int limit);
 
-    void deleteById(ID id);
+    Future<Void> deleteById(ID id);
 
-    boolean existsById(ID id);
+    Future<Boolean> existsById(ID id);
 
-    long count();
+    Future<Long> count();
 }

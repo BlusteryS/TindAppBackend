@@ -1,33 +1,32 @@
 package com.tindapp.repository;
 
 import com.tindapp.model.Chat;
+import io.vertx.core.Future;
 
 import java.util.List;
 import java.util.Optional;
 
 public interface ChatRepository extends Repository<Chat, String> {
 
-    List<Chat> findByParticipantId(Long userId, int page, int limit);
+    Future<List<Chat>> findByParticipantId(Long userId, int page, int limit);
 
-    List<Chat> findByParticipantIdAndActive(Long userId, boolean isActive);
+    Future<List<Chat>> findByParticipantIdAndActive(Long userId, boolean isActive);
 
-    Optional<Chat> findActiveAnonymousChat(Long userId);
+    Future<Optional<Chat>> findActiveAnonymousChat(Long userId);
 
-    void updateLastMessage(String chatId, String messageId);
+    Future<Void> updateLastMessage(String chatId, String messageId);
 
-    void updateUnreadCount(String chatId, Integer count);
+    Future<Void> updateUnreadCount(String chatId, Integer count);
 
-    void markChatAsInactive(String chatId);
+    Future<Void> markChatAsInactive(String chatId);
 
-    boolean isParticipant(String chatId, Long userId);
+    Future<Boolean> isParticipant(String chatId, Long userId);
 
-    Optional<Chat> findByParticipants(Long user1Id, Long user2Id, Chat.ChatType type);
+    Future<Optional<Chat>> findByParticipants(Long user1Id, Long user2Id, Chat.ChatType type);
 
-    List<Chat> findByParticipants(Long user1Id, Long user2Id, boolean isActive, Chat.ChatClosureReason closureReason);
+    Future<List<Chat>> findByParticipants(Long user1Id, Long user2Id, boolean isActive, Chat.ChatClosureReason closureReason);
 
-    boolean existsActiveBetweenParticipants(Long user1Id, Long user2Id);
+    Future<Boolean> existsActiveBetweenParticipants(Long user1Id, Long user2Id);
 
-    long countByParticipantId(Long userId);
-
-    long countActiveByType(Chat.ChatType type);
+    Future<Long> countByParticipantId(Long userId);
 }

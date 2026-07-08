@@ -4,10 +4,10 @@ import com.tindapp.model.Chat;
 import com.tindapp.model.Message;
 import com.tindapp.repository.ChatRepository;
 import com.tindapp.util.DateTimeUtils;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import io.vertx.pgclient.PgPool;
 import io.vertx.sqlclient.Row;
-import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
 import java.time.OffsetDateTime;
@@ -28,12 +28,12 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
     }
 
     @Override
-    public Chat save(final Chat chat) {
+    public Future<Chat> save(final Chat chat) {
         if (chat == null) {
-            throw new IllegalArgumentException("Chat is null");
+            return Future.failedFuture(new IllegalArgumentException("Chat is null"));
         }
         if (chat.getId() == null || chat.getId().isBlank()) {
-            throw new IllegalArgumentException("Chat id is required");
+            return Future.failedFuture(new IllegalArgumentException("Chat id is required"));
         }
         if (chat.getCreatedAt() == null) {
             chat.setCreatedAt(DateTimeUtils.nowAsIso());
@@ -58,7 +58,7 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
         final JsonObject settingsJson = toJson(chat.getSettings());
         final JsonObject lastMessageJson = chat.getLastMessage() != null ? toJson(chat.getLastMessage()) : null;
 
-        execute("""
+        return execute("""
             INSERT INTO chats (
                 id, type, user1_id, user2_id, participant_low_id, participant_high_id,
                 last_message, last_message_id, unread_count, settings, is_active,
@@ -98,92 +98,107 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
             chat.getClosedByUserId(),
             chat.getClosureReason() != null ? chat.getClosureReason().name() : null,
             toOffset(chat.getClosedAt())
-        ));
-        return chat;
+        )).map(chat);
     }
 
     @Override
-    public Optional<Chat> findById(final String id) {
+    public Future<Optional<Chat>> findById(final String id) {
         if (id == null || id.isBlank()) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
-        return firstRow("SELECT " + CHAT_COLUMNS + " FROM chats WHERE id = $1 LIMIT 1", Tuple.of(id))
-            .map(this::mapChat);
+        return queryOptional("SELECT " + CHAT_COLUMNS + " FROM chats WHERE id = $1 LIMIT 1", Tuple.of(id), this::mapChat);
     }
 
-    public List<Chat> findAll(final int page, final int limit) {
+    @Override
+    public Future<List<Chat>> findAll(final int page, final int limit) {
         final int safeLimit = safeLimit(limit, MAX_LIMIT);
-        return queryChats(
+        return queryList(
             "SELECT " + CHAT_COLUMNS + " FROM chats ORDER BY updated_at DESC LIMIT $1 OFFSET $2",
-            Tuple.of(safeLimit, offset(page, safeLimit))
+            Tuple.of(safeLimit, offset(page, safeLimit)),
+            this::mapChat
         );
     }
 
     @Override
-    public List<Chat> findByParticipantIdAndActive(final Long userId, final boolean isActive) {
+    public Future<List<Chat>> findByParticipantIdAndActive(final Long userId, final boolean isActive) {
         if (userId == null) {
-            return List.of();
+            return Future.succeededFuture(List.of());
         }
-        return queryChats(
+        return queryList(
             "SELECT " + CHAT_COLUMNS + " FROM chats WHERE (user1_id = $1 OR user2_id = $1) AND is_active = $2 ORDER BY updated_at DESC",
-            Tuple.of(userId, isActive)
+            Tuple.of(userId, isActive),
+            this::mapChat
         );
     }
 
     @Override
-    public List<Chat> findByParticipantId(final Long userId, final int page, final int limit) {
+    public Future<List<Chat>> findByParticipantId(final Long userId, final int page, final int limit) {
         if (userId == null) {
-            return List.of();
+            return Future.succeededFuture(List.of());
         }
         final int safeLimit = safeLimit(limit, MAX_LIMIT);
-        return queryChats(
+        return queryList(
             "SELECT " + CHAT_COLUMNS + " FROM chats WHERE user1_id = $1 OR user2_id = $1 ORDER BY updated_at DESC LIMIT $2 OFFSET $3",
-            Tuple.of(userId, safeLimit, offset(page, safeLimit))
+            Tuple.of(userId, safeLimit, offset(page, safeLimit)),
+            this::mapChat
         );
     }
 
     @Override
-    public Optional<Chat> findActiveAnonymousChat(final Long userId) {
+    public Future<Optional<Chat>> findActiveAnonymousChat(final Long userId) {
         if (userId == null) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
-        return firstRow(
+        return queryOptional(
             "SELECT " + CHAT_COLUMNS + " FROM chats WHERE type = 'ANONYMOUS' AND is_active = TRUE AND (user1_id = $1 OR user2_id = $1) ORDER BY updated_at DESC LIMIT 1",
-            Tuple.of(userId)
-        ).map(this::mapChat);
+            Tuple.of(userId),
+            this::mapChat
+        );
     }
 
     @Override
-    public void updateLastMessage(final String chatId, final String messageId) {
-        findById(chatId).ifPresent(chat -> {
+    public Future<Void> updateLastMessage(final String chatId, final String messageId) {
+        return findById(chatId).compose(chatOpt -> {
+            if (chatOpt.isEmpty()) {
+                return Future.succeededFuture();
+            }
+            final Chat chat = chatOpt.get();
             if (chat.getLastMessage() == null) {
                 chat.setLastMessage(new Message());
             }
             chat.getLastMessage().setId(messageId);
-            save(chat);
+            return save(chat).mapEmpty();
         });
     }
 
     @Override
-    public void updateUnreadCount(final String chatId, final Integer count) {
-        findById(chatId).ifPresent(chat -> {
+    public Future<Void> updateUnreadCount(final String chatId, final Integer count) {
+        return findById(chatId).compose(chatOpt -> {
+            if (chatOpt.isEmpty()) {
+                return Future.succeededFuture();
+            }
+            final Chat chat = chatOpt.get();
             chat.setUnreadCount(count != null ? count : 0);
-            save(chat);
+            return save(chat).mapEmpty();
         });
     }
 
     @Override
-    public void markChatAsInactive(final String chatId) {
-        findById(chatId).ifPresent(chat -> {
+    public Future<Void> markChatAsInactive(final String chatId) {
+        return findById(chatId).compose(chatOpt -> {
+            if (chatOpt.isEmpty()) {
+                return Future.succeededFuture();
+            }
+            final Chat chat = chatOpt.get();
             chat.setIsActive(false);
-            save(chat);
+            return save(chat).mapEmpty();
         });
     }
 
     @Override
-    public boolean isParticipant(final String chatId, final Long userId) {
+    public Future<Boolean> isParticipant(final String chatId, final Long userId) {
         if (chatId == null || userId == null) {
-            return false;
+            return Future.succeededFuture(false);
         }
         return exists(
             "SELECT 1 FROM chats WHERE id = $1 AND (user1_id = $2 OR user2_id = $2) LIMIT 1",
@@ -192,10 +207,10 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
     }
 
     @Override
-    public List<Chat> findByParticipants(final Long user1Id, final Long user2Id, final boolean isActive,
-                                         final Chat.ChatClosureReason closureReason) {
+    public Future<List<Chat>> findByParticipants(final Long user1Id, final Long user2Id, final boolean isActive,
+                                                 final Chat.ChatClosureReason closureReason) {
         if (user1Id == null || user2Id == null) {
-            return List.of();
+            return Future.succeededFuture(List.of());
         }
         final long participantLowId = Math.min(user1Id, user2Id);
         final long participantHighId = Math.max(user1Id, user2Id);
@@ -211,26 +226,27 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
             params.add(closureReason.name());
         }
         sql.append(" ORDER BY updated_at DESC");
-        return queryChats(sql.toString(), Tuple.tuple(params));
+        return queryList(sql.toString(), Tuple.tuple(params), this::mapChat);
     }
 
     @Override
-    public Optional<Chat> findByParticipants(final Long user1Id, final Long user2Id, final Chat.ChatType type) {
+    public Future<Optional<Chat>> findByParticipants(final Long user1Id, final Long user2Id, final Chat.ChatType type) {
         if (user1Id == null || user2Id == null || type == null) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
         final long participantLowId = Math.min(user1Id, user2Id);
         final long participantHighId = Math.max(user1Id, user2Id);
-        return firstRow(
+        return queryOptional(
             "SELECT " + CHAT_COLUMNS + " FROM chats WHERE participant_low_id = $1 AND participant_high_id = $2 AND type = $3 AND is_active = TRUE ORDER BY updated_at DESC LIMIT 1",
-            Tuple.of(participantLowId, participantHighId, type.name())
-        ).map(this::mapChat);
+            Tuple.of(participantLowId, participantHighId, type.name()),
+            this::mapChat
+        );
     }
 
     @Override
-    public boolean existsActiveBetweenParticipants(final Long user1Id, final Long user2Id) {
+    public Future<Boolean> existsActiveBetweenParticipants(final Long user1Id, final Long user2Id) {
         if (user1Id == null || user2Id == null) {
-            return false;
+            return Future.succeededFuture(false);
         }
         final long participantLowId = Math.min(user1Id, user2Id);
         final long participantHighId = Math.max(user1Id, user2Id);
@@ -241,9 +257,9 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
     }
 
     @Override
-    public long countByParticipantId(final Long userId) {
+    public Future<Long> countByParticipantId(final Long userId) {
         if (userId == null) {
-            return 0L;
+            return Future.succeededFuture(0L);
         }
         return countRows(
             "SELECT COUNT(*) AS cnt FROM chats WHERE user1_id = $1 OR user2_id = $1",
@@ -252,41 +268,21 @@ public class PostgresChatRepository extends AbstractPostgresRepository implement
     }
 
     @Override
-    public long countActiveByType(final Chat.ChatType type) {
-        if (type == null) {
-            return 0L;
+    public Future<Void> deleteById(final String id) {
+        return execute("DELETE FROM chats WHERE id = $1", Tuple.of(id)).mapEmpty();
+    }
+
+    @Override
+    public Future<Boolean> existsById(final String id) {
+        if (id == null || id.isBlank()) {
+            return Future.succeededFuture(false);
         }
-        return countRows(
-            "SELECT COUNT(*) AS cnt FROM chats WHERE type = $1 AND is_active = TRUE",
-            Tuple.of(type.name())
-        );
-    }
-
-    @Override
-    public void deleteById(final String id) {
-        execute("DELETE FROM chats WHERE id = $1", Tuple.of(id));
-    }
-
-    @Override
-    public boolean existsById(final String id) {
         return exists("SELECT 1 FROM chats WHERE id = $1 LIMIT 1", Tuple.of(id));
     }
 
     @Override
-    public long count() {
+    public Future<Long> count() {
         return countRows("SELECT COUNT(*) AS cnt FROM chats");
-    }
-
-    private List<Chat> queryChats(final String sql, final Tuple params) {
-        final RowSet<Row> rows = execute(sql, params);
-        final List<Chat> chats = new ArrayList<>();
-        for (final Row row : rows) {
-            final Chat chat = mapChat(row);
-            if (chat != null) {
-                chats.add(chat);
-            }
-        }
-        return chats;
     }
 
     private Chat mapChat(final Row row) {

@@ -2,14 +2,13 @@ package com.tindapp.repository.postgres;
 
 import com.tindapp.model.BlackListItem;
 import com.tindapp.repository.BlackListRepository;
+import io.vertx.core.Future;
 import io.vertx.pgclient.PgPool;
 import io.vertx.sqlclient.Row;
-import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,9 +23,9 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
     }
 
     @Override
-    public BlackListItem save(final BlackListItem entity) {
+    public Future<BlackListItem> save(final BlackListItem entity) {
         if (entity == null) {
-            throw new IllegalArgumentException("BlackListItem is null");
+            return Future.failedFuture(new IllegalArgumentException("BlackListItem is null"));
         }
         if (entity.getId() == null || entity.getId().isBlank()) {
             entity.setId(UUID.randomUUID().toString());
@@ -35,7 +34,7 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
             entity.setCreatedAt(LocalDateTime.now());
         }
 
-        execute("""
+        return execute("""
             INSERT INTO blacklist (id, user_id, blocked_user_id, reason, created_at)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (id) DO UPDATE SET
@@ -49,54 +48,61 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
             entity.getBlockedUserId(),
             entity.getReason(),
             toOffset(entity.getCreatedAt())
-        ));
-        return entity;
+        )).map(entity);
     }
 
     @Override
-    public Optional<BlackListItem> findById(final String id) {
+    public Future<Optional<BlackListItem>> findById(final String id) {
         if (id == null || id.isBlank()) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
-        return firstRow(
+        return queryOptional(
             "SELECT " + BLACKLIST_COLUMNS + " FROM blacklist WHERE id = $1 LIMIT 1",
-            Tuple.of(id)
-        ).map(this::mapItem);
+            Tuple.of(id),
+            this::mapItem
+        );
     }
 
-    public List<BlackListItem> findAll(final int page, final int limit) {
+    @Override
+    public Future<List<BlackListItem>> findAll(final int page, final int limit) {
         final int safeLimit = safeLimit(limit, MAX_LIMIT);
-        return queryItems(
+        return queryList(
             "SELECT " + BLACKLIST_COLUMNS + " FROM blacklist ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-            Tuple.of(safeLimit, offset(page, safeLimit))
+            Tuple.of(safeLimit, offset(page, safeLimit)),
+            this::mapItem
         );
     }
 
     @Override
-    public List<BlackListItem> findByUserId(final Long userId, final int page, final int limit) {
+    public Future<List<BlackListItem>> findByUserId(final Long userId, final int page, final int limit) {
         if (userId == null) {
-            return List.of();
+            return Future.succeededFuture(List.of());
         }
         final int safeLimit = safeLimit(limit, MAX_LIMIT);
-        return queryItems(
+        return queryList(
             "SELECT " + BLACKLIST_COLUMNS + " FROM blacklist WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
-            Tuple.of(userId, safeLimit, offset(page, safeLimit))
+            Tuple.of(userId, safeLimit, offset(page, safeLimit)),
+            this::mapItem
         );
     }
 
     @Override
-    public Optional<BlackListItem> findByUserIdAndBlockedUserId(final Long userId, final Long blockedUserId) {
+    public Future<Optional<BlackListItem>> findByUserIdAndBlockedUserId(final Long userId, final Long blockedUserId) {
         if (userId == null || blockedUserId == null) {
-            return Optional.empty();
+            return Future.succeededFuture(Optional.empty());
         }
-        return firstRow(
+        return queryOptional(
             "SELECT " + BLACKLIST_COLUMNS + " FROM blacklist WHERE user_id = $1 AND blocked_user_id = $2 LIMIT 1",
-            Tuple.of(userId, blockedUserId)
-        ).map(this::mapItem);
+            Tuple.of(userId, blockedUserId),
+            this::mapItem
+        );
     }
 
     @Override
-    public boolean isBlocked(final Long userId, final Long blockedUserId) {
+    public Future<Boolean> isBlocked(final Long userId, final Long blockedUserId) {
+        if (userId == null || blockedUserId == null) {
+            return Future.succeededFuture(false);
+        }
         return exists(
             "SELECT 1 FROM blacklist WHERE user_id = $1 AND blocked_user_id = $2 LIMIT 1",
             Tuple.of(userId, blockedUserId)
@@ -104,9 +110,9 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
     }
 
     @Override
-    public boolean existsByBlockedUserId(final Long blockedUserId) {
+    public Future<Boolean> existsByBlockedUserId(final Long blockedUserId) {
         if (blockedUserId == null) {
-            return false;
+            return Future.succeededFuture(false);
         }
         return exists(
             "SELECT 1 FROM blacklist WHERE blocked_user_id = $1 LIMIT 1",
@@ -115,55 +121,53 @@ public class PostgresBlackListRepository extends AbstractPostgresRepository impl
     }
 
     @Override
-    public void unblockUser(final Long userId, final Long blockedUserId) {
-        deleteByUserIdAndBlockedUserId(userId, blockedUserId);
+    public Future<Void> unblockUser(final Long userId, final Long blockedUserId) {
+        return deleteByUserIdAndBlockedUserId(userId, blockedUserId);
     }
 
     @Override
-    public long countByUserId(final Long userId) {
+    public Future<Long> countByUserId(final Long userId) {
+        if (userId == null) {
+            return Future.succeededFuture(0L);
+        }
         return countRows("SELECT COUNT(*) AS cnt FROM blacklist WHERE user_id = $1", Tuple.of(userId));
     }
 
     @Override
-    public long countByBlockedUserId(final Long blockedUserId) {
+    public Future<Long> countByBlockedUserId(final Long blockedUserId) {
+        if (blockedUserId == null) {
+            return Future.succeededFuture(0L);
+        }
         return countRows("SELECT COUNT(*) AS cnt FROM blacklist WHERE blocked_user_id = $1", Tuple.of(blockedUserId));
     }
 
     @Override
-    public void deleteByUserIdAndBlockedUserId(final Long userId, final Long blockedUserId) {
-        execute("DELETE FROM blacklist WHERE user_id = $1 AND blocked_user_id = $2", Tuple.of(userId, blockedUserId));
+    public Future<Void> deleteByUserIdAndBlockedUserId(final Long userId, final Long blockedUserId) {
+        return execute("DELETE FROM blacklist WHERE user_id = $1 AND blocked_user_id = $2", Tuple.of(userId, blockedUserId))
+            .mapEmpty();
     }
 
     @Override
-    public void deleteByUserId(final Long userId) {
-        execute("DELETE FROM blacklist WHERE user_id = $1", Tuple.of(userId));
+    public Future<Void> deleteByUserId(final Long userId) {
+        return execute("DELETE FROM blacklist WHERE user_id = $1", Tuple.of(userId)).mapEmpty();
     }
 
     @Override
-    public void deleteById(final String id) {
-        execute("DELETE FROM blacklist WHERE id = $1", Tuple.of(id));
+    public Future<Void> deleteById(final String id) {
+        return execute("DELETE FROM blacklist WHERE id = $1", Tuple.of(id)).mapEmpty();
     }
 
     @Override
-    public boolean existsById(final String id) {
+    public Future<Boolean> existsById(final String id) {
+        if (id == null || id.isBlank()) {
+            return Future.succeededFuture(false);
+        }
         return exists("SELECT 1 FROM blacklist WHERE id = $1 LIMIT 1", Tuple.of(id));
     }
 
     @Override
-    public long count() {
+    public Future<Long> count() {
         return countRows("SELECT COUNT(*) AS cnt FROM blacklist");
-    }
-
-    private List<BlackListItem> queryItems(final String sql, final Tuple params) {
-        final RowSet<Row> rows = execute(sql, params);
-        final List<BlackListItem> items = new ArrayList<>();
-        for (final Row row : rows) {
-            final BlackListItem item = mapItem(row);
-            if (item != null) {
-                items.add(item);
-            }
-        }
-        return items;
     }
 
     private BlackListItem mapItem(final Row row) {
