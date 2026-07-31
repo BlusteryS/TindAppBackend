@@ -11,7 +11,7 @@ public interface MessageRepository extends Repository<Message, String> {
 
     Future<Void> markAsRead(String messageId);
 
-    Future<Void> markMessagesAsRead(String chatId, List<String> messageIds);
+    Future<Void> markMessagesAsRead(String chatId, Long readerId, List<String> messageIds);
 
     Future<Long> countUnreadMessagesByChatId(String chatId);
 

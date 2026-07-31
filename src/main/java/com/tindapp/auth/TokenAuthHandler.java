@@ -11,7 +11,7 @@ public class TokenAuthHandler implements Handler<RoutingContext> {
 
     private static final Logger logger = LoggerFactory.getLogger(TokenAuthHandler.class);
     private static final String AUTH_HEADER = "Authorization";
-    private static final String TOKEN_PREFIX = "Bearer ";
+    private static final String TOKEN_PREFIX = "VK ";
 
     public enum ErrorCodes {
         UNAUTHORIZED("UNAUTHORIZED");
@@ -61,16 +61,11 @@ public class TokenAuthHandler implements Handler<RoutingContext> {
 
     private String extractToken(final RoutingContext context) {
         final String authHeader = context.request().getHeader(AUTH_HEADER);
-        if (authHeader == null || authHeader.isEmpty()) {
+        if (authHeader == null || !authHeader.startsWith(TOKEN_PREFIX)) {
             return null;
         }
-        if (authHeader.startsWith(TOKEN_PREFIX)) {
-            return authHeader.substring(TOKEN_PREFIX.length()).trim();
-        }
-        if (authHeader.startsWith("VK ")) {
-            return authHeader.substring(3).trim();
-        }
-        return authHeader.trim();
+        final String token = authHeader.substring(TOKEN_PREFIX.length()).trim();
+        return token.isEmpty() ? null : token;
     }
 
     private void sendUnauthorized(final RoutingContext context, final ErrorCodes errorCode, final String message) {

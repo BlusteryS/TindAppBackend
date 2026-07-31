@@ -11,6 +11,7 @@ import com.tindapp.model.Subscription;
 import com.tindapp.model.User;
 import com.tindapp.service.BlackListService;
 import com.tindapp.service.ChatService;
+import com.tindapp.service.EventStreamService;
 import com.tindapp.service.LocationService;
 import com.tindapp.service.MessageService;
 import com.tindapp.service.NotificationService;
@@ -35,6 +36,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 public class ApiHandler {
@@ -72,15 +74,15 @@ public class ApiHandler {
     private final SubscriptionService subscriptionService;
     private final ReportService reportService;
     private final BlackListService blackListService;
-    private final WebSocketHandler webSocketHandler;
     private final LocationService locationService;
     private final ProfileService profileService;
+    private final EventStreamService eventStreamService;
 
     public ApiHandler(final UserService userService, final ChatService chatService, final MessageService messageService,
                       final NotificationService notificationService, final SubscriptionService subscriptionService,
                       final ReportService reportService, final BlackListService blackListService,
-                      final WebSocketHandler webSocketHandler, final LocationService locationService,
-                      final ProfileService profileService) {
+                      final LocationService locationService, final ProfileService profileService,
+                      final EventStreamService eventStreamService) {
         this.userService = userService;
         this.chatService = chatService;
         this.messageService = messageService;
@@ -88,9 +90,9 @@ public class ApiHandler {
         this.subscriptionService = subscriptionService;
         this.reportService = reportService;
         this.blackListService = blackListService;
-        this.webSocketHandler = webSocketHandler;
         this.locationService = locationService;
         this.profileService = profileService;
+        this.eventStreamService = eventStreamService;
 
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
@@ -307,7 +309,8 @@ public class ApiHandler {
                 nativeLanguage
             ).onSuccess(updatedUser -> {
                 sendSuccess(ctx, ResponseMapper.toUserResponse(updatedUser).getMap());
-                webSocketHandler.notifyProfileUpdated(updatedUser);
+                eventStreamService.broadcast("profiles_changed", new JsonObject()
+                    .put("profileId", updatedUser.getId()));
             }).onFailure(e -> {
                 logger.error("Error updating profile", e);
                 sendError(ctx, 500, ErrorCodes.SERVER_ERROR, e.getMessage());
@@ -625,34 +628,156 @@ public class ApiHandler {
     }
 
     public void getSearchStatus(final RoutingContext ctx) {
-        logger.info("=== getSearchStatus method called ===");
-        logger.info("Request path: {}, method: {}", ctx.request().path(), ctx.request().method());
-        logger.info("Headers: Authorization={}", ctx.request().getHeader("Authorization"));
         try {
-
             final Long userId = getUserIdFromContext(ctx);
-
-            final boolean isSearching = chatService.isSearchingCompanion(userId);
-            final int queueSize = chatService.getSearchQueueSize();
-
-            final JsonObject response = new JsonObject()
-                .put("isSearching", isSearching)
-                .put("queueSize", queueSize);
-
-            sendSuccess(ctx, response);
-        } catch (final RuntimeException e) {
-            if (e.getMessage().contains("User ID not found in context")) {
-                logger.error("Authentication error in getSearchStatus: context has currentUser={}, userId={}",
-                    ctx.get("currentUser"), ctx.get("userId"), e);
-                sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
-            } else {
-                logger.error("Runtime error in getSearchStatus", e);
-                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
-            }
+            sendSuccess(ctx, new JsonObject()
+                .put("isSearching", chatService.isSearchingCompanion(userId))
+                .put("queueSize", chatService.getSearchQueueSize()));
         } catch (final Exception e) {
             logger.error("Error getting search status", e);
             sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
         }
+    }
+
+    public void startCompanionSearch(final RoutingContext ctx) {
+        try {
+            final Long userId = getUserIdFromContext(ctx);
+            final JsonObject body = ctx.getBodyAsJson() != null ? ctx.getBodyAsJson() : new JsonObject();
+            final JsonArray ageRange = body.getJsonArray("ageRange", new JsonArray().add(18).add(80));
+            final int minAge = ageRange.size() > 0 && ageRange.getValue(0) instanceof Number number ? number.intValue() : 18;
+            final int maxAge = ageRange.size() > 1 && ageRange.getValue(1) instanceof Number number ? number.intValue() : 80;
+            final ChatService.SearchFilters filters = new ChatService.SearchFilters(
+                body.getString("gender", "any"),
+                new int[]{minAge, maxAge},
+                body.getString("preference", "communication"),
+                body.getString("city")
+            );
+
+            chatService.findCompanion(userId, filters)
+                .onSuccess(result -> {
+                    if (result.matchResult() != null) {
+                        publishMatchFound(userId, result.matchResult());
+                    }
+                    sendSuccess(ctx, new JsonObject()
+                        .put("isSearching", result.inQueue())
+                        .put("queueSize", result.queueSize())
+                        .put("message", result.message()));
+                })
+                .onFailure(error -> {
+                    logger.error("Error starting companion search for user {}", userId, error);
+                    final String message = error.getMessage() != null ? error.getMessage() : "Failed to start search";
+                    final ErrorCodes code = message.contains("Insufficient balance")
+                        ? ErrorCodes.INSUFFICIENT_BALANCE
+                        : ErrorCodes.VALIDATION_ERROR;
+                    sendError(ctx, 400, code, message);
+                });
+        } catch (final Exception e) {
+            logger.error("Error starting companion search", e);
+            sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Invalid search filters");
+        }
+    }
+
+    public void stopCompanionSearch(final RoutingContext ctx) {
+        try {
+            final Long userId = getUserIdFromContext(ctx);
+            chatService.cancelCompanionSearch(userId);
+            sendSuccess(ctx, new JsonObject()
+                .put("isSearching", false)
+                .put("queueSize", chatService.getSearchQueueSize()));
+        } catch (final Exception e) {
+            logger.error("Error stopping companion search", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Failed to stop search");
+        }
+    }
+
+    private JsonObject toMatchJson(final ChatService.MatchResult match) {
+        final JsonObject companion = new JsonObject()
+            .put("id", match.companion().id())
+            .put("nickname", match.companion().nickname())
+            .put("isVerified", match.companion().isVerified())
+            .put("isOnline", match.companion().isOnline());
+        return new JsonObject()
+            .put("chatId", match.chatId())
+            .put("companion", companion)
+            .put("cost", match.cost());
+    }
+
+    private void publishMatchFound(final Long userId, final ChatService.MatchResult match) {
+        eventStreamService.publishToUser(userId, "match_found", toMatchJson(match));
+        eventStreamService.publishToUser(match.companion().id(), "match_found", new JsonObject()
+            .put("chatId", match.chatId())
+            .put("cost", match.cost())
+            .put("companion", new JsonObject()
+                .put("id", userId)
+                .put("nickname", "Собеседник #" + userId)
+                .put("isVerified", false)
+                .put("isOnline", true)));
+    }
+
+    public void openEventStream(final RoutingContext ctx) {
+        eventStreamService.open(ctx, getUserIdFromContext(ctx));
+    }
+
+    public void updateChatPresence(final RoutingContext ctx) {
+        final Boolean active = getRequiredActivityState(ctx);
+        if (active == null) {
+            return;
+        }
+        updateChatActivity(ctx, "chat presence", active, (userId, chat) -> eventStreamService.setChatPresence(
+            userId,
+            chat.getId(),
+            chat.getCompanionId(userId),
+            active
+        ));
+    }
+
+    public void updateTyping(final RoutingContext ctx) {
+        final Boolean active = getRequiredActivityState(ctx);
+        if (active == null) {
+            return;
+        }
+        updateChatActivity(ctx, "typing", active, (userId, chat) -> eventStreamService.publishToUser(
+            chat.getCompanionId(userId),
+            "typing",
+            new JsonObject()
+                .put("chatId", chat.getId())
+                .put("userId", userId)
+                .put("active", active)
+        ));
+    }
+
+    private Boolean getRequiredActivityState(final RoutingContext ctx) {
+        final JsonObject body = ctx.getBodyAsJson();
+        if (body == null || !(body.getValue("active") instanceof Boolean active)) {
+            sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "active must be a boolean");
+            return null;
+        }
+        return active;
+    }
+
+    private void updateChatActivity(final RoutingContext ctx, final String operation, final boolean active,
+                                    final BiConsumer<Long, Chat> update) {
+        final Long userId = getUserIdFromContext(ctx);
+        final String chatId = ctx.pathParam("chatId");
+
+        chatService.getChatById(chatId)
+            .onSuccess(chatOptional -> {
+                if (chatOptional.isEmpty()) {
+                    sendError(ctx, 404, ErrorCodes.CHAT_NOT_FOUND, "Chat not found");
+                    return;
+                }
+                final Chat chat = chatOptional.get();
+                if (!chat.hasParticipant(userId)) {
+                    sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
+                    return;
+                }
+                update.accept(userId, chat);
+                sendSuccess(ctx, new JsonObject().put("active", active));
+            })
+            .onFailure(error -> {
+                logger.error("Failed to update {} for chat {}", operation, chatId, error);
+                sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+            });
     }
 
     public void endChat(final RoutingContext ctx) {
@@ -661,11 +786,10 @@ public class ApiHandler {
 
         chatService.endChat(chatId, userId)
             .onSuccess(closedChat -> {
-                webSocketHandler.notifyChatClosed(
-                    closedChat.getId(),
-                    closedChat.getClosedByUserId(),
-                    closedChat.getClosureReason(),
-                    closedChat.getClosedAt()
+                eventStreamService.publishToUsers(
+                    List.of(closedChat.getUser1Id(), closedChat.getUser2Id()),
+                    "chat_closed",
+                    toChatStateEvent(closedChat)
                 );
                 sendSuccess(ctx, new JsonObject()
                     .put("success", true)
@@ -705,6 +829,66 @@ public class ApiHandler {
                     sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
                 }
             });
+    }
+
+    public void markMessagesAsRead(final RoutingContext ctx) {
+        try {
+            final String chatId = ctx.pathParam("chatId");
+            final Long userId = getUserIdFromContext(ctx);
+            final JsonObject body = ctx.getBodyAsJson();
+
+            if (body == null) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "Request body is required");
+                return;
+            }
+
+            final JsonArray messageIdsJson = body.getJsonArray("messageIds");
+            if (chatId == null || chatId.isBlank() || messageIdsJson == null || messageIdsJson.isEmpty()) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "chatId and messageIds are required");
+                return;
+            }
+
+            final List<String> messageIds = messageIdsJson.stream()
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(id -> !id.isBlank())
+                .distinct()
+                .collect(Collectors.toList());
+
+            if (messageIds.isEmpty()) {
+                sendError(ctx, 400, ErrorCodes.VALIDATION_ERROR, "messageIds must contain strings");
+                return;
+            }
+
+            messageService.markMessagesAsRead(chatId, userId, messageIds)
+                .compose(v -> chatService.getChatById(chatId))
+                .onSuccess(chatOptional -> {
+                    chatOptional.ifPresent(chat -> eventStreamService.publishToUser(
+                        chat.getCompanionId(userId),
+                        "messages_read",
+                        new JsonObject()
+                            .put("chatId", chatId)
+                            .put("messageIds", new JsonArray(messageIds))
+                            .put("userId", userId)
+                            .put("readAt", java.time.LocalDateTime.now().toString())
+                    ));
+                    sendSuccess(ctx, new JsonObject().put("success", true));
+                })
+                .onFailure(e -> {
+                    final String message = e.getMessage() != null ? e.getMessage() : "Unable to mark messages as read";
+                    if (message.contains("Chat not found")) {
+                        sendError(ctx, 404, ErrorCodes.CHAT_NOT_FOUND, message);
+                    } else if (message.contains("not a participant") || message.contains("Access denied")) {
+                        sendError(ctx, 403, ErrorCodes.FORBIDDEN, "Access denied");
+                    } else {
+                        logger.error("Error marking messages as read", e);
+                        sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+                    }
+                });
+        } catch (final Exception e) {
+            logger.error("Error marking messages as read", e);
+            sendError(ctx, 500, ErrorCodes.SERVER_ERROR, "Internal server error");
+        }
     }
 
     public void uploadImage(final RoutingContext ctx) {
@@ -790,7 +974,7 @@ public class ApiHandler {
                         if (companionId == null) {
                             return Future.succeededFuture(messageJson);
                         }
-                        webSocketHandler.sendMessageToUser(companionId, "message", messageJson.copy());
+                        eventStreamService.publishToUser(companionId, "message", messageJson.copy());
                         final Future<String> senderNameFuture = chat.getType() == Chat.ChatType.ANONYMOUS
                             ? Future.succeededFuture("Собеседник")
                             : resolveUserDisplayName(userId);
@@ -824,7 +1008,10 @@ public class ApiHandler {
 
             final String text = body.getString("text");
             messageService.editMessage(messageId, userId, text)
-                .onSuccess(editedMessage -> sendSuccess(ctx, ResponseMapper.toMessageResponse(editedMessage).getMap()))
+                .onSuccess(editedMessage -> {
+                    publishMessageEvent(userId, "message_updated", ResponseMapper.toMessageResponse(editedMessage));
+                    sendSuccess(ctx, ResponseMapper.toMessageResponse(editedMessage).getMap());
+                })
                 .onFailure(e -> {
                     logger.error("Error editing message", e);
                     if (e.getMessage() != null && e.getMessage().contains("not found")) {
@@ -846,8 +1033,16 @@ public class ApiHandler {
             final String messageId = ctx.pathParam("messageId");
             final Long userId = getUserIdFromContext(ctx);
 
-            messageService.deleteMessage(messageId, userId)
-                .onSuccess(v -> sendSuccess(ctx, new JsonObject().put("success", true)))
+            messageService.getMessageById(messageId)
+                .compose(messageOptional -> messageOptional
+                    .map(message -> messageService.deleteMessage(messageId, userId).map(ignored -> message))
+                    .orElseGet(() -> Future.failedFuture(new RuntimeException("Message not found"))))
+                .onSuccess(deletedMessage -> {
+                    publishMessageEvent(userId, "message_deleted", new JsonObject()
+                        .put("id", deletedMessage.getId())
+                        .put("chatId", deletedMessage.getChatId()));
+                    sendSuccess(ctx, new JsonObject().put("success", true));
+                })
                 .onFailure(e -> {
                     logger.error("Error deleting message", e);
                     if (e.getMessage() != null && e.getMessage().contains("not found")) {
@@ -997,11 +1192,10 @@ public class ApiHandler {
                 .compose(blackListItem -> chatService.closeChatsBetween(userId, blockedUserId, Chat.ChatClosureReason.BLOCKED)
                     .map(closedChats -> Map.entry(blackListItem, closedChats)))
                 .onSuccess(result -> {
-                    result.getValue().forEach(closedChat -> webSocketHandler.notifyChatClosed(
-                        closedChat.getId(),
-                        closedChat.getClosedByUserId(),
-                        closedChat.getClosureReason(),
-                        closedChat.getClosedAt()
+                    result.getValue().forEach(closedChat -> eventStreamService.publishToUsers(
+                        List.of(closedChat.getUser1Id(), closedChat.getUser2Id()),
+                        "chat_closed",
+                        toChatStateEvent(closedChat)
                     ));
                     final JsonObject response = ResponseMapper.toBlackListItemResponse(result.getKey());
                     response.put("closedChats", result.getValue().stream()
@@ -1033,7 +1227,11 @@ public class ApiHandler {
             blackListService.unblockUser(userId, blockedUserId)
                 .compose(v -> chatService.reopenChatsBetween(userId, blockedUserId))
                 .onSuccess(reopenedChats -> {
-                    reopenedChats.forEach(reopened -> webSocketHandler.notifyChatReopened(reopened.getId()));
+                    reopenedChats.forEach(reopened -> eventStreamService.publishToUsers(
+                        List.of(reopened.getUser1Id(), reopened.getUser2Id()),
+                        "chat_reopened",
+                        toChatStateEvent(reopened)
+                    ));
                     sendSuccess(ctx, new JsonObject()
                         .put("success", true)
                         .put("reopenedChats", reopenedChats.stream()
@@ -1112,8 +1310,10 @@ public class ApiHandler {
                             .map(closedChats -> Map.entry(bannedUser, closedChats)));
                 })
                 .onSuccess(result -> {
-                    result.getValue().forEach(chat -> webSocketHandler.notifyChatClosed(
-                        chat.getId(), chat.getClosedByUserId(), chat.getClosureReason(), chat.getClosedAt()
+                    result.getValue().forEach(chat -> eventStreamService.publishToUsers(
+                        List.of(chat.getUser1Id(), chat.getUser2Id()),
+                        "chat_closed",
+                        toChatStateEvent(chat)
                     ));
                     sendSuccess(ctx, ResponseMapper.toUserResponse(result.getKey()).getMap());
                 })
@@ -1441,6 +1641,26 @@ public class ApiHandler {
             default:
                 return Message.MessageAttachment.AttachmentType.IMAGE;
         }
+    }
+
+    private void publishMessageEvent(final Long senderId, final String event, final JsonObject payload) {
+        final String chatId = payload.getString("chatId");
+        if (chatId == null) {
+            return;
+        }
+        chatService.getChatById(chatId)
+            .onSuccess(chatOptional -> chatOptional.ifPresent(chat ->
+                eventStreamService.publishToUser(chat.getCompanionId(senderId), event, payload)))
+            .onFailure(error -> logger.warn("Failed to publish {} for chat {}", event, chatId, error));
+    }
+
+    private JsonObject toChatStateEvent(final Chat chat) {
+        return new JsonObject()
+            .put("chatId", chat.getId())
+            .put("isActive", chat.getIsActive())
+            .put("closedByUserId", chat.getClosedByUserId())
+            .put("reason", chat.getClosureReason() != null ? chat.getClosureReason().name() : null)
+            .put("closedAt", chat.getClosedAt());
     }
 
     private Future<String> resolveUserDisplayName(final Long userId) {

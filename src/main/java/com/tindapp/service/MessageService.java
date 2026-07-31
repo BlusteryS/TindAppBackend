@@ -101,7 +101,7 @@ public class MessageService {
                     return FutureUtils.failed("User is not a participant of this chat");
                 }
                 chat.resetUnreadCount();
-                return messageRepository.markMessagesAsRead(chatId, messageIds)
+                return messageRepository.markMessagesAsRead(chatId, userId, messageIds)
                     .compose(v -> chatRepository.save(chat).mapEmpty());
             });
     }

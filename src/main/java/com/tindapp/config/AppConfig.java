@@ -32,7 +32,7 @@ public class AppConfig {
     public static final int VK_PAY_COIN_RATE = 100; // 1 рубль = 100 фиан
     public static final int VOTES_COIN_RATE = 10;   // 1 голос = 10 фиан
 
-    public static final int TYPING_CLEANUP_INTERVAL = 10000; // 10 seconds
+    // Presence is refreshed by the authenticated SSE heartbeat.
     public static final Duration ONLINE_STATUS_TTL = Duration.ofMinutes(3);
     public static final long ONLINE_STATUS_CLEANUP_INTERVAL_MS = Duration.ofMinutes(1).toMillis();
     public static final Duration EXTERNAL_HTTP_CONNECT_TIMEOUT = Duration.ofSeconds(4);

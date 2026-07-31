@@ -93,21 +93,24 @@ public class ChatService {
                     ? updateUserBalanceForChat(user, chatCost)
                     : Future.succeededFuture(user);
                 return chatRepository.save(chat)
-                    .compose(savedChat -> balanceFuture.map(updatedUser -> new FindCompanionResult(
-                        new MatchResult(
-                            savedChat.getId(),
-                            new CompanionInfo(
-                                queueResult.companion().id(),
-                                queueResult.companion().nickname(),
-                                queueResult.companion().isVerified(),
-                                queueResult.companion().isOnline()
+                    .compose(savedChat -> balanceFuture.compose(updatedUser -> FutureUtils.all(List.of(
+                            notificationService.sendMatchFoundNotification(user.getId(), "Собеседник"),
+                            notificationService.sendMatchFoundNotification(queueResult.companion().id(), "Собеседник")
+                        )).map(ignored -> new FindCompanionResult(
+                            new MatchResult(
+                                savedChat.getId(),
+                                new CompanionInfo(
+                                    queueResult.companion().id(),
+                                    queueResult.companion().nickname(),
+                                    queueResult.companion().isVerified(),
+                                    queueResult.companion().isOnline()
+                                ),
+                                chatCost
                             ),
-                            chatCost
-                        ),
-                        false,
-                        queueSize,
-                        null
-                    )));
+                            false,
+                            queueSize,
+                            null
+                        ))));
             });
     }
 

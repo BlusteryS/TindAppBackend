@@ -34,18 +34,15 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
     private final SubscriptionService subscriptionService;
     private final UserService userService;
     private final NotificationService notificationService;
-    private final WebSocketHandler webSocketHandler;
 
     public VkPaymentHandler(final String clientSecret,
                             final SubscriptionService subscriptionService,
                             final UserService userService,
-                            final NotificationService notificationService,
-                            final WebSocketHandler webSocketHandler) {
+                            final NotificationService notificationService) {
         this.clientSecret = clientSecret;
         this.subscriptionService = subscriptionService;
         this.userService = userService;
         this.notificationService = notificationService;
-        this.webSocketHandler = webSocketHandler;
     }
 
     @Override
@@ -313,7 +310,7 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
     }
 
     private Future<Void> notifySubscriptionUpdate(final User user, final Subscription subscription, final String message) {
-        if (user == null || notificationService == null || webSocketHandler == null) {
+        if (user == null || notificationService == null) {
             return Future.succeededFuture();
         }
         final JsonObject subscriptionJson = subscription != null ? JsonObject.mapFrom(subscription) : null;
@@ -327,11 +324,7 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
                 "Подписка",
                 message,
                 data.isEmpty() ? null : data
-            )
-            .map(notification -> {
-                webSocketHandler.sendNotificationToUser(user.getId(), JsonObject.mapFrom(notification));
-                return (Void) null;
-            });
+            ).mapEmpty();
     }
 
     private Future<JsonObject> paymentFailure(final int errorCode,

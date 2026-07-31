@@ -8,7 +8,6 @@ import com.tindapp.db.DatabaseMigrator;
 import com.tindapp.db.PostgresClientFactory;
 import com.tindapp.handler.ApiHandler;
 import com.tindapp.handler.VkPaymentHandler;
-import com.tindapp.handler.WebSocketHandler;
 import com.tindapp.repository.BlackListRepository;
 import com.tindapp.repository.ChatRepository;
 import com.tindapp.repository.MessageRepository;
@@ -25,6 +24,7 @@ import com.tindapp.repository.postgres.PostgresSubscriptionRepository;
 import com.tindapp.repository.postgres.PostgresUserRepository;
 import com.tindapp.service.BlackListService;
 import com.tindapp.service.ChatService;
+import com.tindapp.service.EventStreamService;
 import com.tindapp.service.LocationService;
 import com.tindapp.service.MessageService;
 import com.tindapp.service.NotificationService;
@@ -55,7 +55,6 @@ import java.io.File;
 public class MainVerticle extends AbstractVerticle {
     private static final Logger logger = LoggerFactory.getLogger(MainVerticle.class);
 
-    private WebSocketHandler webSocketHandler;
     private ApiHandler apiHandler;
     private VkPaymentHandler vkPaymentHandler;
     private TokenAuthHandler tokenAuthHandler;
@@ -93,7 +92,6 @@ public class MainVerticle extends AbstractVerticle {
                 final int port = config().getInteger("http.port", AppConfig.HTTP_PORT);
                 return server
                     .requestHandler(router)
-                    .webSocketHandler(webSocketHandler::handle)
                     .listen(port)
                     .mapEmpty()
                     .onSuccess(ignored -> logger.info("TindApp server started on port {}", port));
@@ -133,12 +131,18 @@ public class MainVerticle extends AbstractVerticle {
                 final BlackListRepository blackListRepository = new PostgresBlackListRepository(pgPool);
 
                 final UserService userService = new UserService(vertx, userRepository);
+                final EventStreamService eventStreamService = new EventStreamService(vertx, userService);
                 final ProfileService profileService = new ProfileService(userRepository);
                 final VkGroupNotificationService vkGroupNotificationService = new VkGroupNotificationService(
                     AppConfig.VK_COMMUNITY_ACCESS_TOKEN,
                     AppConfig.VK_COMMUNITY_GROUP_ID
                 );
-                final NotificationService notificationService = new NotificationService(notificationRepository, userService, vkGroupNotificationService);
+                final NotificationService notificationService = new NotificationService(
+                    notificationRepository,
+                    userService,
+                    vkGroupNotificationService,
+                    eventStreamService
+                );
                 final ChatService chatService = new ChatService(chatRepository, userRepository, userService, notificationService);
                 final BlackListService blackListService = new BlackListService(blackListRepository, userRepository);
                 final TranslationService translationService = new TranslationService();
@@ -148,20 +152,16 @@ public class MainVerticle extends AbstractVerticle {
                 final TokenService tokenService = new TokenService(userService);
 
                 return userService.markAllOffline()
-                    .onSuccess(ignored -> logger.info("Reset online statuses before accepting WebSocket connections"))
+                    .onSuccess(ignored -> {
+                        logger.info("Reset stale online statuses during startup");
+                        vertx.setPeriodic(AppConfig.ONLINE_STATUS_CLEANUP_INTERVAL_MS, timerId ->
+                            userService.markStaleOnlineUsersOffline(AppConfig.ONLINE_STATUS_TTL)
+                                .onFailure(error -> logger.warn("Failed to cleanup stale online statuses", error)));
+                    })
                     .map(ignored -> {
                         tokenAuthHandler = new TokenAuthHandler(tokenService);
                         authHandler = new AuthHandler(config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET), userService, tokenService);
                         final LocationService locationService = LocationService.getInstance();
-                        webSocketHandler = new WebSocketHandler(
-                            vertx,
-                            chatService,
-                            messageService,
-                            userService,
-                            tokenService,
-                            profileService,
-                            notificationService
-                        );
                         apiHandler = new ApiHandler(
                             userService,
                             chatService,
@@ -170,16 +170,15 @@ public class MainVerticle extends AbstractVerticle {
                             subscriptionService,
                             reportService,
                             blackListService,
-                            webSocketHandler,
                             locationService,
-                            profileService
+                            profileService,
+                            eventStreamService
                         );
                         vkPaymentHandler = new VkPaymentHandler(
                             config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET),
                             subscriptionService,
                             userService,
-                            notificationService,
-                            webSocketHandler
+                            notificationService
                         );
                         return (Void) null;
                     });
@@ -289,13 +288,18 @@ public class MainVerticle extends AbstractVerticle {
         // Chats - specific routes before parameterized ones
         apiRouter.get("/chats/cost").handler(apiHandler::getChatCost);
         apiRouter.get("/chats/search-status").handler(apiHandler::getSearchStatus);
+        apiRouter.post("/chats/search").handler(apiHandler::startCompanionSearch);
+        apiRouter.delete("/chats/search").handler(apiHandler::stopCompanionSearch);
         apiRouter.get("/chats").handler(apiHandler::getChats);
+        apiRouter.get("/chats/:chatId/messages").handler(apiHandler::getMessages);
+        apiRouter.put("/chats/:chatId/messages/read").handler(apiHandler::markMessagesAsRead);
+        apiRouter.put("/chats/:chatId/presence").handler(apiHandler::updateChatPresence);
+        apiRouter.put("/chats/:chatId/typing").handler(apiHandler::updateTyping);
         apiRouter.get("/chats/:chatId").handler(apiHandler::getChat);
         apiRouter.post("/chats/:chatId/end").handler(apiHandler::endChat);
 
         apiRouter.post("/uploads/images").handler(apiHandler::uploadImage);
 
-        apiRouter.get("/chats/:chatId/messages").handler(apiHandler::getMessages);
         apiRouter.post("/messages").handler(apiHandler::sendMessage);
         apiRouter.put("/messages/:messageId").handler(apiHandler::editMessage);
         apiRouter.delete("/messages/:messageId").handler(apiHandler::deleteMessage);
@@ -323,6 +327,8 @@ public class MainVerticle extends AbstractVerticle {
         apiRouter.get("/stats/online").handler(apiHandler::getOnlineStats);
 
         apiRouter.get("/config").handler(apiHandler::getAppConfig);
+
+        apiRouter.get("/events").handler(apiHandler::openEventStream);
 
         router.route("/api/v1/*").subRouter(apiRouter);
     }

@@ -24,7 +24,6 @@ public class LocationService {
     private static final Logger logger = LoggerFactory.getLogger(LocationService.class);
 
     private static final String COUNTRIES_RESOURCE = "countries.csv";
-    private static final String CITIES_RESOURCE = "cities.csv";
     private static final Locale SEARCH_LOCALE = new Locale("ru");
     private static final int DEFAULT_CITY_SEARCH_LIMIT = 100;
 
@@ -40,9 +39,8 @@ public class LocationService {
         countries = loadCountries();
         logger.info("Countries loaded: {} items", countries.size());
 
-        citiesByCountry = loadCities();
-        final int totalCities = citiesByCountry.values().stream().mapToInt(List::size).sum();
-        logger.info("Cities loaded: {} items across {} countries", totalCities, citiesByCountry.size());
+        citiesByCountry = Collections.emptyMap();
+        logger.info("City CSV loading disabled: city search is handled by VK API on the frontend");
 
         logger.info("LocationService initialized in {}ms", System.currentTimeMillis() - totalStart);
     }
@@ -130,52 +128,6 @@ public class LocationService {
         loaded.sort(Comparator.comparing(Country::name, collator));
 
         return Collections.unmodifiableList(loaded);
-    }
-
-    private Map<String, List<City>> loadCities() {
-        final long start = System.currentTimeMillis();
-        final Map<String, List<City>> tempMap = new HashMap<>();
-        final Collator collator = Collator.getInstance(SEARCH_LOCALE);
-
-        try (final InputStream is = getResourceAsStream(CITIES_RESOURCE);
-             final BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8), 32768)) {
-
-            reader.readLine();            String line;
-            int count = 0;
-
-            while ((line = reader.readLine()) != null) {
-                count++;
-
-                final int idx1 = line.indexOf(';');
-                if (idx1 == -1) continue;
-
-                final int idx2 = line.indexOf(';', idx1 + 1);
-                if (idx2 == -1) continue;
-
-                final String cityId = unquote(line, 0, idx1);
-                final String countryId = unquote(line, idx1 + 1, idx2);
-                final String name = unquote(line, idx2 + 1, line.length());
-
-                if (!cityId.isEmpty() && !countryId.isEmpty() && !name.isEmpty()) {
-                    tempMap.computeIfAbsent(countryId, k -> new ArrayList<>())
-                        .add(new City(cityId, countryId, name));
-                }
-            }
-
-        } catch (final IOException e) {
-            logger.error("Failed to load cities", e);
-        }
-
-        final long sortStart = System.currentTimeMillis();
-
-        final Map<String, List<City>> result = new HashMap<>(tempMap.size());
-        for (final Map.Entry<String, List<City>> entry : tempMap.entrySet()) {
-            final List<City> cities = entry.getValue();
-            cities.sort(Comparator.comparing(City::getName, collator));
-            result.put(entry.getKey(), Collections.unmodifiableList(cities));
-        }
-
-        return Collections.unmodifiableMap(result);
     }
 
     private InputStream getResourceAsStream(final String resourceName) throws IOException {

@@ -143,14 +143,14 @@ public class PostgresMessageRepository extends AbstractPostgresRepository implem
     }
 
     @Override
-    public Future<Void> markMessagesAsRead(final String chatId, final List<String> messageIds) {
-        if (chatId == null || messageIds == null || messageIds.isEmpty()) {
+    public Future<Void> markMessagesAsRead(final String chatId, final Long readerId, final List<String> messageIds) {
+        if (chatId == null || readerId == null || messageIds == null || messageIds.isEmpty()) {
             return Future.succeededFuture();
         }
         final String[] ids = messageIds.toArray(String[]::new);
         return execute(
-            "UPDATE messages SET is_read = TRUE, updated_at = NOW() WHERE chat_id = $1 AND id = ANY($2)",
-            Tuple.of(chatId, (Object) ids)
+            "UPDATE messages SET is_read = TRUE, updated_at = NOW() WHERE chat_id = $1 AND sender_id <> $2 AND id = ANY($3)",
+            Tuple.of(chatId, readerId, (Object) ids)
         ).mapEmpty();
     }
 

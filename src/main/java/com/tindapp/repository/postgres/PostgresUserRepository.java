@@ -220,7 +220,7 @@ public class PostgresUserRepository extends AbstractPostgresRepository implement
         }
 
         return execute(
-            "UPDATE users SET is_online = TRUE, online_refreshed_at = NOW(), updated_at = NOW() WHERE id = ANY($1)",
+            "UPDATE users SET is_online = TRUE, online_refreshed_at = NOW() WHERE id = ANY($1)",
             Tuple.of(ids)
         ).mapEmpty();
     }

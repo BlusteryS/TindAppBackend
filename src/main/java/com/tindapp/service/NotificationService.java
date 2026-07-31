@@ -6,6 +6,7 @@ import com.tindapp.model.User;
 import com.tindapp.repository.NotificationRepository;
 import com.tindapp.util.FutureUtils;
 import io.vertx.core.Future;
+import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,13 +21,16 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final UserService userService;
     private final VkGroupNotificationService vkGroupNotificationService;
+    private final EventStreamService eventStreamService;
 
     public NotificationService(final NotificationRepository notificationRepository,
                                final UserService userService,
-                               final VkGroupNotificationService vkGroupNotificationService) {
+                               final VkGroupNotificationService vkGroupNotificationService,
+                               final EventStreamService eventStreamService) {
         this.notificationRepository = notificationRepository;
         this.userService = userService;
         this.vkGroupNotificationService = vkGroupNotificationService;
+        this.eventStreamService = eventStreamService;
     }
 
     public Future<List<Notification>> getUserNotifications(final Long userId, final int page, final int limit) {
@@ -53,7 +57,20 @@ public class NotificationService {
         if (data != null && !data.isEmpty()) {
             notification.setData(data);
         }
-        return notificationRepository.save(notification);
+        return notificationRepository.save(notification)
+            .onSuccess(saved -> eventStreamService.publishToUser(userId, "notification", toEventJson(saved)));
+    }
+
+    private JsonObject toEventJson(final Notification notification) {
+        return new JsonObject()
+            .put("id", notification.getId())
+            .put("userId", notification.getUserId())
+            .put("type", notification.getType().name().toLowerCase())
+            .put("title", notification.getTitle())
+            .put("message", notification.getMessage())
+            .put("isRead", notification.getIsRead())
+            .put("data", notification.getData())
+            .put("createdAt", notification.getCreatedAt() != null ? notification.getCreatedAt().toString() : null);
     }
 
     public Future<Void> markAsRead(final String notificationId) {
