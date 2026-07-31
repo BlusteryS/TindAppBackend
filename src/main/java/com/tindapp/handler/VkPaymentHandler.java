@@ -1,5 +1,6 @@
 package com.tindapp.handler;
 
+import com.tindapp.config.AppConfig;
 import com.tindapp.model.Notification;
 import com.tindapp.model.Subscription;
 import com.tindapp.model.User;
@@ -28,8 +29,6 @@ import java.util.TreeMap;
 public class VkPaymentHandler implements Handler<RoutingContext> {
 
     private static final Logger logger = LoggerFactory.getLogger(VkPaymentHandler.class);
-    private static final String DEFAULT_PHOTO_URL = System.getenv("SUBSCRIPTION_PHOTO_URL");
-
     private final String clientSecret;
     private final SubscriptionService subscriptionService;
     private final UserService userService;
@@ -122,7 +121,7 @@ public class VkPaymentHandler implements Handler<RoutingContext> {
             .put("price", plan.getPriceInVotes())
             .put("period", plan.getDuration())
             .put("trial_duration", plan.getTrialDuration())
-            .put("photo_url", plan.getPhotoUrl() != null ? plan.getPhotoUrl() : DEFAULT_PHOTO_URL)
+            .put("photo_url", plan.getPhotoUrl() != null ? plan.getPhotoUrl() : AppConfig.SUBSCRIPTION_PHOTO_URL)
             .put("description", plan.getDescription())
             .put("expiration", plan.getCacheTtlSeconds() != null ? plan.getCacheTtlSeconds() : 86400);
 

@@ -1,6 +1,7 @@
 package com.tindapp.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.tindapp.config.AppConfig;
 import com.tindapp.model.Subscription;
 import com.tindapp.model.User;
 import com.tindapp.repository.SubscriptionRepository;
@@ -20,8 +21,6 @@ import java.util.UUID;
 public class SubscriptionService {
 
     private static final Logger logger = LoggerFactory.getLogger(SubscriptionService.class);
-    private static final String DEFAULT_PHOTO_URL = System.getenv("SUBSCRIPTION_PHOTO_URL");
-
     private final SubscriptionRepository subscriptionRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
@@ -38,9 +37,9 @@ public class SubscriptionService {
     private List<SubscriptionPlan> buildDefaultPlans() {
         final List<String> premiumFeatures = List.of("Все возможности базовой", "Анонимный режим", "Без рекламы", "Статистика профиля");
         final List<SubscriptionPlan> plans = new ArrayList<>();
-        plans.add(new SubscriptionPlan("premium_month", "Премиум подписка (1 месяц)", Subscription.SubscriptionType.PREMIUM, 50.0, 50, 30, premiumFeatures, "Премиум на 30 дней", "month", 0, 3600, DEFAULT_PHOTO_URL));
-        plans.add(new SubscriptionPlan("premium_6months", "Премиум подписка (6 месяцев)", Subscription.SubscriptionType.PREMIUM, 300.0, 240, 180, premiumFeatures, "Премиум на 6 месяцев", "6months", 0, 3600, DEFAULT_PHOTO_URL));
-        plans.add(new SubscriptionPlan("premium_year", "Премиум подписка (12 месяцев)", Subscription.SubscriptionType.PREMIUM, 600.0, 330, 365, premiumFeatures, "Премиум на 12 месяцев", "year", 0, 3600, DEFAULT_PHOTO_URL));
+        plans.add(new SubscriptionPlan("premium_month", "Премиум подписка (1 месяц)", Subscription.SubscriptionType.PREMIUM, 50.0, 50, 30, premiumFeatures, "Премиум на 30 дней", "month", 0, 3600, AppConfig.SUBSCRIPTION_PHOTO_URL));
+        plans.add(new SubscriptionPlan("premium_6months", "Премиум подписка (6 месяцев)", Subscription.SubscriptionType.PREMIUM, 300.0, 240, 180, premiumFeatures, "Премиум на 6 месяцев", "6months", 0, 3600, AppConfig.SUBSCRIPTION_PHOTO_URL));
+        plans.add(new SubscriptionPlan("premium_year", "Премиум подписка (12 месяцев)", Subscription.SubscriptionType.PREMIUM, 600.0, 330, 365, premiumFeatures, "Премиум на 12 месяцев", "year", 0, 3600, AppConfig.SUBSCRIPTION_PHOTO_URL));
         return plans;
     }
 

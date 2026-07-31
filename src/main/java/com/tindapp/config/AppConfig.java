@@ -1,15 +1,19 @@
 package com.tindapp.config;
 
 import java.time.Duration;
+import java.util.Set;
 
-public class AppConfig {
+public final class AppConfig {
 
-    public static final int HTTP_PORT = 8012;
-    public static final String HTTP_HOST = "0.0.0.0";
+    private AppConfig() {
+    }
 
-    public static final String TOKEN_SECRET = System.getenv("TOKEN_SECRET");
+    public static final int HTTP_PORT = Environment.requireInt("HTTP_PORT");
+    public static final String HTTP_HOST = Environment.require("HTTP_HOST");
 
-    public static final String VK_CLIENT_SECRET = System.getenv("VK_CLIENT_SECRET");
+    public static final String TOKEN_SECRET = Environment.require("TOKEN_SECRET");
+
+    public static final String VK_CLIENT_SECRET = Environment.require("VK_CLIENT_SECRET");
 
     public static final boolean ANONYMOUS_CHAT_ENABLED = true;
     public static final boolean PROFILES_ENABLED = true;
@@ -38,7 +42,7 @@ public class AppConfig {
     public static final Duration EXTERNAL_HTTP_CONNECT_TIMEOUT = Duration.ofSeconds(4);
     public static final Duration EXTERNAL_HTTP_REQUEST_TIMEOUT = Duration.ofSeconds(8);
 
-    public static final String[] ALLOWED_ORIGINS = System.getenv("CORS_ALLOWED_ORIGINS").split(",");
+    public static final String[] ALLOWED_ORIGINS = Environment.requireList("CORS_ALLOWED_ORIGINS");
     public static final String[] ALLOWED_METHODS = {"GET", "POST", "PUT", "DELETE", "OPTIONS"};
     public static final String[] ALLOWED_HEADERS = {"Content-Type", "Authorization"};
 
@@ -48,23 +52,14 @@ public class AppConfig {
     public static final String APP_VERSION = "1.0.0";
     public static final String APP_NAME = "TindApp";
 
-    public static final long VK_COMMUNITY_GROUP_ID = Long.parseLong(System.getenv("VK_COMMUNITY_GROUP_ID"));
-    public static final String VK_COMMUNITY_ACCESS_TOKEN = System.getenv("VK_COMMUNITY_ACCESS_TOKEN");
+    public static final long VK_COMMUNITY_GROUP_ID = Environment.requireLong("VK_COMMUNITY_GROUP_ID");
+    public static final String VK_COMMUNITY_ACCESS_TOKEN = Environment.require("VK_COMMUNITY_ACCESS_TOKEN");
     public static final String VK_API_VERSION = "5.199";
-    public static final int VK_APP_ID = Integer.parseInt(System.getenv("VK_APP_ID"));
-    public static final String TRANSLATION_API_URL = System.getenv("TRANSLATION_API_URL");
-
-    public static io.vertx.core.json.JsonObject getHttpConfig() {
-        return new io.vertx.core.json.JsonObject()
-            .put("port", HTTP_PORT)
-            .put("host", HTTP_HOST);
-    }
-
-    public static io.vertx.core.json.JsonObject getVkConfig() {
-        return new io.vertx.core.json.JsonObject()
-            .put("client", new io.vertx.core.json.JsonObject()
-                .put("secret", VK_CLIENT_SECRET));
-    }
+    public static final int VK_APP_ID = Environment.requireInt("VK_APP_ID");
+    public static final String TRANSLATION_API_URL = Environment.require("TRANSLATION_API_URL");
+    public static final String TRANSLATION_API_KEY = Environment.require("TRANSLATION_API_KEY");
+    public static final String SUBSCRIPTION_PHOTO_URL = Environment.require("SUBSCRIPTION_PHOTO_URL");
+    public static final Set<Long> ADMIN_VK_IDS = Environment.requireLongSet("ADMIN_VK_IDS");
 
     public static io.vertx.core.json.JsonObject getFeaturesConfig() {
         return new io.vertx.core.json.JsonObject()

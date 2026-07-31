@@ -29,8 +29,7 @@ public class TokenService {
 
     public TokenService(final UserService userService) {
         this.userService = userService;
-        final String rawSecret = System.getenv().getOrDefault("TOKEN_SECRET", AppConfig.TOKEN_SECRET);
-        secret = rawSecret.getBytes(StandardCharsets.UTF_8);
+        secret = AppConfig.TOKEN_SECRET.getBytes(StandardCharsets.UTF_8);
     }
 
     public String createToken(final User user) {

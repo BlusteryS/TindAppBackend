@@ -67,12 +67,7 @@ public class MainVerticle extends AbstractVerticle {
 
         final Vertx vertx = Vertx.vertx(new VertxOptions());
 
-        final JsonObject config = new JsonObject()
-            .put("http", AppConfig.getHttpConfig())
-            .put("vk", AppConfig.getVkConfig());
-
-        vertx.deployVerticle(new MainVerticle(),
-                new io.vertx.core.DeploymentOptions().setConfig(config))
+        vertx.deployVerticle(new MainVerticle())
             .onSuccess(id -> {
                 logger.info("Application started successfully with deployment ID: " + id);
             })
@@ -89,12 +84,15 @@ public class MainVerticle extends AbstractVerticle {
             .compose(v -> {
                 final HttpServer server = vertx.createHttpServer();
                 final Router router = createRouter();
-                final int port = config().getInteger("http.port", AppConfig.HTTP_PORT);
                 return server
                     .requestHandler(router)
-                    .listen(port)
+                    .listen(AppConfig.HTTP_PORT, AppConfig.HTTP_HOST)
                     .mapEmpty()
-                    .onSuccess(ignored -> logger.info("TindApp server started on port {}", port));
+                    .onSuccess(ignored -> logger.info(
+                        "TindApp server started on {}:{}",
+                        AppConfig.HTTP_HOST,
+                        AppConfig.HTTP_PORT
+                    ));
             })
             .onSuccess(v -> startPromise.complete())
             .onFailure(error -> {
@@ -160,7 +158,7 @@ public class MainVerticle extends AbstractVerticle {
                     })
                     .map(ignored -> {
                         tokenAuthHandler = new TokenAuthHandler(tokenService);
-                        authHandler = new AuthHandler(config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET), userService, tokenService);
+                        authHandler = new AuthHandler(AppConfig.VK_CLIENT_SECRET, userService, tokenService);
                         final LocationService locationService = LocationService.getInstance();
                         apiHandler = new ApiHandler(
                             userService,
@@ -175,7 +173,7 @@ public class MainVerticle extends AbstractVerticle {
                             eventStreamService
                         );
                         vkPaymentHandler = new VkPaymentHandler(
-                            config().getString("vk.client.secret", AppConfig.VK_CLIENT_SECRET),
+                            AppConfig.VK_CLIENT_SECRET,
                             subscriptionService,
                             userService,
                             notificationService
@@ -189,24 +187,11 @@ public class MainVerticle extends AbstractVerticle {
         final Router router = Router.router(vertx);
 
         final CorsHandler corsHandler = CorsHandler.create();
-        boolean wildcardOrigin = false;
-        boolean credentialsAllowed = false;
         for (final String origin : AppConfig.ALLOWED_ORIGINS) {
-            if (origin == null || origin.isBlank()) {
-                continue;
-            }
-            if ("*".equals(origin)) {
-                corsHandler.addOrigin("*");
-                wildcardOrigin = true;
-            } else {
-                corsHandler.addOrigin(origin);
-                credentialsAllowed = true;
-            }
-        }
-        if (!wildcardOrigin && credentialsAllowed) {
-            corsHandler.allowCredentials(true);
+            corsHandler.addOrigin(origin);
         }
         corsHandler
+            .allowCredentials(true)
             .allowedMethod(io.vertx.core.http.HttpMethod.GET)
             .allowedMethod(io.vertx.core.http.HttpMethod.POST)
             .allowedMethod(io.vertx.core.http.HttpMethod.PUT)

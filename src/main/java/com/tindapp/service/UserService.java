@@ -30,15 +30,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.Callable;
 
 public class UserService {
 
     private static final Logger logger = LoggerFactory.getLogger(UserService.class);
-    private static final Set<Long> ADMIN_VK_IDS = java.util.Arrays.stream(System.getenv("ADMIN_VK_IDS").split(","))
-        .map(Long::parseLong)
-        .collect(java.util.stream.Collectors.toUnmodifiableSet());
     private static final double VERIFICATION_THRESHOLD = 0.55;
     private static final double MIN_SKIN_COVERAGE = 0.12;
     private static final double MAX_SKIN_COVERAGE = 0.65;
@@ -934,7 +930,7 @@ public class UserService {
             return;
         }
 
-        if (ADMIN_VK_IDS.contains(user.getVkId())) {
+        if (AppConfig.ADMIN_VK_IDS.contains(user.getVkId())) {
             user.setIsAdmin(true);
         } else if (user.getIsAdmin() == null) {
             user.setIsAdmin(false);

@@ -62,11 +62,11 @@ public class DatabaseConfig {
 
     public static DatabaseConfig fromEnvironment() {
         final boolean enabled = getEnvBool("DB_ENABLED", true);
-        final String host = System.getenv("DB_HOST");
+        final String host = Environment.require("DB_HOST");
         final int port = getEnvInt("DB_PORT", 5432);
-        final String database = System.getenv("DB_NAME");
-        final String user = System.getenv("DB_USER");
-        final String password = System.getenv("DB_PASSWORD");
+        final String database = Environment.require("DB_NAME");
+        final String user = Environment.require("DB_USER");
+        final String password = Environment.require("DB_PASSWORD");
         final boolean ssl = getEnvBool("DB_SSL", false);
         final int maxPoolSize = getEnvInt("DB_POOL_SIZE", 8);
         final int connectTimeoutMs = getEnvInt("DB_CONNECT_TIMEOUT_MS", 5000);
@@ -146,11 +146,6 @@ public class DatabaseConfig {
     public String getSafeDescription() {
         return String.format("%s:%d/%s (user: %s, ssl: %s, pool: %d)",
             host, port, database, user, ssl, maxPoolSize);
-    }
-
-    private static String getEnv(final String key, final String defaultValue) {
-        final String value = System.getenv(key);
-        return (value == null || value.isBlank()) ? defaultValue : value;
     }
 
     private static boolean getEnvBool(final String key, final boolean defaultValue) {

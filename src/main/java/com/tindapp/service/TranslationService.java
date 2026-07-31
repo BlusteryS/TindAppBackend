@@ -22,13 +22,15 @@ public class TranslationService {
 
     private final HttpClient httpClient;
     private final String endpoint;
+    private final String apiKey;
 
     public TranslationService() {
-        this(AppConfig.TRANSLATION_API_URL);
+        this(AppConfig.TRANSLATION_API_URL, AppConfig.TRANSLATION_API_KEY);
     }
 
-    public TranslationService(final String endpoint) {
+    public TranslationService(final String endpoint, final String apiKey) {
         this.endpoint = endpoint;
+        this.apiKey = apiKey;
         httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -51,7 +53,7 @@ public class TranslationService {
             .put("target", normalizedTarget)
             .put("format", "text")
             .put("alternatives", 0)
-            .put("api_key", System.getenv("TRANSLATION_API_KEY"));
+            .put("api_key", apiKey);
 
         final HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create(endpoint))
